@@ -1,0 +1,109 @@
+data/backups/
+node_modules/
+
+# Ignore Git-related files and directories
+.git/
+.gitignore
+
+# Ignore environment files
+.env
+build.env
+
+# Ignore build output directories
+.next/
+build/
+dist/
+
+# Ignore temporary and database files
+data/db/
+data/temp/
+
+# Ignore default prisma schema and migrations - we copy the correct ones explicitly in Dockerfile
+prisma/schema.prisma
+prisma/migrations/
+
+
+# Ignore common log files
+npm-debug.log*
+yarn-debug.log*
+*.log
+
+# Ignore IDE-specific configuration files
+.vscode/
+
+# Existing entry for backups
+data/backups/
+
+
+
+#RECENTLY ADDED
+
+# macOS
+.DS_Store
+
+# pnpm PnP
+.pnp
+.pnp.js
+
+# testing / build outputs not already covered
+/coverage
+/out/
+
+# sensitive keys and runtime secrets
+*.pem
+traefik/runtime/
+
+# editor / local caches
+.kilocode/
+.augment/
+.mcp-cache/
+
+# TypeScript build metadata
+*.tsbuildinfo
+next-env.d.ts
+
+# prisma generated SQL (exclude if you DO want migrations in the image)
+prisma/migrations/*.sql
+
+# MCP / development-only files
+workspace/
+servers/
+README_MCP_IMPLEMENTATION.md
+
+# temp/backup files
+*.backup
+*.tmp
+
+# environment files: exclude all env files, but allow examples
+.env*
+!.env.example
+!.env.development.example
+
+# Documentation and markdown files (except README)
+*.md
+!README.md
+
+# Test files and coverage
+**/*.test.ts
+**/*.test.tsx
+**/*.test.js
+**/*.spec.ts
+**/*.spec.tsx
+**/*.spec.js
+__tests__/
+__mocks__/
+
+# CI/CD configurations
+.github/
+.gitlab-ci.yml
+.circleci/
+.travis.yml
+
+# Docker files (don't need these in the image)
+docker-compose*.yml
+Dockerfile*
+!Dockerfile
+
+# Git attributes and hooks
+.gitattributes
+.git-blame-ignore-revs

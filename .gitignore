@@ -1,0 +1,101 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.js
+
+# testing / build outputs not already covered
+/coverage
+/out/
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# local env files
+# Exclude all real .env files (never commit secrets)
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# environment files: exclude all env files, but allow examples
+!.env.example
+!.env.development.example
+!.env.production.example
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# Prisma
+prisma/migrations/*.sql
+data/db/dev.db
+data/backups/*.aes
+package-lock.json
+data/db/dev.db-journal
+
+# IDE
+.vscode/settings.json
+.vscode/tasks.json
+.kilocode/*
+.augment/*
+.mcp-cache/
+
+# MCP / development-only files
+workspace/
+servers/
+README_MCP_IMPLEMENTATION.md
+.serena/.gitignore
+.serena/project.yml
+.serena/memories/*
+opencode.json
+AGENTS.md
+
+# Traefik runtime files (generated, contains secrets)
+traefik/runtime/
+
+# sensitive keys and runtime secrets
+*.pem
+
+# Keep templates (these should be committed)
+!traefik/templates/
+
+# macOS
+.DS_Store
+
+# TypeScript build metadata
+*.tsbuildinfo
+next-env.d.ts
+
+# prisma generated SQL (exclude if you DO want migrations in the image)
+prisma/migrations/*.sql
+
+# temp/backup files
+*.backup
+*.tmp
+
+scripts/.backup_instrada_vars
+# Internal repository (separate Git repo)
+internal/
+
+# Test results (untracked)
+.test-results/

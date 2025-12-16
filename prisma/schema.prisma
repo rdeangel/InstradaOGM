@@ -1,0 +1,469 @@
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../node_modules/.prisma/client"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  ext_expires_in    Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  issuer            String?
+  externalGroups    Json?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id                   String              @id @default(cuid())
+  name                 String?
+  username             String?             @unique
+  email                String?             @unique
+  emailVerified        DateTime?
+  image                String?
+  password             String?
+  role                 String              @default("USER")
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+  lastActive           DateTime?
+  is2FAEnabled         Boolean             @default(false)
+  passwordResetToken   String?
+  passwordResetExpires DateTime?
+  totpSecret           String?
+  backupCodes          String?
+  mustChangePassword   Boolean             @default(false)
+  passwordChangedAt    DateTime?
+  accounts             Account[]
+  apiKeys              ApiKey[]
+  auditLogs            AuditLog[]
+  sessions             Session[]
+  sessionUsageEvents   SessionUsageEvent[]
+  sessionUsageStats    SessionUsageStats[]
+  groups               Group[]             @relation("GroupToUser")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model GroupFilterSetting {
+  id          String   @id @default(cuid())
+  pattern     String
+  description String?
+  type        String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model SsoGroupMapping {
+  id           String   @id @default(cuid())
+  ssoProvider  String
+  ssoGroupName String
+  localGroupId String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  localGroup   Group    @relation(fields: [localGroupId], references: [id])
+
+  @@unique([ssoProvider, ssoGroupName])
+}
+
+model Group {
+  id                      String                       @id @default(cuid())
+  name                    String                       @unique
+  description             String?
+  createdAt               DateTime                     @default(now())
+  updatedAt               DateTime                     @updatedAt
+  permissionsLastModified DateTime                     @default(now())
+  hostAliasPermissions    GroupHostAliasPermission[]
+  groupSpecificFilters    GroupSpecificFilterSetting[]
+  ssoMappings             SsoGroupMapping[]
+  users                   User[]                       @relation("GroupToUser")
+}
+
+model OpnsenseNetworkGroup {
+  id          String       @id
+  name        String       @unique
+  description String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  vpnMappings VpnMapping[]
+}
+
+model GroupSpecificFilterSetting {
+  id          String   @id @default(cuid())
+  groupId     String
+  pattern     String
+  description String?
+  type        String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  group       Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, pattern, type])
+}
+
+model GroupHostAliasPermission {
+  id                String   @id @default(cuid())
+  groupId           String
+  opnsenseAliasUuid String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  group             Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, opnsenseAliasUuid])
+}
+
+model OpnsenseGroupDisplay {
+  id             String   @id @default(cuid())
+  opnsenseUuid   String   @unique
+  friendlyName   String
+  iconIdentifier String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  groupType      String   @default("SingleSelect")
+}
+
+model ValidLocalNetwork {
+  id          String   @id @default(cuid())
+  network     String?
+  startIp     String?
+  endIp       String?
+  type        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([network, startIp, endIp, type])
+}
+
+model GlobalSettings {
+  id                                 String   @id @default(cuid())
+  enableRegistration                 Boolean  @default(false)
+  enableRenamingSelfServicePage      Boolean  @default(false)
+  enableRenamingDeviceManagementPage Boolean  @default(false)
+  allowedNetworks                    Json     @default("[]")
+  customLucideIcons                  Json     @default("[]")
+  customEmojis                       Json     @default("[]")
+  customFlags                        Json     @default("[]")
+  enableGroupTypes                   Boolean  @default(false)
+  enableSelfServiceMultiSelect       Boolean  @default(false)
+  singleSelectName                   String   @default("Single Select")
+  multiSelectName                    String   @default("Multi Select")
+  singleSelectIcon                   String   @default("DEFAULT")
+  multiSelectIcon                    String   @default("DEFAULT")
+  enableAdvancedAnalytics            Boolean  @default(false)
+  logsAnalyticsRetentionDays         Int      @default(90)
+  removeSelfServicePage              Boolean  @default(false)
+  enableMacTracking                  Boolean  @default(false)
+  macTrackingInterval                Int      @default(5)
+  macInactiveTimeout                 Int      @default(1440)
+  macDataRetentionDays               Int      @default(90)
+  enableApplicationSubtitle          Boolean  @default(false)
+  subtitleText                       String?
+  enableLoginPageSubtitle            Boolean  @default(false)
+  lastModified                       DateTime @default(now()) @updatedAt
+  enableMacExclusions                Boolean  @default(true)
+  macExclusionRetentionDays          Int      @default(365)
+}
+
+model GloballyDisabledGroup {
+  id           String   @id @default(cuid())
+  opnsenseUuid String   @unique
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  timestamp DateTime @default(now())
+  userId    String?
+  action    String
+  details   Json?
+  user      User?    @relation(fields: [userId], references: [id])
+}
+
+model VpnMapping {
+  id                     String                @id @default(uuid())
+  vpnUuid                String                @unique
+  vpnName                String
+  vpnClient              VpnClientType         @default(OpenVPN)
+  friendlyName           String?
+  opnsenseNetworkGroupId String?
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
+  opnsenseNetworkGroup   OpnsenseNetworkGroup? @relation(fields: [opnsenseNetworkGroupId], references: [id])
+}
+
+model ApiKey {
+  id           String             @id @default(cuid())
+  name         String
+  keyHash      String
+  userId       String
+  createdAt    DateTime           @default(now())
+  lastUsed     DateTime?
+  expiresAt    DateTime?
+  enabled      Boolean            @default(true)
+  hourlyLimit  Int?               @default(1000)
+  dailyLimit   Int?               @default(10000)
+  monthlyLimit Int?               @default(100000)
+  burstLimit   Int?               @default(100)
+  user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rateLimits   ApiKeyRateLimit[]
+  usageEvents  ApiKeyUsageEvent[]
+  usageStats   ApiKeyUsageStats[]
+
+  @@unique([userId, name])
+}
+
+model ApiKeyRateLimit {
+  id           String   @id @default(cuid())
+  apiKeyId     String
+  windowType   String
+  windowStart  DateTime
+  requestCount Int      @default(0)
+  lastRequest  DateTime @default(now())
+  apiKey       ApiKey   @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+
+  @@unique([apiKeyId, windowType, windowStart])
+  @@index([apiKeyId, windowType, windowStart])
+}
+
+model ApiKeyUsageStats {
+  id                  String   @id @default(cuid())
+  apiKeyId            String
+  date                DateTime
+  totalRequests       Int      @default(0)
+  successfulRequests  Int      @default(0)
+  failedRequests      Int      @default(0)
+  rateLimitHits       Int      @default(0)
+  uniqueEndpoints     Int      @default(0)
+  uniqueIpAddresses   Int      @default(0)
+  uniqueUserAgents    Int      @default(0)
+  avgResponseTime     Float?
+  peakHourlyUsage     Int      @default(0)
+  peakHourlyUsageHour Int?
+  topEndpoints        Json?
+  topIpAddresses      Json?
+  topUserAgents       Json?
+  errorsByType        Json?
+  usageByHour         Json?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  apiKey              ApiKey   @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+
+  @@unique([apiKeyId, date])
+  @@index([apiKeyId, date])
+  @@index([date])
+}
+
+model ApiKeyUsageEvent {
+  id           String   @id @default(cuid())
+  apiKeyId     String
+  timestamp    DateTime @default(now())
+  endpoint     String
+  method       String
+  statusCode   Int
+  responseTime Float?
+  ipAddress    String?
+  userAgent    String?
+  requestSize  Int?
+  responseSize Int?
+  errorType    String?
+  errorMessage String?
+  rateLimitHit Boolean  @default(false)
+  apiKey       ApiKey   @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+
+  @@index([apiKeyId, timestamp])
+  @@index([timestamp])
+  @@index([endpoint])
+}
+
+model SessionUsageStats {
+  id                  String   @id @default(cuid())
+  sessionToken        String
+  userId              String?
+  date                DateTime
+  totalRequests       Int      @default(0)
+  apiCalls            Int      @default(0)
+  pageViews           Int      @default(0)
+  uiActions           Int      @default(0)
+  successfulRequests  Int      @default(0)
+  failedRequests      Int      @default(0)
+  uniqueEndpoints     Int      @default(0)
+  uniquePages         Int      @default(0)
+  uniqueIpAddresses   Int      @default(0)
+  uniqueUserAgents    Int      @default(0)
+  avgResponseTime     Float?
+  peakHourlyUsage     Int      @default(0)
+  peakHourlyUsageHour Int?
+  topEndpoints        Json?
+  topPages            Json?
+  topIpAddresses      Json?
+  topUserAgents       Json?
+  actionsByType       Json?
+  errorsByType        Json?
+  usageByHour         Json?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  user                User?    @relation(fields: [userId], references: [id])
+
+  @@unique([sessionToken, date])
+  @@index([sessionToken, date])
+  @@index([userId, date])
+  @@index([date])
+}
+
+model SessionUsageEvent {
+  id           String   @id @default(cuid())
+  sessionToken String
+  userId       String?
+  timestamp    DateTime @default(now())
+  endpoint     String
+  method       String
+  actionType   String
+  statusCode   Int?
+  responseTime Float?
+  ipAddress    String?
+  userAgent    String?
+  pageUrl      String?
+  referrer     String?
+  requestSize  Int?
+  responseSize Int?
+  errorType    String?
+  errorMessage String?
+  metadata     Json?
+  user         User?    @relation(fields: [userId], references: [id])
+
+  @@index([sessionToken, timestamp])
+  @@index([userId, timestamp])
+  @@index([timestamp])
+  @@index([endpoint])
+  @@index([actionType])
+}
+
+model MacAddress {
+  id             String              @id @default(cuid())
+  macAddress     String              @unique
+  firstSeen      DateTime            @default(now())
+  lastSeen       DateTime            @default(now())
+  isActive       Boolean             @default(true)
+  deviceName     String?
+  vendor         String?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  isPrivacyMac   Boolean             @default(false)
+  exclusion      MacExclusion?
+  ipAssociations MacIpAssociation[]
+  ipHistory      MacIpHistoryEntry[]
+  ipActivationPeriods MacIpActivationPeriod[]
+
+  @@index([macAddress])
+  @@index([lastSeen])
+  @@index([isActive])
+  @@index([isPrivacyMac])
+}
+
+model MacIpAssociation {
+  id               String     @id @default(cuid())
+  macAddressId     String
+  ipAddress        String
+  networkInterface String?
+  firstSeen        DateTime   @default(now())
+  lastSeen         DateTime   @default(now())
+  isActive         Boolean    @default(true)
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+  isDhcpReserved   Boolean    @default(false)
+  hasDhcpConflict  Boolean    @default(false)
+  macAddress       MacAddress @relation(fields: [macAddressId], references: [id], onDelete: Cascade)
+
+  @@index([macAddressId, ipAddress])
+  @@index([ipAddress])
+  @@index([lastSeen])
+  @@index([isActive])
+  @@index([isDhcpReserved])
+}
+
+model MacExclusion {
+  id             String     @id @default(cuid())
+  macAddressId   String     @unique
+  enabled        Boolean    @default(true)
+  exclusionMode  String     @default("FULL")
+  reason         String?
+  excludedBy     String?
+  excludedAt     DateTime   @default(now())
+  lastModifiedBy String?
+  lastModifiedAt DateTime   @updatedAt
+  macAddress     MacAddress @relation(fields: [macAddressId], references: [id], onDelete: Cascade)
+
+  @@index([enabled])
+  @@index([excludedAt])
+  @@index([exclusionMode])
+}
+
+model MacIpHistoryEntry {
+  id               String     @id @default(cuid())
+  macAddressId     String
+  ipAddress        String
+  networkInterface String?
+  firstSeen        DateTime   @default(now())
+  lastSeen         DateTime   @default(now())
+  detectionCount   Int        @default(1)
+  macAddress       MacAddress @relation(fields: [macAddressId], references: [id], onDelete: Cascade)
+
+  @@unique([macAddressId, ipAddress])
+  @@index([macAddressId])
+  @@index([ipAddress])
+  @@index([lastSeen])
+}
+
+model MacIpActivationPeriod {
+  id               String     @id @default(cuid())
+  macAddressId     String
+  ipAddress        String
+  networkInterface String?
+  hostname         String?
+  hostAlias        String?
+  activatedAt      DateTime
+  deactivatedAt    DateTime?
+  createdAt        DateTime   @default(now())
+  macAddress       MacAddress @relation(fields: [macAddressId], references: [id], onDelete: Cascade)
+
+  @@index([macAddressId])
+  @@index([ipAddress])
+  @@index([activatedAt])
+}
+
+enum VpnClientType {
+  OpenVPN
+  WireGuard
+  IPsec
+}

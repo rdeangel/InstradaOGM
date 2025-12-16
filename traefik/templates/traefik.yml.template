@@ -1,0 +1,105 @@
+# =============================================================================
+# Traefik Static Configuration Template for InstradaOGM
+# =============================================================================
+# This is a TEMPLATE file. The actual configuration will be generated from this.
+# DO NOT edit the generated files directly - edit this template instead.
+
+# =============================================================================
+# Global Configuration
+# =============================================================================
+global:
+  checkNewVersion: true
+  sendAnonymousUsage: false
+
+# =============================================================================
+# API & Dashboard Configuration
+# =============================================================================
+api:
+  # Enable the Traefik dashboard (accessible at http://localhost:8080/dashboard/)
+  dashboard: true
+  insecure: true
+  debug: false
+
+# =============================================================================
+# Entry Points Configuration
+# =============================================================================
+entryPoints:
+  # HTTP entry point (for redirects to HTTPS)
+  web:
+    address: ":80"
+
+  # HTTPS entry point
+  websecure:
+    address: ":443"
+    forwardedHeaders:
+      trustedIPs:
+        - "{{TRUSTED_IP_RANGE}}"
+    http:
+      tls:
+        certResolver: letsencrypt
+        options: default
+
+  # Traefik dashboard (internal only)
+  traefik:
+    address: ":8080"
+
+# =============================================================================
+# Providers Configuration
+# =============================================================================
+providers:
+  # Docker provider for automatic service discovery
+  docker:
+    endpoint: "unix:///var/run/docker.sock"
+    exposedByDefault: false
+    network: {{DOCKER_NETWORK}}
+
+  # File provider for static configuration
+  file:
+    filename: /traefik/config.yml
+    watch: true
+
+# =============================================================================
+# Certificate Resolver Configuration (Let's Encrypt with DNS Challenge)
+# =============================================================================
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      # Email for Let's Encrypt notifications
+      email: {{LETSENCRYPT_EMAIL}}
+      storage: /traefik/acme.json
+      {{ACME_CA_SERVER}}
+      # DNS challenge for certificate validation
+      # This allows certificate generation without exposing port 80 to the internet
+      # Supports 150+ DNS providers via Lego: https://go-acme.github.io/lego/dns/
+      dnsChallenge:
+        provider: {{DNS_PROVIDER}}
+        # DNS resolvers to use for validation (optional)
+        resolvers:
+          - "1.1.1.1:53"
+          - "8.8.8.8:53"
+        # Propagation settings for DNS changes
+        propagation:
+          delayBeforeChecks: 30
+        # Disable propagation check if DNS validation is failing
+        # Note: Some providers may require this to be true
+        disablePropagationCheck: true
+
+# =============================================================================
+# Logging Configuration
+# =============================================================================
+log:
+  level: {{LOG_LEVEL}}
+  filePath: /traefik/logs/traefik.log
+
+accessLog:
+  filePath: /traefik/logs/access.log
+  format: json
+
+# =============================================================================
+# Metrics Configuration (Optional)
+# =============================================================================
+metrics:
+  prometheus:
+    addEntryPointsLabels: true
+    addServicesLabels: true
+

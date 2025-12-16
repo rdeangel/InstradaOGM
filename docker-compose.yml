@@ -1,0 +1,193 @@
+# =============================================================================
+# InstradaOGM Docker Compose Configuration
+# =============================================================================
+#
+# This file defines the InstradaOGM application services with support for
+# both PostgreSQL and SQLite database backends.
+#
+# USAGE:
+#
+#   Start with PostgreSQL (recommended for production):
+#     docker compose --profile postgres up -d
+#
+#   Start with SQLite (development/testing):
+#     docker compose --profile sqlite up -d
+#
+#   Stop services:
+#     docker compose down
+#
+#   View logs:
+#     docker compose logs -f
+#
+#   Rebuild and restart:
+#     docker compose --profile postgres up -d --build
+#
+# PROFILES:
+#   - postgres: PostgreSQL database backend (production)
+#   - sqlite: SQLite database backend (development/testing)
+#
+# ENVIRONMENT VARIABLES:
+#   Configure in .env file (see .env.example for reference)
+#   - NEXT_PUBLIC_APP_VERSION: Application version tag
+#   - OPNSENSE_URL: OPNsense firewall URL
+#   - OPNSENSE_API_KEY: OPNsense API key
+#   - OPNSENSE_API_SECRET: OPNsense API secret
+#   - DATABASE_URL: Database connection string
+#   - NEXTAUTH_SECRET: NextAuth.js secret key
+#   - And more... (see .env.example)
+#
+# NETWORKS:
+#   - instradaogm_app_network: Application network for service communication
+#
+# VOLUMES:
+#   - postgres-data: PostgreSQL data persistence (postgres profile)
+#   - sqlite-data: SQLite database file persistence (sqlite profile)
+#     Default location: ./data/db/instrada-ogm.db (configurable via SQLITE_DB_NAME)
+#
+# HEALTH CHECKS:
+#   All services include health checks for monitoring and orchestration
+#
+# TRAEFIK INTEGRATION:
+#   For reverse proxy with SSL, use docker-compose-traefik.yml instead:
+#     docker compose -f docker-compose-traefik.yml --profile postgres up -d
+#
+# =============================================================================
+
+services:
+  instrada-ogm-postgres:
+    image: rdeangel/instrada-ogm-postgres:${NEXT_PUBLIC_APP_VERSION:-latest}
+    container_name: instrada-ogm
+    profiles: [ "postgres" ]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_APP_VERSION=${NEXT_PUBLIC_APP_VERSION:-latest}
+        - BACKUP_ENCRYPTION_SECRET_KEY="your_encryption_key_here_64_chars"
+        - PRISMA_SCHEMA_FILE=schema.postgres.prisma
+        - PRISMA_MIGRATIONS_DIR=migrations-postgres
+        - DATABASE_URL=postgresql://user:password@localhost:5432/instrada-ogm_build?schema=public # Dummy URL for build-time Prisma operations
+        - APP_DEBUG_LEVEL=${APP_DEBUG_LEVEL}
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    networks:
+      - instradaogm_app_network
+    env_file:
+      - .env
+    environment:
+      - OPNSENSE_URL=${OPNSENSE_URL}
+      - OPNSENSE_API_KEY=${OPNSENSE_API_KEY}
+      - OPNSENSE_API_SECRET=${OPNSENSE_API_SECRET}
+      - SKIP_SSL_VERIFICATION=${SKIP_SSL_VERIFICATION}
+      - ALLOW_HTTP=${ALLOW_HTTP}
+      - INTERNAL_APP_URL=${INTERNAL_APP_URL}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - NEXTAUTH_URL=${NEXTAUTH_URL}
+      - PORT:=${PORT}
+      - AUTH_ALLOW_LOCAL_LOGIN=${AUTH_ALLOW_LOCAL_LOGIN:-true}
+      - AUTH_ALLOW_OIDC_LOGIN=${AUTH_ALLOW_OIDC_LOGIN:-false}
+      - SSO_MAX_AGE=${SSO_MAX_AGE:-2592000}
+      - BACKUP_ENCRYPTION_SECRET_KEY=${BACKUP_ENCRYPTION_SECRET_KEY}
+      - OIDC_PROVIDER_AUTHENTIK_ENABLED=${OIDC_PROVIDER_AUTHENTIK_ENABLED:-false}
+      - OIDC_PROVIDER_AUTHENTIK_CLIENT_ID=${OIDC_PROVIDER_AUTHENTIK_CLIENT_ID:-}
+      - OIDC_PROVIDER_AUTHENTIK_CLIENT_SECRET=${OIDC_PROVIDER_AUTHENTIK_CLIENT_SECRET:-}
+      - OIDC_PROVIDER_AUTHENTIK_ISSUER=${OIDC_PROVIDER_AUTHENTIK_ISSUER:-}
+      - OIDC_PROVIDER_AUTHENTIK_DISPLAY_NAME=${OIDC_PROVIDER_AUTHENTIK_DISPLAY_NAME:-Authentik}
+      - OIDC_PROVIDER_AUTHENTIK_SCOPES=${OIDC_PROVIDER_AUTHENTIK_SCOPES:-openid email profile}
+      - OIDC_PROVIDER_KEYCLOAK_ENABLED=${OIDC_PROVIDER_KEYCLOAK_ENABLED:-false}
+      - OIDC_PROVIDER_KEYCLOAK_CLIENT_ID=${OIDC_PROVIDER_KEYCLOAK_CLIENT_ID:-}
+      - OIDC_PROVIDER_KEYCLOAK_CLIENT_SECRET=${OIDC_PROVIDER_KEYCLOAK_CLIENT_SECRET:-}
+      - OIDC_PROVIDER_KEYCLOAK_ISSUER=${OIDC_PROVIDER_KEYCLOAK_ISSUER:-}
+      - OIDC_PROVIDER_KEYCLOAK_DISPLAY_NAME=${OIDC_PROVIDER_KEYCLOAK_DISPLAY_NAME:-Keycloak}
+      - OIDC_PROVIDER_KEYCLOAK_SCOPES=${OIDC_PROVIDER_KEYCLOAK_SCOPES:-openid email profile}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:?POSTGRES_USER is required}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@${POSTGRES_HOST:-db}:${POSTGRES_PORT:-5432}/${POSTGRES_DB:?POSTGRES_DB is required}?schema=public
+      - APP_DEBUG_LEVEL=${APP_DEBUG_LEVEL:-SILENT}
+    volumes:
+      - ./data/backups:/app/data/backups
+    depends_on:
+      db:
+        condition: service_healthy
+
+  instrada-ogm-sqlite:
+    image: rdeangel/instrada-ogm-sqlite:${NEXT_PUBLIC_APP_VERSION:-latest}
+    container_name: instrada-ogm
+    profiles: [ "sqlite" ]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_APP_VERSION=${NEXT_PUBLIC_APP_VERSION:-latest}
+        - BACKUP_ENCRYPTION_SECRET_KEY="your_encryption_key_here_64_chars"
+        - PRISMA_SCHEMA_FILE=schema.sqlite.prisma
+        - PRISMA_MIGRATIONS_DIR=migrations-sqlite
+        - DATABASE_URL=file:/app/data/db/${SQLITE_DB_NAME:-instrada-ogm.db} # Default URL for build-time Prisma operations
+        - APP_DEBUG_LEVEL=${APP_DEBUG_LEVEL}
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    networks:
+      - instradaogm_app_network
+    env_file:
+      - .env
+    environment:
+      - OPNSENSE_URL=${OPNSENSE_URL}
+      - OPNSENSE_API_KEY=${OPNSENSE_API_KEY}
+      - OPNSENSE_API_SECRET=${OPNSENSE_API_SECRET}
+      - SKIP_SSL_VERIFICATION=${SKIP_SSL_VERIFICATION}
+      - ALLOW_HTTP=${ALLOW_HTTP}
+      - INTERNAL_APP_URL=${INTERNAL_APP_URL}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - NEXTAUTH_URL=${NEXTAUTH_URL}
+      - PORT:=${PORT}
+      - AUTH_ALLOW_LOCAL_LOGIN=${AUTH_ALLOW_LOCAL_LOGIN:-true}
+      - AUTH_ALLOW_OIDC_LOGIN=${AUTH_ALLOW_OIDC_LOGIN:-false}
+      - SSO_MAX_AGE=${SSO_MAX_AGE:-2592000}
+      - BACKUP_ENCRYPTION_SECRET_KEY=${BACKUP_ENCRYPTION_SECRET_KEY}
+      - OIDC_PROVIDER_AUTHENTIK_ENABLED=${OIDC_PROVIDER_AUTHENTIK_ENABLED:-false}
+      - OIDC_PROVIDER_AUTHENTIK_CLIENT_ID=${OIDC_PROVIDER_AUTHENTIK_CLIENT_ID:-}
+      - OIDC_PROVIDER_AUTHENTIK_CLIENT_SECRET=${OIDC_PROVIDER_AUTHENTIK_CLIENT_SECRET:-}
+      - OIDC_PROVIDER_AUTHENTIK_ISSUER=${OIDC_PROVIDER_AUTHENTIK_ISSUER:-}
+      - OIDC_PROVIDER_AUTHENTIK_DISPLAY_NAME=${OIDC_PROVIDER_AUTHENTIK_DISPLAY_NAME:-Authentik}
+      - OIDC_PROVIDER_AUTHENTIK_SCOPES=${OIDC_PROVIDER_AUTHENTIK_SCOPES:-openid email profile}
+      - OIDC_PROVIDER_KEYCLOAK_ENABLED=${OIDC_PROVIDER_KEYCLOAK_ENABLED:-false}
+      - OIDC_PROVIDER_KEYCLOAK_CLIENT_ID=${OIDC_PROVIDER_KEYCLOAK_CLIENT_ID:-}
+      - OIDC_PROVIDER_KEYCLOAK_CLIENT_SECRET=${OIDC_PROVIDER_KEYCLOAK_CLIENT_SECRET:-}
+      - OIDC_PROVIDER_KEYCLOAK_ISSUER=${OIDC_PROVIDER_KEYCLOAK_ISSUER:-}
+      - OIDC_PROVIDER_KEYCLOAK_DISPLAY_NAME=${OIDC_PROVIDER_KEYCLOAK_DISPLAY_NAME:-Keycloak}
+      - OIDC_PROVIDER_KEYCLOAK_SCOPES=${OIDC_PROVIDER_KEYCLOAK_SCOPES:-openid email profile}
+      - DATABASE_URL=file:/app/data/db/${SQLITE_DB_NAME:-instrada-ogm.db}
+      - APP_DEBUG_LEVEL=${APP_DEBUG_LEVEL:-SILENT}
+    volumes:
+      - ./data/db/:/app/data/db
+      - ./data/backups:/app/data/backups
+
+  db:
+    image: postgres:16-alpine
+    container_name: instrada-ogm-postgres-db
+    profiles: [ "postgres" ]
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - instradaogm_app_network
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:?POSTGRES_USER is required} -d ${POSTGRES_DB:?POSTGRES_DB is required}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+
+
+networks:
+  instradaogm_app_network:
+    name: instradaogm_app_network
+    driver: bridge

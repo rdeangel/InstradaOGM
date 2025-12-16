@@ -1,0 +1,86 @@
+# Routing Logic: A Deep Dive into InstradaOGM
+
+## Speakers
+
+- **Speaker 1:** Zoe
+- **Speaker 2:** Carter
+
+---
+
+## Script
+
+**Zoe:** [upbeat] Hello and welcome to today's deep dive into network management tools. I'm Zoe.
+
+**Carter:** [casual] And I'm Carter. Today we are looking at a specific application designed for the OPNsense firewall ecosystem called InstradaOGM.
+
+**Zoe:** It is a fascinating project because it addresses a very specific pain point in network administration: the complexity of access control. Before we get into the mechanics, Carter, [short pause] perhaps we should define what the name actually means. It sets the stage for what the software does.
+
+**Carter:** Right. The name is a compound. "Instrada" translates to "to route" or "to direct." [short pause] And OGM stands for "Open Group Manager." So, functionally, we are talking about an open-source group manager used to route or direct traffic using the OPNsense API.
+
+**Zoe:** Essentially, it is a web-based middleware that sits between the administrator—or even the end-user—and the OPNsense firewall.
+
+**Carter:** Exactly. The core feature of InstradaOGM is to transform how network access control is managed. [explaining] Traditionally, if you want to change what a specific device can do on a network—say, grant it access to a specific server or route it through a VPN—you have to log into the firewall, find the rules, and edit them manually.
+
+**Zoe:** Which is time-consuming and prone to human error. [short pause] InstradaOGM changes that workflow. Instead of touching the firewall rules directly, the application manages device membership in predefined network groups.
+
+**Carter:** That is the key distinction. You pre-configure your firewall rules based on groups—for example, a "VPN-Traffic" group or a "Guest-Access" group. InstradaOGM then allows you to simply add or remove devices from those groups via a dashboard. The changes are applied instantly through the OPNsense API.
+
+**Zoe:** [medium pause] Let's look at the use cases, because they vary quite a bit depending on who is deploying this. One of the most prominent features mentioned in the documentation is VPN-Free Routing.
+
+**Carter:** That is a major use case, Zoe. Usually, if you want a device to use a VPN, you install a client on that device. But InstradaOGM allows for gateway-based routing. [short pause] You can have a group in OPNsense routed through a Commercial VPN or a WireGuard tunnel. If you drop a device into that group via the Instrada dashboard, that device's traffic is immediately routed through the VPN. No client software is needed on the endpoint.
+
+**Zoe:** Which is incredibly useful for devices that don't support VPN clients, like certain IoT devices or smart TVs.
+
+**Carter:** Precisely. This leads us to the target audience. The documentation identifies three main pillars: Home Lab Enthusiasts, Developers, and Small Business IT teams.
+
+**Zoe:** For the Home Lab crowd, it seems to be about segmentation and parental control. You can segment IoT devices into secure zones or manage internet access for family devices without constantly logging into the main firewall interface.
+
+**Carter:** And for Developers and QA teams, the focus is on environment isolation and testing. If a developer needs to test how an application behaves from a different geographic location, they can simply switch their device's group to a VPN exit node in that region. [short pause] It allows for rapid context switching.
+
+**Zoe:** Then you have the Small Business sector. Here, the focus shifts to security and compliance. InstradaOGM includes comprehensive audit logging. [emphasize] Every change in group membership is recorded. If an employee's device is compromised, an administrator can instantly move it to a quarantine group, isolating it from company resources.
+
+**Carter:** It is worth noting that the application also supports a Self-Service Portal. [short pause] This is a significant shift in philosophy. It allows users to manage their own device access.
+
+**Zoe:** [skeptical] That sounds risky, Carter. How does it handle security in that context?
+
+**Carter:** It uses a multi-layered access control system based on the client's IP address. The application can detect IPs whether you're accessing directly via HTTP or through a reverse proxy with SSL termination.
+
+[short pause] For production environments, you'd typically use a reverse proxy like Traefik, NGINX, or Caddy to handle HTTPS. In that setup, the proxy needs to forward the real client IP using X-Forwarded-For or X-Real-IP headers. Direct HTTP access works for home labs, but should be strictly prohibited in production for security reasons.
+
+[breath] The access control has multiple layers. For authenticated users, there's a three-tier check: the global self-service setting, whether their IP is within their device management scope, and a fallback against unauthenticated network rules. For unauthenticated users, both the global setting must allow it AND their IP must be in the configured allowed networks. There's also a "Global Self-Service Disable" feature that completely removes self-service functionality when security is paramount.
+
+**Zoe:** [medium pause] Let's move into the application's architecture. It is built on a modern stack using Next.js, TypeScript, and Prisma, designed to run in a containerized environment, typically Docker.
+
+**Carter:** Right. And the interaction with OPNsense is interesting—it doesn't just push commands blindly. It synchronizes with the firewall.
+
+**Zoe:** How does that synchronization work?
+
+**Carter:** It manages OPNsense Host Aliases. When you rename a device in InstradaOGM, it can automatically offer to create a DHCP reservation if the device is online. It creates a seamless link between the device's MAC address, its IP, and its group membership.
+
+**Zoe:** The documentation also highlights "SingleSelect" and "MultiSelect" group types. This seems like an important logic constraint.
+
+**Carter:** It is essential for avoiding routing conflicts. A "SingleSelect" group configuration ensures a device can only be in one group of that type at a time. [explaining] For example, a device cannot logically be routed through a "US-VPN" and a "UK-VPN" simultaneously. InstradaOGM enforces this; if you move a device to the UK group, it automatically removes it from the US group.
+
+**Zoe:** Whereas "MultiSelect" groups are [slight emphasis] additive.
+
+**Carter:** Right. You might have a "Printer Access" group and a "File Server Access" group. A device can belong to both without conflict.
+
+**Zoe:** [short pause] I also noticed a focus on MAC address tracking and privacy.
+
+**Carter:** That is a response to modern mobile operating systems. Many phones now use randomized MAC addresses for privacy. InstradaOGM attempts to detect this and warns the administrator, because randomized MACs can break DHCP reservations and group assignments. It uses ARP scanning to track devices and maintain a history of IP associations.
+
+**Zoe:** So, to summarize the architecture: [slowly] It is a separate state manager that utilizes the OPNsense API to enforce network policy by manipulating Alias membership, rather than altering the rule base itself.
+
+**Carter:** [warmly] That is the most accurate way to describe it, Zoe. It provides an abstraction layer. It simplifies the complexity of the firewall for day-to-day operations while maintaining the robustness of the underlying OPNsense engine.
+
+**Zoe:** [short pause] And regarding authentication, it isn't just a local login system.
+
+**Carter:** No, it is enterprise-ready in that regard. It supports OIDC, meaning it can integrate with Authentik, Keycloak, or Microsoft Entra ID. It also enforces Role-Based Access Control, distinguishing between Users, Admins, and Super Admins.
+
+**Zoe:** [concluding tone] It seems like a robust tool for anyone running OPNsense who needs more dynamic control over their network endpoints.
+
+**Carter:** Agreed. Whether it is for rapidly testing code across different regions or simply managing a complex home network, InstradaOGM offers a structured, auditable way to handle routing and access.
+
+**Zoe:** [short pause] That covers the essentials of InstradaOGM. Thanks for listening.
+
+**Carter:** [warm] Thanks, everyone.

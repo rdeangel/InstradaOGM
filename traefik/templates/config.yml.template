@@ -1,0 +1,86 @@
+# =============================================================================
+# Traefik Dynamic Configuration Template for InstradaOGM
+# =============================================================================
+# This is a TEMPLATE file. The actual configuration will be generated from this.
+# DO NOT edit the generated files directly - edit this template instead.
+
+http:
+  # ==========================================================================
+  # Routers Configuration
+  # ==========================================================================
+  routers:
+    # Main InstradaOGM application router
+    ogm:
+      rule: "Host(`{{DOMAIN}}`)"
+      entryPoints:
+        - websecure
+      service: ogm-service
+      middlewares:
+        - ogm-headers
+        - ogm-no-cache-api
+      tls:
+        certResolver: letsencrypt
+
+    # HTTP to HTTPS redirect
+    ogm-http:
+      rule: "Host(`{{DOMAIN}}`)"
+      entryPoints:
+        - web
+      middlewares:
+        - redirect-https
+      service: noop
+
+  # ==========================================================================
+  # Services Configuration
+  # ==========================================================================
+  services:
+    ogm-service:
+      loadBalancer:
+        servers:
+          - url: "http://{{CONTAINER_NAME}}:3000"
+        # Health check configuration
+        healthCheck:
+          path: /api/health
+          interval: 30s
+          timeout: 5s
+
+    # Dummy service for HTTP redirect
+    noop:
+      loadBalancer:
+        servers:
+          - url: "http://localhost"
+
+  # ==========================================================================
+  # Middlewares Configuration
+  # ==========================================================================
+  middlewares:
+    # HTTP to HTTPS redirect middleware
+    redirect-https:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+    # Header forwarding middleware for IP detection
+    # Note: Traefik automatically forwards these headers from the reverse proxy:
+    # X-Real-IP, X-Forwarded-For, X-Forwarded-Proto, X-Forwarded-Host
+    ogm-headers:
+      headers:
+        customRequestHeaders:
+          X-Forwarded-Proto: "https"
+
+    # No-cache middleware for sensitive endpoints
+    ogm-no-cache-api:
+      headers:
+        customResponseHeaders:
+          Cache-Control: "no-cache, no-store, must-revalidate"
+          Expires: "0"
+          Pragma: "no-cache"
+
+# =============================================================================
+# TLS Configuration
+# =============================================================================
+tls:
+  options:
+    default:
+      minVersion: VersionTLS12
+

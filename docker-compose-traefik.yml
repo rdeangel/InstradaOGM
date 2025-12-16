@@ -1,0 +1,234 @@
+# =============================================================================
+# Docker Compose Configuration for InstradaOGM with Traefik
+# =============================================================================
+#
+# ⚠️  IMPORTANT: CONFIGURATION REQUIRED BEFORE RUNNING! ⚠️
+#
+# STEP 1: CONFIGURE DOMAIN IN MAIN .env FILE
+#   Edit .env and set:
+#     DOMAIN=your-instrada-ogm.com
+#
+# STEP 2: CONFIGURE TRAEFIK
+#   1. cd traefik
+#   2. ./generate-config.sh
+#   3. Edit traefik/runtime/.env.traefik with your settings:
+#      - DOMAIN=your-instrada-ogm.com (MUST match .env)
+#      - DNS_PROVIDER=cloudflare (or route53, digitalocean, etc.)
+#      - DNS provider credentials
+#      - LETSENCRYPT_EMAIL=your-email@example.com
+#      - ACME_SERVER=staging (for testing) or production
+#   4. ./generate-config.sh (again to apply your settings)
+#   5. ./validate.sh
+#   6. cd ..
+#
+# STEP 3: START SERVICES
+#   SQLite:     docker compose -f docker-compose-traefik.yml --profile sqlite up -d
+#   PostgreSQL: docker compose -f docker-compose-traefik.yml --profile postgres up -d
+#
+# ACCESS:
+#   Application: https://${DOMAIN}
+#   Dashboard:   http://localhost:8080/dashboard/
+#
+# NOTE: The DOMAIN variable must be set in BOTH:
+#   - .env (for docker-compose to use in Traefik labels)
+#   - traefik/runtime/.env.traefik (for Traefik SSL certificate generation)
+#
+# =============================================================================
+
+services:
+  # ==========================================================================
+  # Traefik Reverse Proxy
+  # ==========================================================================
+  traefik:
+    image: traefik:latest
+    container_name: traefik
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - instradaogm_app_network
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080" # Dashboard (optional, remove for production)
+    command:
+      - "--configFile=/traefik/traefik.yml"
+    env_file:
+      # Load Traefik-specific configuration from runtime/.env.traefik
+      - ./traefik/runtime/.env.traefik
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/runtime/traefik.yml:/traefik/traefik.yml:ro
+      - ./traefik/runtime/config.yml:/traefik/config.yml:ro
+      - ./traefik/runtime/acme.json:/traefik/acme.json
+      - ./traefik/runtime/logs:/traefik/logs
+    labels:
+      - "traefik.enable=false"
+
+  # ==========================================================================
+  # InstradaOGM Application (SQLite Profile)
+  # ==========================================================================
+  instrada-ogm-sqlite:
+    image: rdeangel/instrada-ogm-sqlite:${NEXT_PUBLIC_APP_VERSION:-latest}
+    container_name: instrada-ogm
+    profiles: [ "sqlite" ]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_APP_VERSION=${NEXT_PUBLIC_APP_VERSION:-latest}
+        - BACKUP_ENCRYPTION_SECRET_KEY="your_encryption_key_here_64_chars"
+        - PRISMA_SCHEMA_FILE=schema.sqlite.prisma
+        - PRISMA_MIGRATIONS_DIR=migrations-sqlite
+        - DATABASE_URL=file:/app/data/db/${SQLITE_DB_NAME:-instrada-ogm.db}
+        - APP_DEBUG_LEVEL=${APP_DEBUG_LEVEL}
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    networks:
+      - instradaogm_app_network
+    env_file:
+      - .env
+    environment:
+      - OPNSENSE_URL=${OPNSENSE_URL}
+      - OPNSENSE_API_KEY=${OPNSENSE_API_KEY}
+      - OPNSENSE_API_SECRET=${OPNSENSE_API_SECRET}
+      - SKIP_SSL_VERIFICATION=${SKIP_SSL_VERIFICATION}
+      - ALLOW_HTTP=${ALLOW_HTTP}
+      - INTERNAL_APP_URL=${INTERNAL_APP_URL}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - NEXTAUTH_URL=${NEXTAUTH_URL}
+      - PORT=3000
+      - AUTH_ALLOW_LOCAL_LOGIN=${AUTH_ALLOW_LOCAL_LOGIN:-true}
+      - AUTH_ALLOW_OIDC_LOGIN=${AUTH_ALLOW_OIDC_LOGIN:-false}
+      - SSO_MAX_AGE=${SSO_MAX_AGE:-2592000}
+      - BACKUP_ENCRYPTION_SECRET_KEY=${BACKUP_ENCRYPTION_SECRET_KEY}
+      - OIDC_PROVIDER_AUTHENTIK_ENABLED=${OIDC_PROVIDER_AUTHENTIK_ENABLED:-false}
+      - OIDC_PROVIDER_AUTHENTIK_CLIENT_ID=${OIDC_PROVIDER_AUTHENTIK_CLIENT_ID:-}
+      - OIDC_PROVIDER_AUTHENTIK_CLIENT_SECRET=${OIDC_PROVIDER_AUTHENTIK_CLIENT_SECRET:-}
+      - OIDC_PROVIDER_AUTHENTIK_ISSUER=${OIDC_PROVIDER_AUTHENTIK_ISSUER:-}
+      - OIDC_PROVIDER_AUTHENTIK_DISPLAY_NAME=${OIDC_PROVIDER_AUTHENTIK_DISPLAY_NAME:-Authentik}
+      - OIDC_PROVIDER_AUTHENTIK_SCOPES=${OIDC_PROVIDER_AUTHENTIK_SCOPES:-openid email profile}
+      - OIDC_PROVIDER_KEYCLOAK_ENABLED=${OIDC_PROVIDER_KEYCLOAK_ENABLED:-false}
+      - OIDC_PROVIDER_KEYCLOAK_CLIENT_ID=${OIDC_PROVIDER_KEYCLOAK_CLIENT_ID:-}
+      - OIDC_PROVIDER_KEYCLOAK_CLIENT_SECRET=${OIDC_PROVIDER_KEYCLOAK_CLIENT_SECRET:-}
+      - OIDC_PROVIDER_KEYCLOAK_ISSUER=${OIDC_PROVIDER_KEYCLOAK_ISSUER:-}
+      - OIDC_PROVIDER_KEYCLOAK_DISPLAY_NAME=${OIDC_PROVIDER_KEYCLOAK_DISPLAY_NAME:-Keycloak}
+      - OIDC_PROVIDER_KEYCLOAK_SCOPES=${OIDC_PROVIDER_KEYCLOAK_SCOPES:-openid email profile}
+      - DATABASE_URL=file:/app/data/db/${SQLITE_DB_NAME:-instrada-ogm.db}
+      - APP_DEBUG_LEVEL=${APP_DEBUG_LEVEL:-SILENT}
+    volumes:
+      - ./data/db/:/app/data/db
+      - ./data/backups:/app/data/backups
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.ogm.rule=Host(`${DOMAIN:-your-instrada-ogm.com}`)"
+      - "traefik.http.routers.ogm.entrypoints=websecure"
+      - "traefik.http.routers.ogm.tls.certresolver=letsencrypt"
+      - "traefik.http.services.ogm.loadbalancer.server.port=3000"
+      # Note: Headers middleware is defined in traefik/runtime/config.yml
+    depends_on:
+      - traefik
+
+  # ==========================================================================
+  # InstradaOGM Application (PostgreSQL Profile)
+  # ==========================================================================
+  instrada-ogm-postgres:
+    image: rdeangel/instrada-ogm-postgres:${NEXT_PUBLIC_APP_VERSION:-latest}
+    container_name: instrada-ogm
+    profiles: [ "postgres" ]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_APP_VERSION=${NEXT_PUBLIC_APP_VERSION:-latest}
+        - BACKUP_ENCRYPTION_SECRET_KEY="your_encryption_key_here_64_chars"
+        - PRISMA_SCHEMA_FILE=schema.postgres.prisma
+        - PRISMA_MIGRATIONS_DIR=migrations-postgres
+        - DATABASE_URL=postgresql://user:password@localhost:5432/instrada-ogm_build?schema=public
+        - APP_DEBUG_LEVEL=${APP_DEBUG_LEVEL}
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    networks:
+      - instradaogm_app_network
+    env_file:
+      - .env
+    environment:
+      - OPNSENSE_URL=${OPNSENSE_URL}
+      - OPNSENSE_API_KEY=${OPNSENSE_API_KEY}
+      - OPNSENSE_API_SECRET=${OPNSENSE_API_SECRET}
+      - SKIP_SSL_VERIFICATION=${SKIP_SSL_VERIFICATION}
+      - ALLOW_HTTP=${ALLOW_HTTP}
+      - INTERNAL_APP_URL=${INTERNAL_APP_URL}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - NEXTAUTH_URL=${NEXTAUTH_URL}
+      - PORT=3000
+      - AUTH_ALLOW_LOCAL_LOGIN=${AUTH_ALLOW_LOCAL_LOGIN:-true}
+      - AUTH_ALLOW_OIDC_LOGIN=${AUTH_ALLOW_OIDC_LOGIN:-false}
+      - SSO_MAX_AGE=${SSO_MAX_AGE:-2592000}
+      - BACKUP_ENCRYPTION_SECRET_KEY=${BACKUP_ENCRYPTION_SECRET_KEY}
+      - OIDC_PROVIDER_AUTHENTIK_ENABLED=${OIDC_PROVIDER_AUTHENTIK_ENABLED:-false}
+      - OIDC_PROVIDER_AUTHENTIK_CLIENT_ID=${OIDC_PROVIDER_AUTHENTIK_CLIENT_ID:-}
+      - OIDC_PROVIDER_AUTHENTIK_CLIENT_SECRET=${OIDC_PROVIDER_AUTHENTIK_CLIENT_SECRET:-}
+      - OIDC_PROVIDER_AUTHENTIK_ISSUER=${OIDC_PROVIDER_AUTHENTIK_ISSUER:-}
+      - OIDC_PROVIDER_AUTHENTIK_DISPLAY_NAME=${OIDC_PROVIDER_AUTHENTIK_DISPLAY_NAME:-Authentik}
+      - OIDC_PROVIDER_AUTHENTIK_SCOPES=${OIDC_PROVIDER_AUTHENTIK_SCOPES:-openid email profile}
+      - OIDC_PROVIDER_KEYCLOAK_ENABLED=${OIDC_PROVIDER_KEYCLOAK_ENABLED:-false}
+      - OIDC_PROVIDER_KEYCLOAK_CLIENT_ID=${OIDC_PROVIDER_KEYCLOAK_CLIENT_ID:-}
+      - OIDC_PROVIDER_KEYCLOAK_CLIENT_SECRET=${OIDC_PROVIDER_KEYCLOAK_CLIENT_SECRET:-}
+      - OIDC_PROVIDER_KEYCLOAK_ISSUER=${OIDC_PROVIDER_KEYCLOAK_ISSUER:-}
+      - OIDC_PROVIDER_KEYCLOAK_DISPLAY_NAME=${OIDC_PROVIDER_KEYCLOAK_DISPLAY_NAME:-Keycloak}
+      - OIDC_PROVIDER_KEYCLOAK_SCOPES=${OIDC_PROVIDER_KEYCLOAK_SCOPES:-openid email profile}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:?POSTGRES_USER is required}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@${POSTGRES_HOST:-db}:${POSTGRES_PORT:-5432}/${POSTGRES_DB:?POSTGRES_DB is required}?schema=public
+      - APP_DEBUG_LEVEL=${APP_DEBUG_LEVEL:-SILENT}
+    volumes:
+      - ./data/backups:/app/data/backups
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.ogm.rule=Host(`${DOMAIN:-your-instrada-ogm.com}`)"
+      - "traefik.http.routers.ogm.entrypoints=websecure"
+      - "traefik.http.routers.ogm.tls.certresolver=letsencrypt"
+      - "traefik.http.services.ogm.loadbalancer.server.port=3000"
+      # Note: Headers middleware is defined in traefik/runtime/config.yml
+    depends_on:
+      db:
+        condition: service_healthy
+      traefik:
+        condition: service_started
+
+  # ==========================================================================
+  # PostgreSQL Database (PostgreSQL Profile)
+  # ==========================================================================
+  db:
+    image: postgres:16-alpine
+    container_name: instrada-ogm-postgres-db
+    profiles: [ "postgres" ]
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - instradaogm_app_network
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:?POSTGRES_USER is required} -d ${POSTGRES_DB:?POSTGRES_DB is required}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  postgres_data:
+
+    # =============================================================================
+    # Networks
+    # =============================================================================
+networks:
+  instradaogm_app_network:
+    name: instradaogm_app_network
+    driver: bridge

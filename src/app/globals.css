@@ -1,0 +1,419 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overscroll-behavior-y: contain;
+  /* Prevent pull-to-refresh on mobile */
+}
+
+/* Base mobile size (iPhone 16, Pro Max, etc.) */
+@media (max-width: 600px) {
+  html {
+    font-size: 15px !important;
+    -webkit-text-size-adjust: 100%;
+  }
+}
+
+@layer utilities {
+  .h-dynamic-screen {
+    height: 100vh;
+    /* Fallback for browsers that don't support dvh */
+    height: 100dvh;
+    /* Dynamic viewport height for mobile browsers */
+  }
+}
+
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+}
+
+code,
+pre,
+kbd,
+samp {
+  font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, 'DejaVu Sans Mono', monospace;
+}
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 240 10% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 3.9%;
+    --primary: 197 71% 52%;
+    /* OPNsense Blue */
+    --primary-foreground: 0 0% 100%;
+    /* White text on OPNsense Blue */
+    --secondary: 240 4.8% 95.9%;
+    /* White theme hoever over grey color */
+    --secondary-foreground: 240 5.9% 10%;
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%;
+    --accent: 240 4.8% 95.9%;
+    /* Darkened light theme accent for better hover visibility */
+    --accent-foreground: 240 5.9% 10%;
+    /* Changed to dark foreground for contrast with accent background */
+    --destructive: 0 84.2% 50%;
+    /* Adjusted red for better visibility in light mode */
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 5.9% 90%;
+    --input: 240 5.9% 90%;
+    --ring: 197 71% 52%;
+    /* Ring color to match primary */
+    --chart-1: 12 76% 61%;
+    --chart-2: 173 58% 39%;
+    --chart-3: 197 37% 24%;
+    --chart-4: 43 74% 66%;
+    --chart-5: 27 87% 67%;
+    --radius: 0.5rem;
+    --success: 140 60% 90%;
+    /* Light green background */
+    --success-foreground: 140 50% 20%;
+    /* Dark green text */
+    --success-border: 140 50% 70%;
+    /* Medium green border */
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 0 0% 85%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+    --darker-green: 100 40% 40%;
+    /* Discolored green for VPN Connected status */
+    --darker-red: 0 60% 40%;
+    /* Discolored red for VPN Disconnected status */
+    --warning: 38 92% 50%;
+    /* Orange for warning/conflict */
+    --warning-foreground: 0 0% 9%;
+    /* Dark text on orange for light theme */
+    --warning-border: 38 92% 40%;
+    /* Darker orange border */
+  }
+
+  .dark {
+    --background: 240 10% 3.9%;
+    --foreground: 0 0% 98%;
+    --card: 240 10% 3.9%;
+    --card-foreground: 0 0% 98%;
+    --popover: 240 10% 3.9%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 197 71% 52%;
+    /* OPNsense Blue - consistent for branding */
+    --primary-foreground: 0 0% 100%;
+    /* White text on OPNsense Blue */
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
+    --accent: 240 3.7% 15.9%;
+    /* Changed from Adjusted Green to match dark secondary */
+    --accent-foreground: 0 0% 98%;
+    /* Changed to match dark secondary-foreground */
+    --destructive: 0 62.8% 50%;
+    /* Adjusted red for better visibility in dark mode */
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 3.7% 26%;
+    --input: 240 3.7% 26%;
+    --ring: 197 71% 62%;
+    /* Lighter ring for dark mode based on primary */
+    --chart-1: 220 70% 50%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 30 80% 55%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
+    --success: 140 50% 20%;
+    /* Dark green background */
+    --success-foreground: 140 60% 90%;
+    /* Light green text */
+    --success-border: 140 50% 30%;
+    /* Darker green border */
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+    --darker-green: 100 40% 30%;
+    /* Discolored green for VPN Connected status */
+    --darker-red: 0 60% 30%;
+    /* Discolored red for VPN Disconnected status */
+    --warning: 38 92% 40%;
+    /* Darker orange for warning/conflict in dark mode */
+    --warning-foreground: 0 0% 98%;
+    /* Light text on orange */
+    --warning-border: 38 92% 30%;
+    /* Even darker orange border */
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+
+  /* Responsive container that uses standard container on smaller screens
+     but allows full width with padding on large screens */
+  .container-responsive {
+    @apply w-full mx-auto px-4;
+  }
+
+  /* Small screens: standard container behavior */
+  @media (min-width: 640px) {
+    .container-responsive {
+      @apply max-w-screen-sm px-6;
+    }
+  }
+
+  @media (min-width: 768px) {
+    .container-responsive {
+      @apply max-w-screen-md px-8;
+    }
+  }
+
+  /* 1024-1279px: Fixed padding, full width to maximize card space */
+  @media (min-width: 1024px) and (max-width: 1279px) {
+    .container-responsive {
+      @apply max-w-none px-8;
+    }
+  }
+
+  /* 1280px+: Standard behavior */
+  @media (min-width: 1280px) {
+    .container-responsive {
+      @apply max-w-screen-lg px-8;
+    }
+  }
+
+  /* Large screens: full width with generous padding */
+  @media (min-width: 1280px) {
+    .container-responsive {
+      @apply max-w-none px-12;
+    }
+  }
+
+  @media (min-width: 1536px) {
+    .container-responsive {
+      @apply max-w-none px-16;
+    }
+  }
+
+  /* Ensure buttons are always clickable */
+  .analytics-button {
+    position: relative;
+    z-index: 10 !important;
+    pointer-events: auto !important;
+    cursor: pointer !important;
+  }
+
+  /* Fix for analytics cards scrolling */
+  .analytics-scroll-area {
+    max-height: calc(100vh - 200px) !important;
+    overflow-y: auto !important;
+    overflow-x: hidden;
+  }
+
+  /* Ensure scrollable content has proper styling */
+  .analytics-content {
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted-foreground)) transparent;
+    position: relative;
+  }
+
+  /* Webkit scrollbar styling */
+  .analytics-content::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .analytics-content::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .analytics-content::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--muted-foreground));
+    border-radius: 3px;
+  }
+
+  .analytics-content::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(var(--foreground));
+  }
+
+  /* Reusable custom scrollbar styling for any element */
+  .custom-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted-foreground)) transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--muted-foreground));
+    border-radius: 3px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(var(--foreground));
+  }
+
+  /* Force button clickability */
+  .analytics-button,
+  .analytics-button * {
+    pointer-events: auto !important;
+    cursor: pointer !important;
+  }
+
+  /* Ensure buttons are above all other content */
+  .analytics-button {
+    isolation: isolate;
+    transform: translateZ(0);
+  }
+
+  /* Comprehensive tooltip opacity fix */
+  [data-radix-tooltip-content] {
+    opacity: 1 !important;
+    background-color: hsl(var(--popover)) !important;
+    color: hsl(var(--popover-foreground)) !important;
+    border: 1px solid hsl(var(--border)) !important;
+    z-index: 9999 !important;
+  }
+
+  /* Fix for light theme */
+  :root [data-radix-tooltip-content] {
+    background-color: white !important;
+    color: hsl(0 0% 3.9%) !important;
+  }
+
+  /* Fix for dark theme */
+  .dark [data-radix-tooltip-content] {
+    background-color: hsl(0 0% 3.9%) !important;
+    color: hsl(0 0% 98%) !important;
+  }
+
+  /* More aggressive tooltip opacity fix for all children */
+  [data-radix-tooltip-content] *,
+  [data-radix-tooltip-content] p,
+  [data-radix-tooltip-content] span,
+  [data-radix-tooltip-content] div {
+    opacity: 1 !important;
+    color: inherit !important;
+  }
+
+  /* Ensure tooltip portal container doesn't inherit opacity */
+  [data-radix-portal] {
+    opacity: 1 !important;
+  }
+
+  /* Additional fix for tooltip content wrapper */
+  [data-radix-tooltip-content]>* {
+    opacity: 1 !important;
+  }
+}
+
+/* Styles for react-select */
+.react-select-container .react-select__control {
+  @apply bg-background border-input text-foreground rounded-md shadow-sm;
+  min-height: 38px;
+  /* Match shadcn input height */
+}
+
+.react-select-container .react-select__control--is-focused {
+  @apply border-primary ring-1 ring-primary;
+  box-shadow: none;
+  /* Override default react-select box-shadow */
+}
+
+.react-select-container .react-select__placeholder {
+  @apply text-muted-foreground;
+}
+
+.react-select-container .react-select__single-value {
+  @apply text-foreground;
+}
+
+.react-select-container .react-select__indicator-separator {
+  @apply bg-border;
+}
+
+.react-select-container .react-select__dropdown-indicator {
+  @apply text-muted-foreground hover:text-foreground;
+}
+
+.react-select-container .react-select__clear-indicator {
+  @apply text-muted-foreground hover:text-foreground;
+}
+
+.react-select-container .react-select__menu {
+  @apply bg-popover border border-border rounded-md shadow-lg;
+  z-index: 50;
+  /* Ensure dropdown is above other elements */
+}
+
+.react-select-container .react-select__menu-list {
+  @apply p-1;
+}
+
+.react-select-container .react-select__option {
+  @apply text-foreground rounded-sm px-2 py-1 cursor-pointer;
+}
+
+.react-select-container .react-select__option--is-focused {
+  @apply bg-accent text-accent-foreground;
+}
+
+.react-select-container .react-select__option--is-selected {
+  @apply bg-primary text-primary-foreground;
+}
+
+/* Styles from NetworkGroupsCard.module.css */
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+
+  100% {
+    transform: translateX(400%);
+  }
+}
+
+.flag-icon {
+  vertical-align: middle;
+  line-height: 1em;
+  /* Ensure line height matches font size */
+}
