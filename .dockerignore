@@ -107,3 +107,6 @@ Dockerfile*
 # Git attributes and hooks
 .gitattributes
 .git-blame-ignore-revs
+
+# Large logo files (not needed in production)
+public/images/512x512/
