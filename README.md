@@ -174,10 +174,12 @@ Once installed:
 
 ### 🏢 **Small Business & IT Teams**
 - **Employee Device Management**: Control which devices can access company resources
-- **Remote Work Support**: Manage VPN access for remote employees without client software
 - **Compliance & Security**: Meet security requirements with detailed audit logging
 - **Incident Response**: Instantly isolate compromised devices by changing group membership
-- **Network Segmentation**: Implement zero-trust network principles with ease
+
+> [!NOTE]
+> **Security Architecture**: This software manages firewall policies mostly through group memberships. Overall network security depends on your underlying network design, hardware capabilities, firewall configuration and security policies. 
+InstradaOGM provides the management layer—you need the configure the underlying rules in OPNsense.
 
 ---
 
