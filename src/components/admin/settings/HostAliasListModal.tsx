@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -15,6 +15,9 @@ import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Search, X, Router, Network, Activity, Info } from 'lucide-react';
 import { StatusDotWithTooltip, getHostAliasStatusColor } from '@/components/ui/status-dot';
+import { PaginationControls } from '@/components/ui/pagination-controls';
+import { useIsPhone } from '@/hooks/use-mobile';
+import { useLocalStorage } from '@/hooks/use-local-storage';
 
 interface HostAlias {
   uuid: string;
@@ -61,20 +64,60 @@ export function HostAliasListModal({
   const [searchTerm, setSearchTerm] = useState('');
   const [helpDialogOpen, setHelpDialogOpen] = useState(false);
 
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useLocalStorage<number | 'ALL'>('host-alias-modal-page-size', 25);
+  const [totalPages, setTotalPages] = useState(1);
+  const [displayedAliases, setDisplayedAliases] = useState<HostAlias[]>([]);
+  const isPhone = useIsPhone();
 
 
-  // Filter aliases based on search term
-  const filteredAliases = hostAliases.filter(alias =>
-    alias.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    alias.content.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    alias.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (alias.detectedMac && alias.detectedMac.toLowerCase().includes(searchTerm.toLowerCase())) ||
-    (alias.detectedVendor && alias.detectedVendor.toLowerCase().includes(searchTerm.toLowerCase())) ||
-    alias.memberOfGroups.some(group => 
-      group.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (group.friendlyName && group.friendlyName.toLowerCase().includes(searchTerm.toLowerCase()))
-    )
-  );
+
+  // Filter aliases based on search term - memoized to prevent infinite loop
+  const filteredAliases = useMemo(() => {
+    return hostAliases.filter(alias =>
+      alias.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      alias.content.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      alias.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (alias.detectedMac && alias.detectedMac.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (alias.detectedVendor && alias.detectedVendor.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      alias.memberOfGroups.some(group =>
+        group.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (group.friendlyName && group.friendlyName.toLowerCase().includes(searchTerm.toLowerCase()))
+      )
+    );
+  }, [hostAliases, searchTerm]);
+
+  // Calculate total pages when filtered results or page size changes
+  useEffect(() => {
+    const newTotalPages = pageSize === 'ALL' ? 1 : Math.ceil(filteredAliases.length / (pageSize as number));
+    setTotalPages(newTotalPages);
+  }, [filteredAliases.length, pageSize]);
+
+  // Handle pagination - update displayed aliases
+  useEffect(() => {
+    if (pageSize === 'ALL') {
+      setDisplayedAliases(filteredAliases);
+      return;
+    }
+
+    // Mobile: Load More mode - show cumulative items from page 1 to currentPage
+    if (isPhone) {
+      const endIndex = currentPage * (pageSize as number);
+      setDisplayedAliases(filteredAliases.slice(0, endIndex));
+      return;
+    }
+
+    // Desktop: Show only current page
+    const startIndex = (currentPage - 1) * (pageSize as number);
+    const endIndex = startIndex + (pageSize as number);
+    setDisplayedAliases(filteredAliases.slice(startIndex, endIndex));
+  }, [filteredAliases, currentPage, pageSize, isPhone]);
+
+  // Reset to page 1 when search term changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
 
   const getCategoryColor = (aliasCategory?: string) => {
     switch (aliasCategory) {
@@ -168,8 +211,8 @@ export function HostAliasListModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[80vh] flex flex-col bg-card border border-border">
-        <DialogHeader className="border-b border-border pb-4">
+      <DialogContent className="max-w-4xl h-[80vh] flex flex-col bg-card border border-border p-0 gap-0">
+        <DialogHeader className="border-b border-border pb-4 px-6 pt-6 flex-shrink-0">
           <DialogTitle className="flex items-center gap-2 text-card-foreground">
             <Router className="w-5 h-5 text-primary" />
             {title}
@@ -227,8 +270,8 @@ export function HostAliasListModal({
         </DialogHeader>
 
         {/* Search */}
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+        <div className="relative flex-shrink-0 px-6 py-4">
+          <Search className="absolute left-9 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
           <Input
             placeholder="Search by name, IP, MAC, vendor, or group..."
             value={searchTerm}
@@ -240,7 +283,7 @@ export function HostAliasListModal({
               variant="ghost"
               size="sm"
               onClick={() => setSearchTerm('')}
-              className="absolute right-1 top-1/2 transform -translate-y-1/2 h-8 w-8 p-0 hover:bg-muted"
+              className="absolute right-7 top-1/2 transform -translate-y-1/2 h-8 w-8 p-0 hover:bg-muted"
             >
               <X className="w-4 h-4" />
             </Button>
@@ -249,107 +292,127 @@ export function HostAliasListModal({
 
         {/* Results count */}
         {searchTerm && (
-          <div className="text-sm text-muted-foreground">
+          <div className="text-sm text-muted-foreground flex-shrink-0 px-6 pb-3">
             Showing {filteredAliases.length} of {hostAliases.length} aliases
           </div>
         )}
 
-
-
-        {/* Host Aliases List */}
-        <ScrollArea className="flex-1 pr-4">
-          <div className="space-y-3">
-            {filteredAliases.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                {searchTerm ? 'No aliases match your search criteria.' : 'No aliases found.'}
-              </div>
-            ) : (
-              filteredAliases.map((alias) => (
-                <div
-                  key={alias.uuid}
-                  className="border border-border rounded-lg p-4 hover:bg-muted/50 transition-colors bg-card"
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      {/* Header with name and category */}
-                      <div className="flex items-center gap-2 mb-2">
-                        <StatusDotWithTooltip
-                          color={getHostAliasStatusColor(
-                            alias.enabled === '1',
-                            !!alias.detectedMac
+        {/* Host Aliases List - Scrollable Area */}
+        <div className="flex-1 min-h-0 overflow-hidden px-6 py-4">
+          <ScrollArea className="h-full">
+            <div className="space-y-3 pr-4">
+              {filteredAliases.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  {searchTerm ? 'No aliases match your search criteria.' : 'No aliases found.'}
+                </div>
+              ) : (
+                displayedAliases.map((alias) => (
+                  <div
+                    key={alias.uuid}
+                    className="border border-border rounded-lg p-4 hover:bg-muted/50 transition-colors bg-card"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        {/* Header with name and category */}
+                        <div className="flex items-center gap-2 mb-2">
+                          <StatusDotWithTooltip
+                            color={getHostAliasStatusColor(
+                              alias.enabled === '1',
+                              !!alias.detectedMac
+                            )}
+                            tooltip={getStatusTooltip(alias)}
+                            size="sm"
+                          />
+                          <h4 className="font-medium text-lg">{alias.name}</h4>
+                          {alias.category && category === 'total' && (
+                            <Badge className={`text-xs ${getCategoryColor(alias.category)}`}>
+                              {getCategoryIcon(alias.category)}
+                              <span className="ml-1 capitalize">{alias.category}</span>
+                            </Badge>
                           )}
-                          tooltip={getStatusTooltip(alias)}
-                          size="sm"
-                        />
-                        <h4 className="font-medium text-lg">{alias.name}</h4>
-                        {alias.category && category === 'total' && (
-                          <Badge className={`text-xs ${getCategoryColor(alias.category)}`}>
-                            {getCategoryIcon(alias.category)}
-                            <span className="ml-1 capitalize">{alias.category}</span>
+                          <Badge
+                            variant="outline"
+                            className={alias.enabled === '1'
+                              ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30'
+                              : 'bg-slate-500/10 text-slate-700 dark:text-slate-300 border-slate-500/30'
+                            }
+                          >
+                            {alias.enabled === '1' ? 'Enabled' : 'Disabled'}
                           </Badge>
-                        )}
-                        <Badge
-                          variant="outline"
-                          className={alias.enabled === '1'
-                            ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30'
-                            : 'bg-slate-500/10 text-slate-700 dark:text-slate-300 border-slate-500/30'
-                          }
-                        >
-                          {alias.enabled === '1' ? 'Enabled' : 'Disabled'}
-                        </Badge>
-                      </div>
-
-                      {/* IP Address */}
-                      <div className="mb-2">
-                        <span className="text-sm font-medium text-muted-foreground">IP Address: </span>
-                        <code className="bg-muted px-2 py-1 rounded text-sm text-foreground">{alias.content}</code>
-                      </div>
-
-
-
-                      {/* MAC Address and Vendor */}
-                      {alias.detectedMac && (
-                        <div className="mb-2">
-                          <span className="text-sm font-medium text-muted-foreground">MAC Address: </span>
-                          <code className="bg-muted px-2 py-1 rounded text-sm text-foreground">{alias.detectedMac}</code>
-                          {alias.detectedVendor && (
-                            <span className="ml-2 text-sm text-muted-foreground">({alias.detectedVendor})</span>
-                          )}
                         </div>
-                      )}
 
-                      {/* Network Groups */}
-                      {alias.memberOfGroups && alias.memberOfGroups.length > 0 ? (
+                        {/* IP Address */}
                         <div className="mb-2">
-                          <span className="text-sm font-medium text-muted-foreground">Network Groups: </span>
-                          <div className="flex flex-wrap gap-1 mt-1">
-                            {alias.memberOfGroups.map((group, idx) => (
-                              <Badge
-                                key={`${group.uuid}-${idx}`}
-                                variant="outline"
-                                className="text-xs bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/30"
-                              >
-                                {group.friendlyName || group.name}
-                              </Badge>
-                            ))}
+                          <span className="text-sm font-medium text-muted-foreground">IP Address: </span>
+                          <code className="bg-muted px-2 py-1 rounded text-sm text-foreground">{alias.content}</code>
+                        </div>
+
+
+
+                        {/* MAC Address and Vendor */}
+                        {alias.detectedMac && (
+                          <div className="mb-2">
+                            <span className="text-sm font-medium text-muted-foreground">MAC Address: </span>
+                            <code className="bg-muted px-2 py-1 rounded text-sm text-foreground">{alias.detectedMac}</code>
+                            {alias.detectedVendor && (
+                              <span className="ml-2 text-sm text-muted-foreground">({alias.detectedVendor})</span>
+                            )}
                           </div>
-                        </div>
-                      ) : (
-                        <div className="mb-2">
-                          <span className="text-sm font-medium text-muted-foreground">Network Groups: </span>
-                          <span className="text-sm text-muted-foreground">Not assigned to any groups</span>
-                        </div>
-                      )}
+                        )}
+
+                        {/* Network Groups */}
+                        {alias.memberOfGroups && alias.memberOfGroups.length > 0 ? (
+                          <div className="mb-2">
+                            <span className="text-sm font-medium text-muted-foreground">Network Groups: </span>
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {alias.memberOfGroups.map((group, idx) => (
+                                <Badge
+                                  key={`${group.uuid}-${idx}`}
+                                  variant="outline"
+                                  className="text-xs bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/30"
+                                >
+                                  {group.friendlyName || group.name}
+                                </Badge>
+                              ))}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="mb-2">
+                            <span className="text-sm font-medium text-muted-foreground">Network Groups: </span>
+                            <span className="text-sm text-muted-foreground">Not assigned to any groups</span>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))
-            )}
+                ))
+              )}
+            </div>
+          </ScrollArea>
+        </div>
+
+        {/* Pagination */}
+        {filteredAliases.length > 0 && (
+          <div className="py-4 border-t flex-shrink-0 px-6">
+            <PaginationControls
+              currentPage={currentPage}
+              totalPages={totalPages}
+              totalCount={hostAliases.length}
+              filteredCount={filteredAliases.length}
+              pageSize={pageSize}
+              onPageChange={setCurrentPage}
+              onPageSizeChange={(newSize) => {
+                setPageSize(newSize);
+                setCurrentPage(1);
+              }}
+              isLoadMoreMode={isPhone}
+              pageSizeOptions={[10, 25, 50, 100]}
+            />
           </div>
-        </ScrollArea>
+        )}
 
         {/* Footer */}
-        <div className="flex justify-end pt-4 border-t">
+        <div className="flex justify-end pt-4 border-t flex-shrink-0 px-6 pb-6">
           <Button onClick={onClose}>Close</Button>
         </div>
       </DialogContent>
