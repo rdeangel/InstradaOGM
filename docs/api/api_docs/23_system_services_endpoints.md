@@ -660,112 +660,168 @@ curl -X GET "{{SERVER_URL}}/api/system/initialize" \
 - `totalDuration`: Total time taken for initialization
 - `errors`: Array of any errors that occurred
 
-## Session Usage Tracking
+## Client-Side Session Analytics
 
-### POST /api/internal/track-session-usage
+### POST /api/system/track-session-usage
 
-**Description**: Track user session usage for analytics and billing purposes. This internal endpoint is used to record session data, including duration, resources used, and other metrics.
+**Description**: Track client-side user interactions and session events for analytics purposes. This endpoint receives UI interaction events from the browser, including page views, clicks, form submissions, and API calls made by the client. Used to provide detailed analytics on user behavior and application usage patterns.
 
-**Authentication**: Required (internal service authentication)
+**Authentication**: Required (session-based authentication)
 
 **Role Access:**
-- **Internal Service**: ✅ Can track session usage
+- **USER**: ✅ Can track their own session events
+- **ADMIN**: ✅ Can track their own session events
+- **SUPER_ADMIN**: ✅ Can track their own session events
 
-#### Usage Case 1: Successful Session Usage Tracking
+**Note**: This endpoint is automatically called by the client-side `useSessionTracking` hook and does not require manual integration. Server-side API tracking is handled separately by the authentication middleware.
 
-**Scenario**: System tracks user session completion
+#### Usage Case 1: Track UI Click Event
+
+**Scenario**: User clicks a button in the application
 
 **Example Request**:
 ```bash
-curl -X POST "{{SERVER_URL}}/api/internal/track-session-usage" \
-  -H "Authorization: Bearer INTERNAL_SERVICE_KEY" \
+curl -X POST "{{SERVER_URL}}/api/system/track-session-usage" \
+  -H "Cookie: next-auth.session-token=..." \
   -H "Content-Type: application/json" \
   -d '{
-    "sessionId": "session-uuid-123",
-    "userId": "user-uuid-456",
-    "startTime": "2024-01-01T10:00:00Z",
-    "endTime": "2024-01-01T12:00:00Z",
-    "duration": 7200,
-    "service": "vpn",
-    "resources": {
-      "dataTransferred": 1073741824,
-      "connectionCount": 3,
-      "peakBandwidth": 10485760
-    },
+    "actionType": "click",
+    "endpoint": "/admin/settings",
+    "method": "CLICK",
+    "pageUrl": "https://example.com/admin/settings",
     "metadata": {
-      "clientType": "web",
-      "userAgent": "Mozilla/5.0...",
-      "ipAddress": "192.168.1.100"
-    }
+      "elementType": "button",
+      "elementId": "save-settings-btn",
+      "elementClass": "btn-primary",
+      "elementText": "Save Settings",
+      "clickX": 450,
+      "clickY": 320
+    },
+    "timestamp": "2024-01-01T12:00:00Z"
   }'
 ```
 
 **Success Response**:
 ```json
 {
-  "message": "Session usage tracked successfully",
-  "sessionId": "session-uuid-123",
-  "trackingId": "track-uuid-789",
-  "timestamp": "2024-01-01T12:00:00Z",
-  "processed": true,
-  "aggregated": false
+  "success": true
 }
 ```
 
-#### Usage Case 2: Batch Session Tracking
+#### Usage Case 2: Track Page View
 
-**Scenario**: System tracks multiple sessions in a single request
+**Scenario**: User navigates to a new page
 
 **Example Request**:
 ```bash
-curl -X POST "{{SERVER_URL}}/api/internal/track-session-usage" \
-  -H "Authorization: Bearer INTERNAL_SERVICE_KEY" \
+curl -X POST "{{SERVER_URL}}/api/system/track-session-usage" \
+  -H "Cookie: next-auth.session-token=..." \
   -H "Content-Type: application/json" \
   -d '{
-    "sessions": [
-      {
-        "sessionId": "session-uuid-123",
-        "userId": "user-uuid-456",
-        "duration": 3600,
-        "service": "vpn"
-      },
-      {
-        "sessionId": "session-uuid-124",
-        "userId": "user-uuid-457",
-        "duration": 1800,
-        "service": "api"
-      }
-    ]
+    "actionType": "page_view",
+    "endpoint": "/admin/monitoring-analytics",
+    "method": "GET",
+    "pageUrl": "https://example.com/admin/monitoring-analytics",
+    "referrer": "https://example.com/admin/dashboard",
+    "timestamp": "2024-01-01T12:00:00Z"
   }'
 ```
 
 **Success Response**:
 ```json
 {
-  "message": "Batch session usage tracking completed",
-  "processed": 2,
-  "failed": 0,
-  "trackingIds": ["track-uuid-789", "track-uuid-790"],
-  "timestamp": "2024-01-01T12:00:00Z"
+  "success": true
+}
+```
+
+#### Usage Case 3: Track API Call from Client
+
+**Scenario**: Client-side code makes an API request
+
+**Example Request**:
+```bash
+curl -X POST "{{SERVER_URL}}/api/system/track-session-usage" \
+  -H "Cookie: next-auth.session-token=..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "actionType": "api_call",
+    "endpoint": "/api/opnsense/host-aliases",
+    "method": "GET",
+    "statusCode": 200,
+    "responseTime": 245,
+    "pageUrl": "https://example.com/admin/host-aliases",
+    "timestamp": "2024-01-01T12:00:00Z"
+  }'
+```
+
+**Success Response**:
+```json
+{
+  "success": true
+}
+```
+
+#### Usage Case 4: Track Form Submission
+
+**Scenario**: User submits a form
+
+**Example Request**:
+```bash
+curl -X POST "{{SERVER_URL}}/api/system/track-session-usage" \
+  -H "Cookie: next-auth.session-token=..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "actionType": "form_submit",
+    "endpoint": "/admin/settings",
+    "method": "POST",
+    "pageUrl": "https://example.com/admin/settings",
+    "metadata": {
+      "formId": "global-settings-form",
+      "formClass": "settings-form",
+      "formAction": "/api/settings/global",
+      "formMethod": "POST"
+    },
+    "timestamp": "2024-01-01T12:00:00Z"
+  }'
+```
+
+**Success Response**:
+```json
+{
+  "success": true
 }
 ```
 
 **Request Fields**:
-- `sessionId` (string, required): Unique session identifier
-- `userId` (string, required): User ID who owns the session
-- `startTime` (string, required): Session start time (ISO 8601)
-- `endTime` (string, required): Session end time (ISO 8601)
-- `duration` (number, required): Session duration in seconds
-- `service` (string, required): Service type (vpn, api, web)
-- `resources` (object, optional): Resources used during session
-- `metadata` (object, optional): Additional session metadata
+- `actionType` (string, required): Type of action - one of: `api_call`, `page_view`, `form_submit`, `click`, `navigation`
+- `endpoint` (string, required): The endpoint or page path being tracked
+- `method` (string, required): HTTP method or action type (GET, POST, CLICK, etc.)
+- `statusCode` (number, optional): HTTP status code for API calls
+- `responseTime` (number, optional): Response time in milliseconds for API calls
+- `pageUrl` (string, optional): Full URL of the current page
+- `referrer` (string, optional): Referrer URL for page views
+- `metadata` (object, optional): Additional event-specific metadata (element details for clicks, form details for submissions, etc.)
+- `errorType` (string, optional): Error type if the action failed
+- `errorMessage` (string, optional): Error message if the action failed
+- `timestamp` (string, optional): Event timestamp (ISO 8601)
 
 **Response Fields**:
-- `message`: Status message
-- `sessionId`: ID of the tracked session
-- `trackingId`: Unique identifier for the tracking record
-- `processed`: Whether the session was successfully processed
-- `aggregated`: Whether the data was immediately aggregated
+- `success`: Boolean indicating whether the event was successfully tracked
+
+**Tracked Event Types**:
+- **page_view**: User navigates to a page (includes referrer and page URL)
+- **click**: User clicks an element (includes element details and click coordinates)
+- **form_submit**: User submits a form (includes form details)
+- **api_call**: Client makes an API request (includes status code and response time)
+- **navigation**: User navigates within the application
+
+**Analytics Integration**:
+This endpoint feeds data into:
+- Real-time Analytics Dashboard (active users, recent activity)
+- Session Analytics (user behavior patterns, page views, UI interactions)
+- Combined Analytics (comprehensive usage statistics)
+- Performance Analytics (response times, error rates)
+- Account Activity (user's personal activity timeline)
 
 ## Role-Based Access Control
 
@@ -871,16 +927,12 @@ All rate limited responses include the following headers:
   - Window: 1 hour sliding window
   - Requires ADMIN or SUPER_ADMIN role
 
-### Internal Endpoints
-- **GET /api/system/initialize**: 10 requests per hour per service
-  - System initialization operations
+### Session Analytics Endpoints
+- **POST /api/system/track-session-usage**: 10000 requests per hour per user
+  - High-volume client-side event tracking
   - Window: 1 hour sliding window
-  - Requires internal service authentication
-
-- **POST /api/internal/track-session-usage**: 10000 requests per hour per service
-  - High-volume session tracking
-  - Window: 1 hour sliding window
-  - Requires internal service authentication
+  - Requires session authentication
+  - Automatically called by client-side tracking hook
 
 **Best Practices for Handling Rate Limits:**
 

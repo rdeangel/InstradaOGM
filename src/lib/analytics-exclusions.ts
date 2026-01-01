@@ -29,7 +29,7 @@ const EXCLUDED_API_ENDPOINTS = [
   '/api/admin/mac-tracking/analytics',
 
   // Internal tracking endpoints
-  '/api/internal/track-session-usage',
+  '/api/system/track-session-usage',
 ];
 
 /**
@@ -112,12 +112,12 @@ export function shouldExcludePageFromAnalytics(pagePath: string): boolean {
   if (EXCLUDED_PAGE_PATTERNS.some(pattern => pagePath.startsWith(pattern))) {
     return true;
   }
-  
+
   // Pattern-based exclusions
   if (pagePath.includes('analytics') || pagePath.includes('monitoring')) {
     return true;
   }
-  
+
   return false;
 }
 

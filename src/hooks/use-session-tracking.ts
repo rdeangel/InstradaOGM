@@ -59,7 +59,7 @@ export function useSessionTracking(options: SessionTrackingOptions = {}) {
 
       // Use keepalive to ensure the request completes even if the page unloads
       // This prevents "Unexpected end of JSON input" errors from cancelled requests
-      const response = await fetch('/api/internal/track-session-usage', {
+      const response = await fetch('/api/system/track-session-usage', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -248,7 +248,7 @@ export function useSessionTracking(options: SessionTrackingOptions = {}) {
     window.fetch = async (...args) => {
       const [resource, config] = args;
       const url = typeof resource === 'string' ? resource :
-                  resource instanceof Request ? resource.url : resource.toString();
+        resource instanceof Request ? resource.url : resource.toString();
       const method = config?.method || 'GET';
 
       // Define endpoints to exclude from session tracking (meta-operations)
@@ -259,15 +259,15 @@ export function useSessionTracking(options: SessionTrackingOptions = {}) {
         '/api/admin/api-keys/analytics/system',    // System analytics
         '/api/admin/audit-logs',                   // Audit log viewing
         '/api/admin/audit-logs/stats',             // Audit log statistics
-        '/api/internal/track-session-usage',       // Session tracking endpoint
+        '/api/system/track-session-usage',       // Session tracking endpoint
         '/api/ui/config',                          // UI configuration endpoint
       ];
 
       // Helper function to check if endpoint should be excluded
       const shouldExcludeEndpoint = (endpoint: string): boolean => {
         return excludedEndpoints.some(excluded => endpoint === excluded) ||
-               endpoint.includes('/analytics/') ||  // Any analytics endpoint
-               endpoint.includes('/audit-logs/analytics/'); // Any audit analytics
+          endpoint.includes('/analytics/') ||  // Any analytics endpoint
+          endpoint.includes('/audit-logs/analytics/'); // Any audit analytics
       };
 
       // Only track API calls (not external requests or meta-operations)
@@ -350,7 +350,7 @@ export function useSessionTracking(options: SessionTrackingOptions = {}) {
         timestamp: new Date().toISOString(),
       });
     },
-    
+
     // Expose flush function for immediate sending
     flush: flushQueue,
   };

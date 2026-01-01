@@ -1886,7 +1886,7 @@ When creating API keys, you can configure custom rate limits:
 1. **API Key Isolation**: Each API key has independent rate limits
 2. **Sensitive Operation Limits**: Stricter limits for operations like password changes and 2FA management
 3. **Audit Logging**: All rate limit violations are logged for security monitoring
-4. **Usage Tracking**: API key usage is tracked for security and billing purposes
+4. **Usage Tracking**: API key usage is tracked for security and metering purposes
 5. **Key Revocation**: Rate limit violations may trigger API key review
 
 **Testing Rate Limits:**
