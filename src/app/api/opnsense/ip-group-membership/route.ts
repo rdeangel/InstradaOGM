@@ -8,6 +8,7 @@ import { prisma } from '@/lib/prisma';
 import type { ValidLocalNetwork } from '@/types/settings';
 import { Role } from '@/types/opnsense';
 import { isIpAllowedForSelfService } from '@/lib/network-utils';
+import { toJsonArrayOrUndefined } from '@/lib/utils';
  
 // Helper function to check if an IP is contained in an alias's content
 // This function uses the ipaddr.js library for robust IP and CIDR matching.
@@ -116,7 +117,7 @@ export async function GET(request: Request) {
   // For unauthenticated users, validate IP access for self-service
   if (!auth.user) {
     // Use global settings already fetched above
-    const allowedNetworks = (globalSettings?.allowedNetworks || []) as unknown as ValidLocalNetwork[];
+    const allowedNetworks = toJsonArrayOrUndefined<ValidLocalNetwork>(globalSettings?.allowedNetworks) || [];
 
     // Check if the IP is allowed for self-service operations
     const ipValidation = isIpAllowedForSelfService(
@@ -138,7 +139,7 @@ export async function GET(request: Request) {
       const globalSettings = await prisma.globalSettings.findFirst({
         orderBy: { id: 'asc' },
       });
-      const allowedNetworks = (globalSettings?.allowedNetworks || []) as unknown as ValidLocalNetwork[];
+      const allowedNetworks = toJsonArrayOrUndefined<ValidLocalNetwork>(globalSettings?.allowedNetworks) || [];
 
       // Check if the IP is allowed for self-service operations
       const ipValidation = isIpAllowedForSelfService(

@@ -10,6 +10,7 @@ import { fetchUnmanagedGroupFilterData, isHostInUnmanagedGroups } from '@/lib/un
 import { prisma } from '@/lib/prisma';
 import { isIpAllowedForSelfService } from '@/lib/network-utils';
 import type { ValidLocalNetwork } from '@/types/settings';
+import { toJsonArrayOrUndefined } from '@/lib/utils';
 
 interface OpnsenseAliasDetail {
   uuid?: string;
@@ -135,7 +136,7 @@ export async function POST(req: Request) {
         const globalSettings = await prisma.globalSettings.findFirst({
           orderBy: { id: 'asc' },
         });
-        const allowedNetworks = (globalSettings?.allowedNetworks || []) as unknown as ValidLocalNetwork[];
+        const allowedNetworks = toJsonArrayOrUndefined<ValidLocalNetwork>(globalSettings?.allowedNetworks) || [];
 
         // Check if the client IP is allowed for self-service operations
         const ipValidation = isIpAllowedForSelfService(

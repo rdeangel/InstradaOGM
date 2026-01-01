@@ -6,6 +6,7 @@ import { prisma } from '@/lib/prisma';
 import type { ValidLocalNetwork } from '@/types/settings';
 import { isIpAllowedForSelfService } from '@/lib/network-utils';
 import type { OpnsenseAliasDetailFromExport } from '@/types/opnsense';
+import { toJsonArrayOrUndefined } from '@/lib/utils';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -36,7 +37,7 @@ export async function GET(request: Request) {
         }), { status: 403 });
       }
 
-      const allowedNetworks = (globalSettings?.allowedNetworks || []) as unknown as ValidLocalNetwork[];
+      const allowedNetworks = toJsonArrayOrUndefined<ValidLocalNetwork>(globalSettings?.allowedNetworks) || [];
 
       // Check if the IP is allowed for self-service operations
       const ipValidation = isIpAllowedForSelfService(

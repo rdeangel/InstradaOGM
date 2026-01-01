@@ -9,7 +9,7 @@ import type { NetworkGroup, NetworkObject, OpnsenseAliasDetailFromExport } from 
 import type { CustomEmoji, CustomFlag, ValidLocalNetwork } from '@/types/settings';
 import type { User } from '@/types/opnsense';
 import type { OpnsenseAliasTableSizeDetail } from '@/lib/opnsense-api';
-import { toJsonArray } from '@/lib/utils';
+import { toJsonArray, toJsonArrayOrUndefined } from '@/lib/utils';
 import { isIpAllowedForSelfService } from '@/lib/network-utils';
 
 export async function GET(request: Request) {
@@ -26,7 +26,7 @@ export async function GET(request: Request) {
       const globalSettings = await prisma.globalSettings.findFirst({
         orderBy: { id: 'asc' },
       });
-      const allowedNetworks = (globalSettings?.allowedNetworks || []) as unknown as ValidLocalNetwork[];
+      const allowedNetworks = toJsonArrayOrUndefined<ValidLocalNetwork>(globalSettings?.allowedNetworks) || [];
 
       // Check if the client IP is allowed for self-service operations
       const ipValidation = isIpAllowedForSelfService(

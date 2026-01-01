@@ -7,6 +7,8 @@ import { logger } from '@/lib/logger';
 import path from 'path';
 import { promises as fs } from 'fs';
 import { getDataPath } from '@/lib/server/data-paths';
+import { toJsonArrayOrUndefined } from '@/lib/utils';
+import { ValidLocalNetwork } from '@/types/settings';
 
 type KeaDhcpv4ReservationRow = object;
 interface KeaLeases4Row { state: string; }
@@ -673,7 +675,7 @@ export async function GET(req: Request) {
             }
           })(),
         },
-        allowedNetworks: globalSettings?.allowedNetworks || [],
+        allowedNetworks: toJsonArrayOrUndefined<ValidLocalNetwork>(globalSettings?.allowedNetworks) || [],
         groupFilters: globalGroupFilters.map(filter => ({
           pattern: filter.pattern,
           description: filter.description || '',

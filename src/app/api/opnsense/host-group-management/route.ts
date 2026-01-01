@@ -21,6 +21,7 @@ import type { NetworkGroup } from '@/types/opnsense';
 import type { ValidLocalNetwork } from '@/types/settings';
 import { isIpAllowedForSelfService } from '@/lib/network-utils';
 import { fetchUnmanagedGroupFilterData, isHostInUnmanagedGroups } from '@/lib/unmanaged-group-utils';
+import { toJsonArrayOrUndefined } from '@/lib/utils';
 
 /**
  * API endpoint for managing host alias group assignments
@@ -344,7 +345,7 @@ export async function POST(request: Request) {
     const globalSettings = await prisma.globalSettings.findFirst({
       orderBy: { id: 'asc' },
     });
-    const allowedNetworks = (globalSettings?.allowedNetworks || []) as unknown as ValidLocalNetwork[];
+    const allowedNetworks = toJsonArrayOrUndefined<ValidLocalNetwork>(globalSettings?.allowedNetworks) || [];
 
     // Log the authentication method if user is authenticated
     const authMethod = auth.user

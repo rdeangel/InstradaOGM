@@ -6,6 +6,7 @@ import { prisma } from '@/lib/prisma';
 import { getCaseInsensitiveMode } from '@/lib/prisma-utils';
 import { exportAliases } from '@/lib/opnsense-api';
 import type { ValidLocalNetwork } from '@/types/settings';
+import { toJsonArrayOrUndefined } from '@/lib/utils';
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -63,7 +64,7 @@ export async function GET(request: NextRequest) {
 
     // Check if client IP is allowed for self-service operations
     const { isIpAllowedForSelfService } = await import('@/lib/network-utils');
-    const allowedNetworks = (globalSettings?.allowedNetworks || []) as unknown as ValidLocalNetwork[];
+    const allowedNetworks = toJsonArrayOrUndefined<ValidLocalNetwork>(globalSettings?.allowedNetworks) || [];
 
     const ipValidation = isIpAllowedForSelfService(
       clientIp || null,

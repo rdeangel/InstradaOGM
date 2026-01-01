@@ -8,6 +8,7 @@ import type { ValidLocalNetwork } from '@/types/settings';
 import { isIpAllowedForSelfService } from '@/lib/network-utils';
 import { prisma } from '@/lib/prisma';
 import { logApiAccess } from '@/lib/auditLog';
+import { toJsonArrayOrUndefined } from '@/lib/utils';
 
 export async function GET(request: Request) {
   return authenticateAndTrackRequest(request, async (auth) => {
@@ -30,7 +31,7 @@ export async function GET(request: Request) {
           }), { status: 403 });
         }
 
-        const allowedNetworks = (globalSettings?.allowedNetworks || []) as unknown as ValidLocalNetwork[];
+        const allowedNetworks = toJsonArrayOrUndefined<ValidLocalNetwork>(globalSettings?.allowedNetworks) || [];
 
         // Check if the IP is allowed for self-service operations
         const ipValidation = isIpAllowedForSelfService(

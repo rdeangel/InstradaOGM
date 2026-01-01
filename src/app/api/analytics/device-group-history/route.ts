@@ -4,6 +4,7 @@ import { authenticateRequest, handleAuthResponse } from '@/lib/auth-middleware';
 import { logger } from '@/lib/logger';
 import { isIpAllowedForSelfService } from '@/lib/network-utils';
 import type { ValidLocalNetwork } from '@/types/settings';
+import { toJsonArrayOrUndefined } from '@/lib/utils';
 
 export async function GET(request: Request) {
     const auth = await authenticateRequest(request);
@@ -58,7 +59,7 @@ export async function GET(request: Request) {
 
     // For unauthenticated users, enforce strict IP matching
     if (!auth.user && ipAddress) {
-        const allowedNetworks = (globalSettings?.allowedNetworks || []) as unknown as ValidLocalNetwork[];
+        const allowedNetworks = toJsonArrayOrUndefined<ValidLocalNetwork>(globalSettings?.allowedNetworks) || [];
 
         // Check if the requested IP is allowed for self-service operations
         const ipValidation = isIpAllowedForSelfService(
@@ -78,7 +79,7 @@ export async function GET(request: Request) {
         // For authenticated users, allow access to their own IP or permitted devices
         // If querying a different IP, validate it's allowed
         if (normalizedRequestedIp !== normalizedClientIp) {
-            const allowedNetworks = (globalSettings?.allowedNetworks || []) as unknown as ValidLocalNetwork[];
+            const allowedNetworks = toJsonArrayOrUndefined<ValidLocalNetwork>(globalSettings?.allowedNetworks) || [];
 
             const ipValidation = isIpAllowedForSelfService(
                 clientIp || null,
