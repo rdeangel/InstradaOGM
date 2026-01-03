@@ -1,0 +1,136 @@
+name: Build Pre-built Packages
+
+# When to run this workflow
+on:
+  # Trigger when a new release is published
+  release:
+    types: [published]
+  
+  # Allow manual triggering from GitHub UI
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g., v1.0.0)'
+        required: true
+        type: string
+# Permissions required for creating releases
+permissions:
+  contents: write
+
+# Define the jobs to run
+jobs:
+  # Build matrix for native amd64 builds
+  build-amd64:
+    name: Build ${{ matrix.db_type }} (amd64)
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        db_type: [sqlite, postgres]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.version || github.ref }}
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '23'
+      
+      - name: Switch to ${{ matrix.db_type }} schema
+        run: npm run db:switch:${{ matrix.db_type }}
+      
+      - name: Install dependencies
+        run: npm install
+      
+      - name: Generate Prisma client
+        run: npx prisma generate
+      
+      - name: Build
+        run: npm run build
+      
+      - name: Create Pre-built Package
+        # We run this immediately after build while .next/static and .next/server are present.
+        # This ensures the packaging script can include all necessary assets.
+        run: |
+          chmod +x scripts/create-prebuilt-package.sh
+          ./scripts/create-prebuilt-package.sh amd64 ${{ matrix.db_type }}
+      
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-${{ matrix.db_type }}-amd64
+          path: dist/*.tar.gz
+          retention-days: 1
+
+  # Build matrix for arm64 builds via QEMU emulation
+  build-arm64:
+    name: Build ${{ matrix.db_type }} (arm64)
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        db_type: [sqlite, postgres]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.version || github.ref }}
+      
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Build and Package (arm64)
+        # We build and package in the same step while all files are present on the runner.
+        run: |
+          docker run --rm --platform linux/arm64 \
+            -v ${{ github.workspace }}:/app \
+            -w /app \
+            node:23-slim \
+            bash -c "
+              apt-get update && apt-get install -y python3 make g++ git && \
+              npm run db:switch:${{ matrix.db_type }} && \
+              npm install && \
+              npx prisma generate && \
+              npm run build && \
+              chmod +x scripts/create-prebuilt-package.sh && \
+              ./scripts/create-prebuilt-package.sh arm64 ${{ matrix.db_type }}
+            "
+      
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-${{ matrix.db_type }}-arm64
+          path: dist/*.tar.gz
+          retention-days: 1
+
+  # Publish all packages to the release
+  publish-release:
+    name: Publish to Release
+    runs-on: ubuntu-latest
+    needs: [build-amd64, build-arm64]
+    
+    steps:
+      - name: Download all packages
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+          pattern: package-*
+          merge-multiple: true
+      
+      - name: List packages
+        run: ls -la dist/
+      
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.tar.gz
+          tag_name: ${{ github.event.release.tag_name || github.event.inputs.version }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

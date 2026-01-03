@@ -79,10 +79,20 @@ fi
 
 echo "✅ Schema matches detected database type."
 
+# Determine Prisma command (prefer local binary to avoid npx prompts)
+PRISMA_BINARY="./node_modules/.bin/prisma"
+if [ -f "$PRISMA_BINARY" ]; then
+    PRISMA_CMD="$PRISMA_BINARY"
+else
+    PRISMA_CMD="npx prisma"
+fi
+
+echo "Using Prisma command: $PRISMA_CMD"
+
 # 5. Run Migrations
 echo "Starting migration deployment..."
 
-if npx prisma migrate deploy; then
+if $PRISMA_CMD migrate deploy; then
     echo "✅ Database initialized successfully."
 else
     echo "⚠️  Migration deploy failed. Checking if we can mark existing migrations as applied..."
@@ -108,7 +118,7 @@ else
             if [ -d "$migration" ]; then
                 MIGRATION_NAME=$(basename "$migration")
                 echo "Attempting to mark migration as applied: $MIGRATION_NAME"
-                if npx prisma migrate resolve --applied "$MIGRATION_NAME" >/dev/null 2>&1; then
+                if $PRISMA_CMD migrate resolve --applied "$MIGRATION_NAME" >/dev/null 2>&1; then
                     echo "  ✔ Marked $MIGRATION_NAME as applied."
                 else
                     echo "  ℹ️  Could not mark $MIGRATION_NAME (already applied or error)."
@@ -118,7 +128,7 @@ else
         
         # Final sync to catch any drift
         echo "Syncing schema to ensure database state is correct..."
-        if npx prisma db push; then
+        if $PRISMA_CMD db push --accept-data-loss; then
              echo "✅ Database recovered and synced successfully."
         else
              echo "❌ Error: Failed to sync database."

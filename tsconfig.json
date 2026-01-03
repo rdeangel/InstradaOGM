@@ -43,7 +43,8 @@
   ],
   "exclude": [
     "node_modules",
-    "internal/**"
+    "internal/**",
+    "dist/**"
   ],
   "// Note": "This comment is added to force TypeScript re-evaluation - updated"
 }

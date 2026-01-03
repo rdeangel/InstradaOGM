@@ -1,6 +1,20 @@
 
 import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
+import * as dotenv from 'dotenv';
+import * as fs from 'fs';
+import * as path from 'path';
+
+// Load environment variables manually since this script is run directly via tsx/node
+const envFiles = ['.env.production', '.env.development', '.env'];
+for (const file of envFiles) {
+  const filePath = path.join(process.cwd(), file);
+  // eslint-disable-next-line security/detect-non-literal-fs-filename
+  if (fs.existsSync(filePath)) {
+    dotenv.config({ path: filePath });
+    break; // Stop after finding the highest priority file
+  }
+}
 
 const prisma = new PrismaClient();
 
