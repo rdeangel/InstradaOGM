@@ -1,6 +1,5 @@
 # ============================================
-# Optimized Multi-Stage Dockerfile for Next.js
-# Target: Reduce image size from ~1.1GB to ~300-400MB
+# Multi-Stage Dockerfile for Next.js
 # ============================================
 
 # 1. Base image with minimal system dependencies
@@ -111,20 +110,16 @@ RUN addgroup -g ${NODE_GID} -S nodejs && \
     adduser -S nextjs -u ${NODE_UID} -G nodejs && \
     chown nextjs:nodejs /app
 
-# Switch to nextjs user BEFORE installing dependencies
-USER nextjs
-
-# Install minimal runtime dependencies as nextjs user
-# Files are created with correct ownership from the start - no chown duplication!
+# Install minimal runtime dependencies as root to avoid ARM64 QEMU issues
+# Then chown to nextjs user for proper ownership
 RUN npm install --omit=dev \
     prisma@6.18.0 \
     tsx@4.16.2 \
     bcryptjs@2.4.3 \
     dotenv@16.5.0 && \
-    rm -rf /home/nextjs/.npm
+    rm -rf /root/.npm && \
+    chown -R nextjs:nodejs /app/node_modules
 
-# Switch back to root for remaining COPY operations
-USER root
 
 # Copy Next.js standalone output with ownership set during copy
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./

@@ -51,7 +51,6 @@ next-env.d.ts
 prisma/migrations/*.sql
 data/db/dev.db
 data/backups/*.aes
-package-lock.json
 data/db/dev.db-journal
 
 # IDE
