@@ -8,12 +8,42 @@
 
 ---
 
-## 📦 Docker Hub Images
+## 📦 Docker Images
 
-- **Image:** `rdeangel/instrada-ogm-sqlite`
-- **Tags:** `latest`, `X.X.X` (specific versions)
+InstradaOGM images are available from both **Docker Hub** and **GitHub Container Registry (GHCR)**. Both registries contain identical multi-architecture images supporting `linux/amd64` and `linux/arm64`.
+
+### Docker Hub
+- **SQLite Image:** `rdeangel/instrada-ogm-sqlite`
+- **Tags:** `latest`, `X.X.X` (specific versions, e.g., `1.0.1`)
 - **Repository (sqlite):** [Docker Hub - InstradaOGM SQLite](https://hub.docker.com/r/rdeangel/instrada-ogm-sqlite)
-- **Repository (postgres):** [Docker Hub - InstradaOGM PostgreSQL](https://hub.docker.com/r/rdeangel/instrada-ogm-postgres) 
+
+### GitHub Container Registry (GHCR)
+- **SQLite Image:** `ghcr.io/rdeangel/instrada-ogm-sqlite`
+- **Tags:** `latest`, `X.X.X` (specific versions, e.g., `1.0.1`)
+- **Repository (sqlite):** [GHCR - InstradaOGM SQLite](https://github.com/rdeangel/InstradaOGM/pkgs/container/instrada-ogm-sqlite)
+
+### Pulling Images
+
+**From Docker Hub (default):**
+```bash
+docker pull rdeangel/instrada-ogm-sqlite:latest
+```
+
+**From GitHub Container Registry:**
+```bash
+docker pull ghcr.io/rdeangel/instrada-ogm-sqlite:latest
+```
+
+**Specific version:**
+```bash
+# Docker Hub
+docker pull rdeangel/instrada-ogm-sqlite:1.0.1
+
+# GHCR
+docker pull ghcr.io/rdeangel/instrada-ogm-sqlite:1.0.1
+```
+
+> **Note:** All images are multi-architecture and will automatically pull the correct version for your platform (amd64 or arm64). 
 ---
 
 ## 🎯 Deployment Options

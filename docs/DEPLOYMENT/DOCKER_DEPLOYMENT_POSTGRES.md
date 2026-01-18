@@ -8,12 +8,42 @@
 
 ---
 
-## 📦 Docker Hub Images
+## 📦 Docker Images
 
-- **Image:** `rdeangel/instrada-ogm-postgres`
-- **Tags:** `latest`, `X.X.X` (specific versions)
+InstradaOGM images are available from both **Docker Hub** and **GitHub Container Registry (GHCR)**. Both registries contain identical multi-architecture images supporting `linux/amd64` and `linux/arm64`.
+
+### Docker Hub
+- **PostgreSQL Image:** `rdeangel/instrada-ogm-postgres`
+- **Tags:** `latest`, `X.X.X` (specific versions, e.g., `1.0.1`)
 - **Repository (postgres):** [Docker Hub - InstradaOGM PostgreSQL](https://hub.docker.com/r/rdeangel/instrada-ogm-postgres) 
-- **Repository (sqlite):** [Docker Hub - InstradaOGM SQLite](https://hub.docker.com/r/rdeangel/instrada-ogm-sqlite) 
+
+### GitHub Container Registry (GHCR)
+- **PostgreSQL Image:** `ghcr.io/rdeangel/instrada-ogm-postgres`
+- **Tags:** `latest`, `X.X.X` (specific versions, e.g., `1.0.1`)
+- **Repository (postgres):** [GHCR - InstradaOGM PostgreSQL](https://github.com/rdeangel/InstradaOGM/pkgs/container/instrada-ogm-postgres)
+
+### Pulling Images
+
+**From Docker Hub (default):**
+```bash
+docker pull rdeangel/instrada-ogm-postgres:latest
+```
+
+**From GitHub Container Registry:**
+```bash
+docker pull ghcr.io/rdeangel/instrada-ogm-postgres:latest
+```
+
+**Specific version:**
+```bash
+# Docker Hub
+docker pull rdeangel/instrada-ogm-postgres:1.0.1
+
+# GHCR
+docker pull ghcr.io/rdeangel/instrada-ogm-postgres:1.0.1
+```
+
+> **Note:** All images are multi-architecture and will automatically pull the correct version for your platform (amd64 or arm64). 
 
 ---
 
