@@ -16,6 +16,39 @@ import busboy from 'busboy';
 import { pipeline } from 'stream/promises';
 import { getDataPath } from '@/lib/server/data-paths';
 
+/**
+ * Redacts sensitive information from error objects before logging.
+ * This prevents password leakage when exec() errors contain the full command.
+ */
+function redactError(error: unknown): unknown {
+  if (error instanceof Error) {
+    const redactedError: Record<string, unknown> = {
+      message: redactConnectionString(error.message),
+      name: error.name,
+      stack: error.stack ? redactConnectionString(error.stack) : undefined,
+    };
+
+    // Redact any additional properties that might contain sensitive data
+    // Cast through unknown to avoid TypeScript error about incompatible types
+    const errorObj = error as unknown as Record<string, unknown>;
+    if (errorObj.cmd && typeof errorObj.cmd === 'string') {
+      redactedError.cmd = redactConnectionString(errorObj.cmd);
+    }
+    if (errorObj.code !== undefined) {
+      redactedError.code = errorObj.code;
+    }
+    if (errorObj.killed !== undefined) {
+      redactedError.killed = errorObj.killed;
+    }
+    if (errorObj.signal !== undefined) {
+      redactedError.signal = errorObj.signal;
+    }
+
+    return redactedError;
+  }
+  return error;
+}
+
 // Helper function to determine DB type
 const getDatabaseType = () => {
   const databaseUrl = process.env.DATABASE_URL;
@@ -77,9 +110,9 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: `Invalid action: ${action}. Use "backup" or "restore"` }, { status: 400 });
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      logger.error('Error in backup operation:', error);
-      logger.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+      const redactedError = redactError(error);
+      const errorMessage = error instanceof Error ? redactConnectionString(error.message) : 'Unknown error';
+      logger.error('Error in backup operation:', redactedError);
       await logAuditEvent({
         userId: auth.user.id,
         action: 'BACKUP_FAILURE',
@@ -445,7 +478,8 @@ async function handleRestoreFlexibleStreaming({ filename, uploadedFilePath, user
         // eslint-disable-next-line security/detect-child-process
         exec(command, (error, _stdout, stderr) => {
           if (error) {
-            logger.error(`SQLite restore exec error: ${error}`);
+            const redactedError = redactError(error);
+            logger.error('SQLite restore exec error:', redactedError);
             return reject(error);
           }
           if (stderr) {
@@ -476,8 +510,8 @@ async function handleRestoreFlexibleStreaming({ filename, uploadedFilePath, user
         // eslint-disable-next-line security/detect-child-process
         exec(terminateCommand, { env: { ...process.env, PGPASSWORD: password } }, (error, _stdout, stderr) => {
           if (error) {
-            const redactedCmd = error.cmd ? redactConnectionString(error.cmd) : 'N/A';
-            logger.warn(`Terminate connections warning. Command: ${redactedCmd}. Error: ${error.message}`);
+            const redactedError = redactError(error);
+            logger.warn('Terminate connections warning:', redactedError);
             // Don't reject - continue even if termination fails
           }
           if (stderr) {
@@ -495,9 +529,11 @@ async function handleRestoreFlexibleStreaming({ filename, uploadedFilePath, user
         // eslint-disable-next-line security/detect-child-process
         exec(dropCommand, { env: { ...process.env, PGPASSWORD: password } }, (error, _stdout, stderr) => {
           if (error) {
-            const redactedCmd = error.cmd ? redactConnectionString(error.cmd) : 'N/A';
-            logger.error(`Failed to drop database. Command: ${redactedCmd}. Error: ${error.message}`);
-            return reject(error);
+            const redactedError = redactError(error);
+            logger.error('Failed to drop database:', redactedError);
+            const sanitizedError = new Error(redactConnectionString(error.message));
+            sanitizedError.name = error.name;
+            return reject(sanitizedError);
           }
           if (stderr) {
             logger.warn(`Drop database stderr: ${stderr}`);
@@ -514,9 +550,11 @@ async function handleRestoreFlexibleStreaming({ filename, uploadedFilePath, user
         // eslint-disable-next-line security/detect-child-process
         exec(createCommand, { env: { ...process.env, PGPASSWORD: password } }, (error, _stdout, stderr) => {
           if (error) {
-            const redactedCmd = error.cmd ? redactConnectionString(error.cmd) : 'N/A';
-            logger.error(`Failed to create database. Command: ${redactedCmd}. Error: ${error.message}`);
-            return reject(error);
+            const redactedError = redactError(error);
+            logger.error('Failed to create database:', redactedError);
+            const sanitizedError = new Error(redactConnectionString(error.message));
+            sanitizedError.name = error.name;
+            return reject(sanitizedError);
           }
           if (stderr) {
             logger.warn(`Create database stderr: ${stderr}`);
@@ -533,9 +571,11 @@ async function handleRestoreFlexibleStreaming({ filename, uploadedFilePath, user
         // eslint-disable-next-line security/detect-child-process
         exec(restoreCommand, { env: { ...process.env, PGPASSWORD: password } }, (error, _stdout, stderr) => {
           if (error) {
-            const redactedCmd = error.cmd ? redactConnectionString(error.cmd) : 'N/A';
-            logger.error(`Failed to restore database. Command: ${redactedCmd}. Error: ${error.message}`);
-            return reject(error);
+            const redactedError = redactError(error);
+            logger.error('Failed to restore database:', redactedError);
+            const sanitizedError = new Error(redactConnectionString(error.message));
+            sanitizedError.name = error.name;
+            return reject(sanitizedError);
           }
           if (stderr) {
             logger.warn(`Restore stderr: ${stderr}`);
@@ -590,7 +630,8 @@ async function handleRestoreFlexibleStreaming({ filename, uploadedFilePath, user
       return NextResponse.json({ message: 'Database restored successfully.' });
     }
   } catch (error) {
-    logger.error('Failed to restore database:', error);
+    const redactedError = redactError(error);
+    logger.error('Failed to restore database:', redactedError);
 
     // Try to reconnect Prisma even on failure for ALL database types
     try {
@@ -598,7 +639,8 @@ async function handleRestoreFlexibleStreaming({ filename, uploadedFilePath, user
       await prisma.$connect();
       logger.info('Prisma reconnected after restore failure.');
     } catch (reconnectError) {
-      logger.error('Failed to reconnect Prisma after restore failure:', reconnectError);
+      const redactedReconnectError = redactError(reconnectError);
+      logger.error('Failed to reconnect Prisma after restore failure:', redactedReconnectError);
     }
 
     // Attempt to log the failure (might fail if reconnection failed)
@@ -609,7 +651,8 @@ async function handleRestoreFlexibleStreaming({ filename, uploadedFilePath, user
         reason: 'Database restore failed',
       });
     } catch (auditError) {
-      logger.error('Failed to write audit log for restore failure:', auditError);
+      const redactedAuditError = redactError(auditError);
+      logger.error('Failed to write audit log for restore failure:', redactedAuditError);
     }
 
     return NextResponse.json({ message: 'Failed to restore database.' }, { status: 500 });
@@ -779,9 +822,14 @@ async function handleBackup(userId: string, customFilename?: string) {
         // eslint-disable-next-line security/detect-child-process
         exec(command, { env: { ...process.env, PGPASSWORD: password } }, async (error, stdout, stderr) => {
           if (error) {
-            const redactedCmd = error.cmd ? redactConnectionString(error.cmd) : 'N/A';
-            logger.error(`exec error: Command failed: ${redactedCmd}. Error: ${error.message}`);
-            return reject(error);
+            // Redact the error before logging or rejecting
+            const redactedError = redactError(error);
+            logger.error('exec error:', redactedError);
+
+            // Create a sanitized error to reject with
+            const sanitizedError = new Error(redactConnectionString(error.message));
+            sanitizedError.name = error.name;
+            return reject(sanitizedError);
           }
           if (stderr) {
             logger.warn(`stderr: ${stderr}`);
@@ -827,9 +875,9 @@ async function handleBackup(userId: string, customFilename?: string) {
       filename: backupFileName,
     });
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    logger.error('Error in handleBackup:', error);
-    logger.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+    const redactedError = redactError(error);
+    const errorMessage = error instanceof Error ? redactConnectionString(error.message) : 'Unknown error';
+    logger.error('Error in handleBackup:', redactedError);
 
     await logAuditEvent({
       userId: userId,

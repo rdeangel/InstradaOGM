@@ -34,5 +34,11 @@ export function redactConnectionString(input: string): string {
   // Redact password in database URLs (e.g., postgresql://user:password@host:port/db)
   redacted = redacted.replace(/(:\/\/[^:]+:)([^@]+)(@)/g, '$1[REDACTED]$3');
 
+  // Redact username in database URLs (e.g., postgresql://user:password@host:port/db)
+  redacted = redacted.replace(/(:\/\/)([^:]+)(:)/g, '$1[REDACTED]$3');
+
+  // Redact -U username flag in PostgreSQL commands
+  redacted = redacted.replace(/(-U\s+)([^\s]+)/g, '$1[REDACTED]');
+
   return redacted;
 }
