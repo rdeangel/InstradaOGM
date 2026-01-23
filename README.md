@@ -663,18 +663,97 @@ While Traefik is recommended, InstradaOGM also supports:
 <div id="quick-start"></div>
 ## 🚀 Quick Start
 
-### 📋 **Prerequisites**
+Get InstradaOGM up and running in minutes! Choose the deployment method that best fits your needs:
+
+### ⚡ **Option 1: One-Line Install Script** (Fastest - Linux/WSL Only)
+
+**Perfect for:** Quick testing, home labs, and getting started fast with SQLite
+
+Run this single command on any Linux system or Windows WSL:
+
+```bash
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/rdeangel/InstradaOGM/refs/heads/main/scripts/install-instradaogm.sh)"
+```
+
+**What it does:**
+- ✅ Automatically installs all dependencies (Node.js v23, SQLite, etc.)
+- ✅ Downloads and installs the latest InstradaOGM release
+- ✅ Sets up systemd service for automatic startup
+- ✅ Guides you through OPNsense API configuration
+- ✅ Starts InstradaOGM immediately at `http://YOUR_SERVER_IP:3000`
+
+**Requirements:**
+- Linux system (Debian/Ubuntu/RHEL-based) or Windows WSL
+- Root/sudo privileges
+- Internet connection
+
+**Available Commands:**
+```bash
+# Install latest version
+sudo ./install-instradaogm.sh --latest
+
+# Update to latest version
+sudo ./install-instradaogm.sh --update
+
+# Reinstall (repair) current version
+sudo ./install-instradaogm.sh --reinstall
+
+# Uninstall completely
+sudo ./install-instradaogm.sh --uninstall
+
+# Clean up old backups
+sudo ./install-instradaogm.sh --clean-backups
+
+# Get help
+sudo ./install-instradaogm.sh --help
+```
+
+> [!NOTE]
+> This method uses SQLite and is ideal for testing and home labs. For production deployments with multiple users, consider Docker with PostgreSQL below.
+
+---
+
+### 🐳 **Option 2: Docker Deployment** (Recommended for Production)
+
+**Perfect for:** Production environments, scalability, and enterprise deployments
+
+We have created comprehensive, step-by-step guides for deploying InstradaOGM with Docker:
+
+#### 🏠 [SQLite Deployment (Recommended for Home/Small Labs)](docs/DEPLOYMENT/DOCKER_DEPLOYMENT_SQLITE.md)
+**Best for:** Home labs, testing, and small deployments (< 10 users).
+- ✅ Zero configuration required
+- ✅ Simple file-based database
+- ✅ Minimal resource usage
+- ✅ Easy backup and migration
+- [**View SQLite Guide →**](docs/DEPLOYMENT/DOCKER_DEPLOYMENT_SQLITE.md)
+
+#### 🏢 [PostgreSQL Deployment (Recommended for Production)](docs/DEPLOYMENT/DOCKER_DEPLOYMENT_POSTGRES.md)
+**Best for:** Production environments, businesses, and high-traffic setups.
+- ✅ High performance & concurrency
+- ✅ Enterprise-grade reliability
+- ✅ Advanced database features
+- ✅ Standard database tools
+- [**View PostgreSQL Guide →**](docs/DEPLOYMENT/DOCKER_DEPLOYMENT_POSTGRES.md)
+
+> [!TIP]
+> Both guides include complete instructions for **HTTP** (local development/home labs) and **HTTPS** (production with Traefik) deployments.
+
+#### 📄 [Deployment Overview & Decision Guide](docs/DEPLOYMENT/README.md)
+Not sure which one to pick? Check out our [Deployment Overview](docs/DEPLOYMENT/README.md) for a detailed comparison.
+
+---
+
+### 📋 **Prerequisites** (All Methods)
 
 Before installing InstradaOGM, ensure you have:
 
-- **🐳 Docker & Docker Compose**: Latest versions recommended
 - **🔥 OPNsense Firewall**: Version 23.1+ (preferred v25.1+) with API access enabled
 - **🔑 OPNsense API Credentials**: API key and secret (System > Access > Users > API Keys)
   
   <details>
   <summary><strong>📋 Required OPNsense API Permissions (Click to expand)</strong></summary>
   
-  The API user in OPNsense must have the following page permissions for InstradaOGM to function properly. (a few of these are probably not needed, but I have kept them just in case):
+  The API user in OPNsense must have the following page permissions for InstradaOGM to function properly:
   
   **Diagnostics:**
   - `page-diagnostics-arptable` - ARP table access for device discovery
@@ -716,30 +795,6 @@ Before installing InstradaOGM, ensure you have:
 
 - **🌐 Network Access**: Application must be able to reach your OPNsense firewall
 - **📡 Network Groups**: OPNsense Pre-configured network groups and firewall rules
-
-### 📦 **Docker Deployment**
-
-We have created comprehensive, step-by-step guides for deploying InstradaOGM. Please choose the guide that matches your needs:
-
-#### 🏠 [SQLite Deployment (Recommended for Home/Small Labs)](docs/DEPLOYMENT/DOCKER_DEPLOYMENT_SQLITE.md)
-**Best for:** Home labs, testing, and small deployments (< 10 users).
-- ✅ Zero configuration required
-- ✅ Simple file-based database
-- ✅ Minimal resource usage
-- [**View SQLite Guide →**](docs/DEPLOYMENT/DOCKER_DEPLOYMENT_SQLITE.md)
-
-#### 🏢 [PostgreSQL Deployment (Recommended for Production)](docs/DEPLOYMENT/DOCKER_DEPLOYMENT_POSTGRES.md)
-**Best for:** Production environments, businesses, and high-traffic setups.
-- ✅ High performance & concurrency
-- ✅ Enterprise-grade reliability
-- ✅ Standard database tools
-- [**View PostgreSQL Guide →**](docs/DEPLOYMENT/DOCKER_DEPLOYMENT_POSTGRES.md)
-
-> [!TIP]
-> Both guides include complete instructions for **HTTP** (local development/home labs) and **HTTPS** (production with Traefik) deployments.
-
-#### 📄 [Deployment Overview & Decision Guide](docs/DEPLOYMENT/README.md)
-Not sure which one to pick? Check out our [Deployment Overview](docs/DEPLOYMENT/README.md) for a detailed comparison.
 
 ## 🔧 Development & Customization
 

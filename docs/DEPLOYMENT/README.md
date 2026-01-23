@@ -48,7 +48,7 @@ Quick access to deployment guides for InstradaOGM using Docker.
 - Have > 10 concurrent users
 - Need high availability
 - Want advanced database features
-- Have adequate server resources (4GB+ RAM)
+- Have adequate server resources (Minimum 2GB RAM, 4GB+ recommended)
 
 ---
 
