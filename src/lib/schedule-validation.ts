@@ -1,4 +1,4 @@
-import { parseExpression } from 'cron-parser';
+import { CronExpressionParser } from 'cron-parser';
 import { getNetworkGroups } from './opnsense-api';
 import { logger } from './logger';
 import type { CreateScheduleRequest } from '@/types/schedule';
@@ -8,7 +8,7 @@ import type { CreateScheduleRequest } from '@/types/schedule';
  */
 export function validateCronExpression(expression: string): { valid: boolean; error?: string } {
   try {
-    parseExpression(expression);
+    CronExpressionParser.parse(expression);
     return { valid: true };
   } catch (error) {
     return {

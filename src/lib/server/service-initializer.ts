@@ -5,6 +5,7 @@ import { usageAggregationService } from '@/lib/usage-aggregation-service';
 import { macTrackingService } from '@/lib/mac-tracking-service';
 import { logsAnalyticsCleanupService } from '@/lib/logs-analytics-cleanup-service';
 import { updateCheckService } from '@/lib/update-check-service';
+import { scheduleExecutionService } from '@/lib/schedule-execution-service';
 import { prisma } from '@/lib/prisma';
 
 let servicesInitialized = false;
@@ -49,6 +50,10 @@ export async function initializeServices(): Promise<void> {
     await updateCheckService.start();
     logger.info('Update check service started');
 
+    // Start schedule execution service (always enabled)
+    scheduleExecutionService.start();
+    logger.info('Schedule execution service started');
+
     logger.info('Background services initialized successfully');
     servicesInitialized = true;
   } catch (error) {
@@ -81,6 +86,9 @@ export async function shutdownServices(): Promise<void> {
     // Stop the update check service
     updateCheckService.stop();
 
+    // Stop the schedule execution service
+    scheduleExecutionService.stop();
+
     logger.info('Background services shut down successfully');
     servicesInitialized = false;
   } catch (error) {
@@ -97,6 +105,7 @@ export function getServicesStatus(): {
   macTracking: { isRunning: boolean; intervalId: number | null; lastScanTime: Date | null };
   logsAnalyticsCleanup: { isRunning: boolean; cleanupTimeoutId: NodeJS.Timeout | null; cleanupIntervalId: NodeJS.Timeout | null };
   updateCheck: { isRunning: boolean; intervalId: NodeJS.Timeout | null; lastChecked: Date | null; hasUpdate: boolean };
+  scheduleExecution: { isRunning: boolean; precisionTimerId: NodeJS.Timeout | null; reconciliationIntervalId: NodeJS.Timeout | null; nextBoundaryAt: Date | null; lastExecutedAt: Date | null };
 } {
   return {
     initialized: servicesInitialized,
@@ -104,5 +113,6 @@ export function getServicesStatus(): {
     macTracking: macTrackingService.getStatus(),
     logsAnalyticsCleanup: logsAnalyticsCleanupService.getStatus(),
     updateCheck: updateCheckService.getStatus(),
+    scheduleExecution: scheduleExecutionService.getStatus(),
   };
 }
