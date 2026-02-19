@@ -1,12 +1,13 @@
 generator client {
   provider      = "prisma-client-js"
+  // Use the default output path within node_modules/@prisma/client
   output        = "../node_modules/.prisma/client"
-  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"] // Add target for runtime env
 }
-
+// This schema is used for building postgres Docker image build
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  url      = env("DATABASE_URL") // Make sure DATABASE_URL is set in your .env file
 }
 
 model Account {
@@ -15,17 +16,18 @@ model Account {
   type              String
   provider          String
   providerAccountId String
-  refresh_token     String?
-  access_token      String?
+  refresh_token     String? // @db.Text
+  access_token      String? // @db.Text
   expires_at        Int?
-  ext_expires_in    Int?
+  ext_expires_in    Int?    // Added to store Microsoft-specific extended expires in
   token_type        String?
   scope             String?
-  id_token          String?
+  id_token          String? // @db.Text
   session_state     String?
-  issuer            String?
-  externalGroups    Json?
-  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  issuer            String? // Added to store OIDC issuer
+  externalGroups    Json?   // Added to store external group identifiers (e.g., from OIDC)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
 }
@@ -39,31 +41,43 @@ model Session {
 }
 
 model User {
-  id                   String              @id @default(cuid())
-  name                 String?
-  username             String?             @unique
-  email                String?             @unique
-  emailVerified        DateTime?
-  image                String?
-  password             String?
-  role                 String              @default("USER")
-  createdAt            DateTime            @default(now())
-  updatedAt            DateTime            @updatedAt
-  lastActive           DateTime?
-  is2FAEnabled         Boolean             @default(false)
-  passwordResetToken   String?
-  passwordResetExpires DateTime?
-  totpSecret           String?
-  backupCodes          String?
-  mustChangePassword   Boolean             @default(false)
-  passwordChangedAt    DateTime?
-  accounts             Account[]
-  apiKeys              ApiKey[]
-  auditLogs            AuditLog[]
-  sessions             Session[]
-  sessionUsageEvents   SessionUsageEvent[]
-  sessionUsageStats    SessionUsageStats[]
-  groups               Group[]             @relation("GroupToUser")
+  id            String    @id @default(cuid())
+  name          String?
+  username      String?   @unique // Added for local authentication
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  password      String?   // Added for Credentials provider
+  accounts      Account[]
+  sessions      Session[]
+  role          String    @default("USER") // Changed Role enum to String. Allowed values: USER, ADMIN, SUPER_ADMIN, PENDING, SUSPENDED
+  createdAt     DateTime  @default(now()) // Added creation timestamp
+  updatedAt     DateTime  @updatedAt // Added update timestamp
+  lastActive    DateTime? // Added last active timestamp
+  is2FAEnabled  Boolean   @default(false) // Flag indicating if 2FA is enabled
+  passwordResetToken String? // Added for password reset functionality
+  passwordResetExpires DateTime? // Added for password reset functionality
+
+  // Password policy fields
+  mustChangePassword Boolean   @default(false) // Force password change on next login
+  passwordChangedAt  DateTime? // Track when password was last changed
+
+  // 2FA Fields (Placeholders, actual implementation might differ)
+  totpSecret    String?   // Encrypted TOTP secret. Consider storing this securely.
+  backupCodes   String?   // JSON array of hashed backup codes. Store securely.
+
+  // Many-to-many relationship with Group
+  groups Group[]
+
+  // One-to-many relationship with AuditLog
+  auditLogs AuditLog[] // Add relation to AuditLog model
+
+  // One-to-many relationship with ApiKey
+  apiKeys ApiKey[] // Add relation to ApiKey model
+
+  // Session usage tracking
+  sessionUsageStats   SessionUsageStats[]
+  sessionUsageEvents  SessionUsageEvent[]
 }
 
 model VerificationToken {
@@ -75,128 +89,150 @@ model VerificationToken {
 }
 
 model GroupFilterSetting {
-  id          String   @id @default(cuid())
+  id          String  @id @default(cuid())
   pattern     String
   description String?
-  type        String
+  type        String // "include" or "exclude"
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
 
 model SsoGroupMapping {
-  id           String   @id @default(cuid())
-  ssoProvider  String
-  ssoGroupName String
-  localGroupId String
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  localGroup   Group    @relation(fields: [localGroupId], references: [id])
+  id            String   @id @default(cuid())
+  ssoProvider   String   // e.g., "authentik", "microsoft"
+  ssoGroupName  String   // The name of the group from the SSO provider
+  localGroupId  String   // The ID of the local group it maps to
+  localGroup    Group    @relation(fields: [localGroupId], references: [id])
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   @@unique([ssoProvider, ssoGroupName])
 }
 
 model Group {
-  id                      String                       @id @default(cuid())
-  name                    String                       @unique
-  description             String?
-  createdAt               DateTime                     @default(now())
-  updatedAt               DateTime                     @updatedAt
-  permissionsLastModified DateTime                     @default(now())
-  hostAliasPermissions    GroupHostAliasPermission[]
-  groupSpecificFilters    GroupSpecificFilterSetting[]
-  ssoMappings             SsoGroupMapping[]
-  users                   User[]                       @relation("GroupToUser")
+  id            String   @id @default(cuid())
+  name          String   @unique
+  description   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  permissionsLastModified DateTime @default(now()) // Timestamp for permission caching optimization
+
+  // Many-to-many relationship with User
+  users User[]
+
+  // Relationship with SsoGroupMapping
+  ssoMappings SsoGroupMapping[]
+
+  // Relationship with Host Alias Permissions
+  hostAliasPermissions GroupHostAliasPermission[]
+
+  // Relationship with Group-specific Network Filters
+  groupSpecificFilters GroupSpecificFilterSetting[]
+
+  // Note: vpnMappings relationship will be removed from here
 }
 
+// New model for OPNsense Network Groups
 model OpnsenseNetworkGroup {
-  id          String       @id
-  name        String       @unique
-  description String?
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  id            String   @id // OPNsense UUID will be the ID
+  name          String   @unique
+  description   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relationship with VpnMapping (VpnMapping will now reference this model)
   vpnMappings VpnMapping[]
 }
 
 model GroupSpecificFilterSetting {
-  id          String   @id @default(cuid())
+  id          String  @id @default(cuid())
   groupId     String
+  group       Group   @relation(fields: [groupId], references: [id], onDelete: Cascade)
   pattern     String
   description String?
-  type        String
+  type        String  // "include" or "exclude"
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-  group       Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
 
-  @@unique([groupId, pattern, type])
+  @@unique([groupId, pattern, type]) // Ensure uniqueness for the combination of fields
 }
 
+// Linking table for Group and OPNsense Host Alias permissions
 model GroupHostAliasPermission {
-  id                String   @id @default(cuid())
-  groupId           String
-  opnsenseAliasUuid String
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-  group             Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  id               String @id @default(cuid())
+  groupId          String
+  group            Group  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  opnsenseAliasUuid String // The UUID of the OPNsense Host Alias
 
-  @@unique([groupId, opnsenseAliasUuid])
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([groupId, opnsenseAliasUuid]) // Ensure a group can only have one permission entry per alias
 }
 
 model OpnsenseGroupDisplay {
-  id             String   @id @default(cuid())
-  opnsenseUuid   String   @unique
-  friendlyName   String
-  iconIdentifier String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  groupType      String   @default("SingleSelect")
+  id           String @id @default(cuid())
+  opnsenseUuid String @unique
+  friendlyName String
+  iconIdentifier String? // New field for storing emoji or icon name
+  groupType    String @default("SingleSelect") // "SingleSelect" or "MultiSelect"
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
 
 model ValidLocalNetwork {
-  id          String   @id @default(cuid())
-  network     String?
-  startIp     String?
-  endIp       String?
-  type        String
+  id          String  @id @default(cuid())
+  network     String? // Network address in CIDR format (optional)
+  startIp     String? // Start IP address of the range (optional)
+  endIp       String? // End IP address of the range (optional)
+  type        String  // "include" or "exclude"
   description String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  @@unique([network, startIp, endIp, type])
+  @@unique([network, startIp, endIp, type]) // Ensure uniqueness for the combination of fields
 }
 
 model GlobalSettings {
-  id                                 String   @id @default(cuid())
-  enableRegistration                 Boolean  @default(false)
-  enableRenamingSelfServicePage      Boolean  @default(false)
-  enableRenamingDeviceManagementPage Boolean  @default(false)
-  allowedNetworks                    Json     @default("[]")
-  customLucideIcons                  Json     @default("[]")
-  customEmojis                       Json     @default("[]")
-  customFlags                        Json     @default("[]")
-  enableGroupTypes                   Boolean  @default(false)
-  enableSelfServiceMultiSelect       Boolean  @default(false)
-  singleSelectName                   String   @default("Single Select")
-  multiSelectName                    String   @default("Multi Select")
-  singleSelectIcon                   String   @default("DEFAULT")
-  multiSelectIcon                    String   @default("DEFAULT")
-  enableAdvancedAnalytics            Boolean  @default(false)
-  logsAnalyticsRetentionDays         Int      @default(90)
-  removeSelfServicePage              Boolean  @default(false)
-  enableMacTracking                  Boolean  @default(false)
-  macTrackingInterval                Int      @default(5)
-  macInactiveTimeout                 Int      @default(1440)
-  macDataRetentionDays               Int      @default(90)
-  enableApplicationSubtitle          Boolean  @default(false)
-  subtitleText                       String?
-  enableLoginPageSubtitle            Boolean  @default(false)
-  lastModified                       DateTime @default(now()) @updatedAt
-  enableMacExclusions                Boolean  @default(true)
-  macExclusionRetentionDays          Int      @default(365)
+  id                 String  @id @default(cuid())
+  enableRegistration Boolean @default(false)
+  removeSelfServicePage Boolean @default(false) // Completely disable self-service functionality for enhanced security
+  enableRenamingSelfServicePage Boolean @default(false)
+  enableRenamingDeviceManagementPage Boolean @default(false)
+  allowedNetworks    Json    @default("[]") // Store as JSON array of ValidLocalNetwork
+  customLucideIcons  Json    @default("[]") // Store as JSON array of { name: string, icon: string }
+  customEmojis       Json    @default("[]") // Store as JSON array of { emoji: string, name: string }
+  customFlags        Json    @default("[]") // Store as JSON array of { flag: string, name: string }
+  // Group Type Settings
+  enableGroupTypes   Boolean @default(false) // Enable/disable dual group type functionality
+  enableSelfServiceMultiSelect Boolean @default(false) // Enable/disable multi-select functionality in self-service page
+  singleSelectName   String  @default("Single Select") // Custom name for SingleSelect groups
+  multiSelectName    String  @default("Multi Select") // Custom name for MultiSelect groups
+  singleSelectIcon   String  @default("DEFAULT") // Icon for SingleSelect groups (DEFAULT or Lucide icon name)
+  multiSelectIcon    String  @default("DEFAULT") // Icon for MultiSelect groups (DEFAULT or Lucide icon name)
+  // Advanced Analytics Settings
+  enableAdvancedAnalytics Boolean @default(false) // Enable/disable advanced analytics (session tracking, performance monitoring)
+  // Logs and Analytics Retention Settings
+  logsAnalyticsRetentionDays Int @default(90) // Delete logs and analytics data older than this many days
+  // MAC Tracking Settings
+  enableMacTracking     Boolean @default(false) // Enable/disable MAC address tracking
+  macTrackingInterval   Int     @default(5)     // ARP scan interval in minutes
+  macInactiveTimeout    Int     @default(1440)  // Mark MACs inactive after this many minutes (24 hours default)
+  macDataRetentionDays  Int     @default(90)    // Delete MAC tracking data older than this many days
+  // Application Subtitle Settings
+  enableApplicationSubtitle Boolean @default(false) // Enable/disable application subtitle feature
+  subtitleText          String? // Custom subtitle text to display under the main title
+  enableLoginPageSubtitle Boolean @default(false) // Enable/disable subtitle display on login page
+  // Cache Invalidation Support
+  lastModified       DateTime @default(now()) @updatedAt // Timestamp for cache invalidation when global settings change
+  // MAC Exclusion Settings
+  enableMacExclusions    Boolean @default(true)  // Enable/disable exclusion functionality
+  macExclusionRetentionDays Int    @default(365)    // Retention period for IP history (1-365 days)
 }
 
 model GloballyDisabledGroup {
   id           String   @id @default(cuid())
-  opnsenseUuid String   @unique
+  opnsenseUuid String   @unique // The UUID of the OPNsense group
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
@@ -205,184 +241,200 @@ model AuditLog {
   id        String   @id @default(cuid())
   timestamp DateTime @default(now())
   userId    String?
+  user      User?   @relation(fields: [userId], references: [id]) // Add relation to User model
   action    String
   details   Json?
-  user      User?    @relation(fields: [userId], references: [id])
+}
+
+enum VpnClientType {
+  OpenVPN
+  WireGuard
+  IPsec
 }
 
 model VpnMapping {
-  id                     String                @id @default(uuid())
-  vpnUuid                String                @unique
-  vpnName                String
-  vpnClient              VpnClientType         @default(OpenVPN)
-  friendlyName           String?
-  opnsenseNetworkGroupId String?
-  createdAt              DateTime              @default(now())
-  updatedAt              DateTime              @updatedAt
+  id             String        @id @default(uuid())
+  vpnUuid        String        @unique // Unique identifier for the VPN from OPNsense
+  vpnName        String        // Name/description of the VPN from OPNsense
+  vpnClient      VpnClientType @default(OpenVPN) // New field for VPN client type, defaults to OpenVPN
+  friendlyName   String?       // New field for user-friendly name, optional
+  opnsenseNetworkGroupId String?       // Foreign key to the OpnsenseNetworkGroup model
   opnsenseNetworkGroup   OpnsenseNetworkGroup? @relation(fields: [opnsenseNetworkGroupId], references: [id])
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 }
 
 model ApiKey {
-  id           String             @id @default(cuid())
-  name         String
-  keyHash      String
-  userId       String
-  createdAt    DateTime           @default(now())
-  lastUsed     DateTime?
-  expiresAt    DateTime?
-  enabled      Boolean            @default(true)
-  hourlyLimit  Int?               @default(1000)
-  dailyLimit   Int?               @default(10000)
-  monthlyLimit Int?               @default(100000)
-  burstLimit   Int?               @default(100)
-  user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  rateLimits   ApiKeyRateLimit[]
-  usageEvents  ApiKeyUsageEvent[]
-  usageStats   ApiKeyUsageStats[]
+  id          String   @id @default(cuid())
+  name        String   // User-provided name for the key
+  keyHash     String   // Hashed API key
+  userId      String   // Foreign key to User
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  lastUsed    DateTime?
+  expiresAt   DateTime? // Optional expiration
+  enabled     Boolean  @default(true) // Added field for enabling/disabling API key
+  
+  // Rate limiting fields
+  hourlyLimit    Int? @default(1000)  // Requests per hour
+  dailyLimit     Int? @default(10000) // Requests per day
+  monthlyLimit   Int? @default(100000) // Requests per month
+  burstLimit     Int? @default(100)   // Requests per minute
+  
+  // Rate limit tracking
+  rateLimits ApiKeyRateLimit[]
 
-  @@unique([userId, name])
+  // Usage statistics tracking
+  usageStats ApiKeyUsageStats[]
+  usageEvents ApiKeyUsageEvent[]
+
+  @@unique([userId, name]) // Prevent duplicate names per user
 }
 
 model ApiKeyRateLimit {
-  id           String   @id @default(cuid())
-  apiKeyId     String
-  windowType   String
-  windowStart  DateTime
-  requestCount Int      @default(0)
-  lastRequest  DateTime @default(now())
-  apiKey       ApiKey   @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
-
+  id          String   @id @default(cuid())
+  apiKeyId    String   // Foreign key to ApiKey
+  apiKey      ApiKey   @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+  windowType  String   // 'hourly', 'daily', 'monthly', 'burst'
+  windowStart DateTime // Start of the rate limit window
+  requestCount Int     @default(0) // Number of requests in this window
+  lastRequest DateTime @default(now())
+  
   @@unique([apiKeyId, windowType, windowStart])
   @@index([apiKeyId, windowType, windowStart])
 }
 
 model ApiKeyUsageStats {
-  id                  String   @id @default(cuid())
-  apiKeyId            String
-  date                DateTime
-  totalRequests       Int      @default(0)
-  successfulRequests  Int      @default(0)
-  failedRequests      Int      @default(0)
-  rateLimitHits       Int      @default(0)
-  uniqueEndpoints     Int      @default(0)
-  uniqueIpAddresses   Int      @default(0)
-  uniqueUserAgents    Int      @default(0)
-  avgResponseTime     Float?
-  peakHourlyUsage     Int      @default(0)
-  peakHourlyUsageHour Int?
-  topEndpoints        Json?
-  topIpAddresses      Json?
-  topUserAgents       Json?
-  errorsByType        Json?
-  usageByHour         Json?
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
-  apiKey              ApiKey   @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+  id                    String   @id @default(cuid())
+  apiKeyId              String   // Foreign key to ApiKey
+  apiKey                ApiKey   @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+  date                  DateTime // Date for daily stats (normalized to start of day)
+  totalRequests         Int      @default(0)
+  successfulRequests    Int      @default(0)
+  failedRequests        Int      @default(0)
+  rateLimitHits         Int      @default(0)
+  uniqueEndpoints       Int      @default(0)
+  uniqueIpAddresses     Int      @default(0)
+  uniqueUserAgents      Int      @default(0)
+  avgResponseTime       Float?   // Average response time in milliseconds
+  peakHourlyUsage       Int      @default(0) // Peak usage in any hour of this day
+  peakHourlyUsageHour   Int?     // Hour (0-23) when peak usage occurred
+  topEndpoints          Json?    // JSON object with endpoint usage counts
+  topIpAddresses        Json?    // JSON object with IP address usage counts
+  topUserAgents         Json?    // JSON object with user agent usage counts
+  errorsByType          Json?    // JSON object with error counts by type
+  usageByHour           Json?    // JSON array with hourly usage breakdown [0-23]
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
   @@unique([apiKeyId, date])
   @@index([apiKeyId, date])
-  @@index([date])
+  @@index([date]) // For system-wide queries
 }
 
 model ApiKeyUsageEvent {
-  id           String   @id @default(cuid())
-  apiKeyId     String
-  timestamp    DateTime @default(now())
-  endpoint     String
-  method       String
-  statusCode   Int
-  responseTime Float?
-  ipAddress    String?
-  userAgent    String?
-  requestSize  Int?
-  responseSize Int?
-  errorType    String?
-  errorMessage String?
-  rateLimitHit Boolean  @default(false)
-  apiKey       ApiKey   @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+  id              String   @id @default(cuid())
+  apiKeyId        String   // Foreign key to ApiKey
+  apiKey          ApiKey   @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+  timestamp       DateTime @default(now())
+  endpoint        String   // API endpoint accessed
+  method          String   // HTTP method (GET, POST, etc.)
+  statusCode      Int      // HTTP status code
+  responseTime    Float?   // Response time in milliseconds
+  ipAddress       String?  // Client IP address
+  userAgent       String?  // Client user agent
+  requestSize     Int?     // Request size in bytes
+  responseSize    Int?     // Response size in bytes
+  errorType       String?  // Type of error if request failed
+  errorMessage    String?  // Error message if request failed
+  rateLimitHit    Boolean  @default(false) // Whether this request hit a rate limit
 
   @@index([apiKeyId, timestamp])
-  @@index([timestamp])
-  @@index([endpoint])
+  @@index([timestamp]) // For cleanup and time-based queries
+  @@index([endpoint]) // For endpoint popularity queries
 }
 
 model SessionUsageStats {
-  id                  String   @id @default(cuid())
-  sessionToken        String
-  userId              String?
-  date                DateTime
-  totalRequests       Int      @default(0)
-  apiCalls            Int      @default(0)
-  pageViews           Int      @default(0)
-  uiActions           Int      @default(0)
-  successfulRequests  Int      @default(0)
-  failedRequests      Int      @default(0)
-  uniqueEndpoints     Int      @default(0)
-  uniquePages         Int      @default(0)
-  uniqueIpAddresses   Int      @default(0)
-  uniqueUserAgents    Int      @default(0)
-  avgResponseTime     Float?
-  peakHourlyUsage     Int      @default(0)
-  peakHourlyUsageHour Int?
-  topEndpoints        Json?
-  topPages            Json?
-  topIpAddresses      Json?
-  topUserAgents       Json?
-  actionsByType       Json?
-  errorsByType        Json?
-  usageByHour         Json?
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
-  user                User?    @relation(fields: [userId], references: [id])
+  id                    String   @id @default(cuid())
+  sessionToken          String   // Session identifier (not a foreign key)
+  userId                String?  // Foreign key to User (nullable to preserve data when user is deleted)
+  user                  User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  date                  DateTime // Date for daily stats (normalized to start of day)
+  totalRequests         Int      @default(0)
+  apiCalls              Int      @default(0) // API endpoint calls
+  pageViews             Int      @default(0) // Web page views
+  uiActions             Int      @default(0) // UI interactions (clicks, form submits)
+  successfulRequests    Int      @default(0)
+  failedRequests        Int      @default(0)
+  uniqueEndpoints       Int      @default(0)
+  uniquePages           Int      @default(0)
+  uniqueIpAddresses     Int      @default(0)
+  uniqueUserAgents      Int      @default(0)
+  avgResponseTime       Float?   // Average response time in milliseconds
+  peakHourlyUsage       Int      @default(0) // Peak usage in any hour of this day
+  peakHourlyUsageHour   Int?     // Hour (0-23) when peak usage occurred
+  topEndpoints          Json?    // JSON object with endpoint usage counts
+  topPages              Json?    // JSON object with page usage counts
+  topIpAddresses        Json?    // JSON object with IP address usage counts
+  topUserAgents         Json?    // JSON object with user agent usage counts
+  actionsByType         Json?    // JSON object with action type counts
+  errorsByType          Json?    // JSON object with error counts by type
+  usageByHour           Json?    // JSON array with hourly usage breakdown [0-23]
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
   @@unique([sessionToken, date])
   @@index([sessionToken, date])
   @@index([userId, date])
-  @@index([date])
+  @@index([date]) // For system-wide queries
 }
 
 model SessionUsageEvent {
-  id           String   @id @default(cuid())
-  sessionToken String
-  userId       String?
-  timestamp    DateTime @default(now())
-  endpoint     String
-  method       String
-  actionType   String
-  statusCode   Int?
-  responseTime Float?
-  ipAddress    String?
-  userAgent    String?
-  pageUrl      String?
-  referrer     String?
-  requestSize  Int?
-  responseSize Int?
-  errorType    String?
-  errorMessage String?
-  metadata     Json?
-  user         User?    @relation(fields: [userId], references: [id])
+  id              String   @id @default(cuid())
+  sessionToken    String   // Session identifier (not a foreign key)
+  userId          String?  // Foreign key to User (nullable to preserve data when user is deleted)
+  user            User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  timestamp       DateTime @default(now())
+  endpoint        String   // API endpoint or page route
+  method          String   // HTTP method (GET, POST, etc.) or action type
+  actionType      String   // 'api_call', 'page_view', 'form_submit', 'click', 'navigation'
+  statusCode      Int?     // HTTP status code (for API calls)
+  responseTime    Float?   // Response time in milliseconds
+  ipAddress       String?  // Client IP address
+  userAgent       String?  // Client user agent
+  pageUrl         String?  // Full page URL (for UI interactions)
+  referrer        String?  // Referrer URL
+  requestSize     Int?     // Request size in bytes
+  responseSize    Int?     // Response size in bytes
+  errorType       String?  // Type of error if request failed
+  errorMessage    String?  // Error message if request failed
+  metadata        Json?    // Additional metadata (form data, click targets, etc.)
 
   @@index([sessionToken, timestamp])
   @@index([userId, timestamp])
-  @@index([timestamp])
-  @@index([endpoint])
-  @@index([actionType])
+  @@index([timestamp]) // For cleanup and time-based queries
+  @@index([endpoint]) // For endpoint popularity queries
+  @@index([actionType]) // For action type analysis
 }
 
 model MacAddress {
-  id             String              @id @default(cuid())
-  macAddress     String              @unique
-  firstSeen      DateTime            @default(now())
-  lastSeen       DateTime            @default(now())
-  isActive       Boolean             @default(true)
-  deviceName     String?
-  vendor         String?
-  createdAt      DateTime            @default(now())
-  updatedAt      DateTime            @updatedAt
-  isPrivacyMac   Boolean             @default(false)
-  exclusion      MacExclusion?
+  id            String   @id @default(cuid())
+  macAddress    String   @unique // Normalized lowercase MAC address
+  firstSeen     DateTime @default(now())
+  lastSeen      DateTime @default(now())
+  isActive      Boolean  @default(true)
+  isPrivacyMac  Boolean  @default(false) // Privacy/randomized MAC address detection
+  deviceName    String?  // Hostname if available
+  vendor        String?  // MAC vendor from OUI lookup
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // One-to-many relationship with IP associations
   ipAssociations MacIpAssociation[]
-  ipHistory      MacIpHistoryEntry[]
+  
+  // New relationships
+  exclusion      MacExclusion?  // One-to-one relationship with exclusion
+  ipHistory      MacIpHistoryEntry[]  // New relationship for IP history
   ipActivationPeriods MacIpActivationPeriod[]
 
   @@index([macAddress])
@@ -393,17 +445,17 @@ model MacAddress {
 
 model MacIpAssociation {
   id               String     @id @default(cuid())
-  macAddressId     String
-  ipAddress        String
-  networkInterface String?
+  macAddressId     String     // Foreign key to MacAddress
+  macAddress       MacAddress @relation(fields: [macAddressId], references: [id], onDelete: Cascade)
+  ipAddress        String     // Associated IP address
+  networkInterface String?    // Network interface (e.g., "em0", "igb0")
+  isDhcpReserved   Boolean    @default(false) // Whether this IP had a DHCP reservation at time of association
+  hasDhcpConflict  Boolean    @default(false) // Whether this MAC/IP combination conflicts with DHCP reservations
   firstSeen        DateTime   @default(now())
   lastSeen         DateTime   @default(now())
   isActive         Boolean    @default(true)
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
-  isDhcpReserved   Boolean    @default(false)
-  hasDhcpConflict  Boolean    @default(false)
-  macAddress       MacAddress @relation(fields: [macAddressId], references: [id], onDelete: Cascade)
 
   @@index([macAddressId, ipAddress])
   @@index([ipAddress])
@@ -413,32 +465,33 @@ model MacIpAssociation {
 }
 
 model MacExclusion {
-  id             String     @id @default(cuid())
-  macAddressId   String     @unique
-  enabled        Boolean    @default(true)
-  exclusionMode  String     @default("FULL")
-  reason         String?
-  excludedBy     String?
-  excludedAt     DateTime   @default(now())
-  lastModifiedBy String?
-  lastModifiedAt DateTime   @updatedAt
-  macAddress     MacAddress @relation(fields: [macAddressId], references: [id], onDelete: Cascade)
-
+  id                String   @id @default(cuid())
+  macAddressId      String
+  macAddress        MacAddress @relation(fields: [macAddressId], references: [id], onDelete: Cascade)
+  enabled           Boolean  @default(true)
+  exclusionMode     String   @default("FULL")
+  reason            String?
+  excludedBy        String?
+  excludedAt        DateTime @default(now())
+  lastModifiedBy    String?
+  lastModifiedAt    DateTime @updatedAt
+  
+  @@unique([macAddressId])
   @@index([enabled])
   @@index([excludedAt])
   @@index([exclusionMode])
 }
 
 model MacIpHistoryEntry {
-  id               String     @id @default(cuid())
-  macAddressId     String
-  ipAddress        String
-  networkInterface String?
-  firstSeen        DateTime   @default(now())
-  lastSeen         DateTime   @default(now())
-  detectionCount   Int        @default(1)
-  macAddress       MacAddress @relation(fields: [macAddressId], references: [id], onDelete: Cascade)
-
+  id               String   @id @default(cuid())
+  macAddressId      String
+  macAddress        MacAddress @relation(fields: [macAddressId], references: [id], onDelete: Cascade)
+  ipAddress         String
+  networkInterface   String?
+  firstSeen         DateTime @default(now())
+  lastSeen          DateTime @default(now())
+  detectionCount     Int      @default(1)
+  
   @@unique([macAddressId, ipAddress])
   @@index([macAddressId])
   @@index([ipAddress])
@@ -462,8 +515,132 @@ model MacIpActivationPeriod {
   @@index([activatedAt])
 }
 
-enum VpnClientType {
-  OpenVPN
-  WireGuard
-  IPsec
+// ──────────────────────────────────────────────
+// SCHEDULE SYSTEM
+// ──────────────────────────────────────────────
+
+model ScheduledAssignment {
+  id             String         @id @default(cuid())
+  name           String
+  description    String?
+  enabled        Boolean        @default(true)
+  priority       Int            @default(0)
+
+  scheduleType   ScheduleType   @default(COMPLEX_WEEKLY)
+  timezone       String         @default("UTC")
+
+  // ONE-TIME fields
+  executeAt      DateTime?
+  onceActions    ScheduleAction[] @relation("OnceActions")
+
+  // RECURRING fields
+  cronExpression String?
+  recurringActions ScheduleAction[] @relation("RecurringActions")
+
+  // COMPLEX WEEKLY fields
+  days           ScheduleDay[]
+
+  // Targeting
+  targetType     ScheduleTargetType
+  targetSelector Json
+
+  // Audit & tracking
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  lastExecutedAt DateTime?
+  executions     ScheduleExecution[]
+
+  @@index([enabled, scheduleType])
+  @@index([priority])
+}
+
+model ScheduleDay {
+  id         String       @id @default(cuid())
+  scheduleId String
+  dayOfWeek  Int          // 0 (Sun) – 6 (Sat)
+  windows    TimeWindow[]
+  schedule   ScheduledAssignment @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+
+  @@unique([scheduleId, dayOfWeek])
+  @@index([scheduleId, dayOfWeek])
+}
+
+model TimeWindow {
+  id            String           @id @default(cuid())
+  scheduleDayId String
+  startTime     String           // "HH:MM" in 24h format
+  endTime       String           // "HH:MM" in 24h format
+  label         String?
+  actions       ScheduleAction[]
+  day           ScheduleDay      @relation(fields: [scheduleDayId], references: [id], onDelete: Cascade)
+}
+
+model ScheduleAction {
+  id               String       @id @default(cuid())
+  operation        ScheduleOpType
+  boundaryType     ScheduleBoundaryType
+
+  targetGroupUuid  String?
+  fromGroupUuid    String?
+
+  sortOrder        Int          @default(0)
+
+  // Polymorphic parent — exactly one must be non-null
+  timeWindowId     String?
+  onceScheduleId   String?
+  recurringScheduleId String?
+
+  timeWindow       TimeWindow?          @relation(fields: [timeWindowId], references: [id], onDelete: Cascade)
+  onceSchedule     ScheduledAssignment? @relation("OnceActions", fields: [onceScheduleId], references: [id], onDelete: Cascade)
+  recurringSchedule ScheduledAssignment? @relation("RecurringActions", fields: [recurringScheduleId], references: [id], onDelete: Cascade)
+
+  @@index([timeWindowId, boundaryType, sortOrder])
+}
+
+model ScheduleExecution {
+  id            String   @id @default(cuid())
+  scheduleId    String
+  boundaryType  String
+  executedAt    DateTime @default(now())
+  status        ScheduleExecutionStatus
+  targetIps     Json
+  actionsRun    Json
+  durationMs    Int?
+  errorMessage  String?
+  schedule      ScheduledAssignment @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+
+  @@index([scheduleId, executedAt])
+  @@index([executedAt])
+  @@index([status])
+}
+
+enum ScheduleType {
+  COMPLEX_WEEKLY
+  ONCE
+  RECURRING
+}
+
+enum ScheduleTargetType {
+  IP_LIST
+  HOST_ALIAS
+  NETWORK_GROUP
+}
+
+enum ScheduleOpType {
+  ASSIGN
+  REMOVE
+  MOVE
+  CLEAR_ALL
+}
+
+enum ScheduleBoundaryType {
+  START
+  END
+}
+
+enum ScheduleExecutionStatus {
+  SUCCESS
+  PARTIAL
+  FAILED
+  SKIPPED
 }

@@ -70,6 +70,11 @@ README_MCP_IMPLEMENTATION.md
 opencode.json
 AGENTS.md
 
+# AI Agent exclusions
+.agent/*
+.claude/*
+.opencode/*
+
 # Traefik runtime files (generated, contains secrets)
 traefik/runtime/
 

@@ -515,3 +515,133 @@ model MacIpActivationPeriod {
   @@index([ipAddress])
   @@index([activatedAt])
 }
+
+// ──────────────────────────────────────────────
+// SCHEDULE SYSTEM
+// ──────────────────────────────────────────────
+
+model ScheduledAssignment {
+  id             String         @id @default(cuid())
+  name           String
+  description    String?
+  enabled        Boolean        @default(true)
+  priority       Int            @default(0)
+
+  scheduleType   ScheduleType   @default(COMPLEX_WEEKLY)
+  timezone       String         @default("UTC")
+
+  // ONE-TIME fields
+  executeAt      DateTime?
+  onceActions    ScheduleAction[] @relation("OnceActions")
+
+  // RECURRING fields
+  cronExpression String?
+  recurringActions ScheduleAction[] @relation("RecurringActions")
+
+  // COMPLEX WEEKLY fields
+  days           ScheduleDay[]
+
+  // Targeting
+  targetType     ScheduleTargetType
+  targetSelector Json
+
+  // Audit & tracking
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  lastExecutedAt DateTime?
+  executions     ScheduleExecution[]
+
+  @@index([enabled, scheduleType])
+  @@index([priority])
+}
+
+model ScheduleDay {
+  id         String       @id @default(cuid())
+  scheduleId String
+  dayOfWeek  Int          // 0 (Sun) – 6 (Sat)
+  windows    TimeWindow[]
+  schedule   ScheduledAssignment @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+
+  @@unique([scheduleId, dayOfWeek])
+  @@index([scheduleId, dayOfWeek])
+}
+
+model TimeWindow {
+  id            String           @id @default(cuid())
+  scheduleDayId String
+  startTime     String           // "HH:MM" in 24h format
+  endTime       String           // "HH:MM" in 24h format
+  label         String?
+  actions       ScheduleAction[]
+  day           ScheduleDay      @relation(fields: [scheduleDayId], references: [id], onDelete: Cascade)
+}
+
+model ScheduleAction {
+  id               String       @id @default(cuid())
+  operation        ScheduleOpType
+  boundaryType     ScheduleBoundaryType
+
+  targetGroupUuid  String?
+  fromGroupUuid    String?
+
+  sortOrder        Int          @default(0)
+
+  // Polymorphic parent — exactly one must be non-null
+  timeWindowId     String?
+  onceScheduleId   String?
+  recurringScheduleId String?
+
+  timeWindow       TimeWindow?          @relation(fields: [timeWindowId], references: [id], onDelete: Cascade)
+  onceSchedule     ScheduledAssignment? @relation("OnceActions", fields: [onceScheduleId], references: [id], onDelete: Cascade)
+  recurringSchedule ScheduledAssignment? @relation("RecurringActions", fields: [recurringScheduleId], references: [id], onDelete: Cascade)
+
+  @@index([timeWindowId, boundaryType, sortOrder])
+}
+
+model ScheduleExecution {
+  id            String   @id @default(cuid())
+  scheduleId    String
+  boundaryType  String
+  executedAt    DateTime @default(now())
+  status        ScheduleExecutionStatus
+  targetIps     Json
+  actionsRun    Json
+  durationMs    Int?
+  errorMessage  String?
+  schedule      ScheduledAssignment @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+
+  @@index([scheduleId, executedAt])
+  @@index([executedAt])
+  @@index([status])
+}
+
+enum ScheduleType {
+  COMPLEX_WEEKLY
+  ONCE
+  RECURRING
+}
+
+enum ScheduleTargetType {
+  IP_LIST
+  HOST_ALIAS
+  NETWORK_GROUP
+}
+
+enum ScheduleOpType {
+  ASSIGN
+  REMOVE
+  MOVE
+  CLEAR_ALL
+}
+
+enum ScheduleBoundaryType {
+  START
+  END
+}
+
+enum ScheduleExecutionStatus {
+  SUCCESS
+  PARTIAL
+  FAILED
+  SKIPPED
+}
