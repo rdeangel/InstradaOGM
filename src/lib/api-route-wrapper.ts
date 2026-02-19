@@ -29,7 +29,7 @@ export function withApiTracking(
 
   return async function wrappedHandler(
     request: NextRequest,
-    context?: { params: Promise<Record<string, string>> }
+    context: { params: Promise<Record<string, string>> }
   ): Promise<NextResponse> {
     const startTime = Date.now();
     let auth: Record<string, unknown> | null = null;
