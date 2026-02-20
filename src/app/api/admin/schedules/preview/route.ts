@@ -131,6 +131,7 @@ export const POST = withAdminApiTracking(async (request: NextRequest) => {
 
     return NextResponse.json({
       simulatedAt: simulatedAt.toISOString(),
+      scheduleDisabled: !schedule.enabled,
       resolvedTargets,
       boundariesFiring,
     });

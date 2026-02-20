@@ -3,8 +3,9 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { DateTimePicker } from '@/components/ui/date-time-picker';
-import { Loader2, Play, Clock } from 'lucide-react';
+import { Loader2, Play, Clock, AlertTriangle } from 'lucide-react';
 
 interface BoundaryFiring {
   windowLabel: string;
@@ -20,6 +21,7 @@ interface BoundaryFiring {
 
 interface PreviewResult {
   simulatedAt: string;
+  scheduleDisabled: boolean;
   resolvedTargets: string[];
   boundariesFiring: BoundaryFiring[];
 }
@@ -93,6 +95,16 @@ export function PreviewPanel({ getFormData }: PreviewPanelProps) {
 
       {result && (
         <div className="space-y-4">
+          {/* Disabled warning */}
+          {result.scheduleDisabled && (
+            <Alert variant="default" className="border-amber-400 bg-amber-50 dark:bg-amber-950/20">
+              <AlertTriangle className="h-4 w-4 text-amber-600" />
+              <AlertDescription className="text-amber-700 dark:text-amber-400">
+                This schedule is currently <strong>disabled</strong>. Boundaries shown below would fire at this time, but the schedule will not run until it is enabled.
+              </AlertDescription>
+            </Alert>
+          )}
+
           {/* Resolved targets */}
           <div>
             <p className="text-sm font-medium mb-1">Resolved Targets</p>

@@ -5,6 +5,7 @@ import { logger } from '@/lib/logger';
 import { logAuditEvent } from '@/lib/auditLog';
 import { updateScheduleSchema } from '@/types/schedule';
 import { validateScheduleData } from '@/lib/schedule-validation';
+import { scheduleExecutionService } from '@/lib/schedule-execution-service';
 
 // GET /api/admin/schedules/[id] - Get schedule detail
 export const GET = withAdminApiTracking(
@@ -189,6 +190,10 @@ export const PUT = withAdminApiTracking(
           },
         });
       });
+
+      // Re-arm the precision timer so enabled/disabled state and any timing
+      // changes take effect immediately without waiting for reconciliation.
+      await scheduleExecutionService.notifyScheduleChanged();
 
       // Audit log
       await logAuditEvent({

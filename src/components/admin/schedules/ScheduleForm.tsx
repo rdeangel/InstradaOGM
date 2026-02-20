@@ -30,6 +30,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { Switch } from '@/components/ui/switch';
 import { Loader2, AlertTriangle, Info, ArrowUp, ArrowDown, Trash2, Plus } from 'lucide-react';
 import { ScheduleTimelineGrid, type ScheduleDayFormData } from './ScheduleTimelineGrid';
 import { PreviewPanel } from './PreviewPanel';
@@ -488,6 +489,22 @@ export function ScheduleForm({
               placeholder="Optional description..."
               rows={2}
             />
+          </div>
+
+          <div className="flex items-center gap-3 md:col-span-2">
+            <Switch
+              id="sched-enabled"
+              checked={values.enabled}
+              onCheckedChange={val => set('enabled', val)}
+            />
+            <Label htmlFor="sched-enabled" className="cursor-pointer">
+              {values.enabled ? 'Enabled' : 'Disabled'}
+            </Label>
+            {!values.enabled && (
+              <span className="text-xs text-muted-foreground">
+                — schedule will not run until enabled
+              </span>
+            )}
           </div>
 
           <div className="space-y-1">

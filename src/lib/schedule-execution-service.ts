@@ -3,11 +3,12 @@ import 'server-only';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/logger';
 import {
-  addIpToGroup,
-  removeIpFromGroup,
   getNetworkGroups,
   exportAliases,
   parseGroupContent,
+  batchAliasOperations,
+  getBestHostAliasName,
+  type BatchAliasOperation,
 } from '@/lib/opnsense-api';
 import { logAuditEvent } from '@/lib/auditLog';
 import {
@@ -280,6 +281,15 @@ class ScheduleExecutionService {
       nextBoundaryAt: this.nextBoundaryAt,
       lastExecutedAt: this.lastExecutedAt,
     };
+  }
+
+  /**
+   * Call after any schedule is created, updated, enabled, or disabled.
+   * Re-arms the precision timer so changes take effect immediately.
+   */
+  async notifyScheduleChanged(): Promise<void> {
+    if (!this.isRunning) return;
+    await this.scheduleNextBoundary();
   }
 
   // ─── Private: precision scheduling ─────────────────────────────────────────
@@ -564,7 +574,26 @@ class ScheduleExecutionService {
     } else {
       const release = await this.mutex.acquire();
       try {
-        summary = await this.executeActions(targetIps, actions, schedule);
+        // Re-check enabled inside the mutex: toggle may have fired between the
+        // initial check (above) and mutex acquisition.
+        const freshSchedule = await prisma.scheduledAssignment.findUnique({
+          where: { id: event.scheduleId },
+          select: { enabled: true },
+        });
+        if (!freshSchedule?.enabled) {
+          logger.info(
+            `Schedule ${event.scheduleId} was disabled between enabled-check and mutex acquire, skipping execution`,
+          );
+          summary = {
+            targetIps: [],
+            actionsRun: [],
+            status: 'SKIPPED',
+            durationMs: Date.now() - startTime,
+            errorMessage: 'Schedule disabled',
+          };
+        } else {
+          summary = await this.executeActions(targetIps, actions, schedule);
+        }
       } finally {
         release();
       }
@@ -810,61 +839,163 @@ class ScheduleExecutionService {
       scheduleName: schedule.name,
     };
 
+    // groupContentMap: live content state per group (array of alias names / IP entries),
+    // initialised from allGroups rawContent and updated after each successful action batch.
+    // Allows subsequent actions within the same run to see up-to-date group membership
+    // without re-fetching OPNsense, while keeping all mutations in a single batch call.
+    const groupContentMap = new Map<string, string[]>(
+      allGroups.map((g) => [g.uuid, parseGroupContent(g.rawContent, g.name)]),
+    );
+
+    // Build a group-update BatchAliasOperation using the supplied content array.
+    const makeGroupUpdateOp = (uuid: string, content: string[]): BatchAliasOperation => {
+      const g = groupMap.get(uuid)!;
+      return {
+        type: 'update',
+        uuid,
+        payload: {
+          alias: {
+            enabled: g.enabled ? '1' : '0',
+            name: g.name,
+            type: g.type || 'networkgroup',
+            content: content.join('\n'),
+            description: g.description || '',
+            proto: g.proto || '',
+            interface: g.interface || '',
+            counters: g.counters || '',
+            updatefreq: g.updatefreq || '',
+            categories: g.categories || '',
+          },
+        },
+      };
+    };
+
+    // Find which item (alias name or raw IP) represents a given IP inside a content array.
+    // Mirrors the lookup order used by removeIpFromGroup in opnsense-api.ts.
+    const resolveItemInContent = (ip: string, content: string[]): string | null => {
+      if (content.includes(ip)) return ip;
+      const aliasName = ipToAliasName.get(ip);
+      if (aliasName && content.includes(aliasName)) return aliasName;
+      for (const [, alias] of Object.entries(allAliases)) {
+        if (alias.type === 'host' && alias.content?.trim() === ip && alias.name && content.includes(alias.name)) {
+          return alias.name;
+        }
+      }
+      return null;
+    };
+
+    // Shared alias-creation helper: for any IPs missing from ipToAliasName, resolve names
+    // concurrently and execute a single batchAliasOperations call, then update the maps.
+    // Returns true on success, false if creation failed (caller should skip the action).
+    const ensureAliasesExist = async (ips: string[]): Promise<boolean> => {
+      const missing = ips.filter((ip) => !ipToAliasName.has(ip));
+      if (missing.length === 0) return true;
+
+      const creations = await Promise.all(
+        missing.map(async (ip) => ({ ip, ...(await getBestHostAliasName(ip)) })),
+      );
+      const createOps: BatchAliasOperation[] = creations.map(({ ip, aliasName, detectedHostname }) => ({
+        type: 'add',
+        payload: {
+          alias: {
+            enabled: '1',
+            name: aliasName,
+            type: 'host',
+            content: ip,
+            description: `Auto-created host alias for IP ${ip}${detectedHostname ? ` (detected hostname: ${detectedHostname})` : ''}`,
+            proto: '',
+            interface: '',
+            counters: '0',
+            updatefreq: '',
+            categories: '',
+          },
+        },
+      }));
+
+      const result = await batchAliasOperations(createOps);
+      if (!result.success) {
+        logger.error('Schedule alias creation batch failed:', result);
+        return false;
+      }
+      for (const { ip, aliasName } of creations) {
+        ipToAliasName.set(ip, aliasName);
+        nameToIp.set(aliasName, ip);
+      }
+      return true;
+    };
+
     for (const action of sortedActions) {
-      for (const ip of targetIps) {
-        const result: ActionResult = {
-          operation: action.operation,
-          targetGroupUuid: action.targetGroupUuid,
-          fromGroupUuid: action.fromGroupUuid,
-          ip,
-          success: false,
-        };
+      try {
+        // ── ASSIGN ────────────────────────────────────────────────────────────
+        if (action.operation === 'ASSIGN') {
+          if (!action.targetGroupUuid) throw new Error('targetGroupUuid is required for ASSIGN');
+          const targetGroup = groupMap.get(action.targetGroupUuid);
+          const targetGroupType = groupTypeMap.get(action.targetGroupUuid) ?? 'SingleSelect';
 
-        try {
-          if (action.operation === 'ASSIGN') {
-            if (!action.targetGroupUuid) throw new Error('targetGroupUuid is required for ASSIGN');
-            const group = groupMap.get(action.targetGroupUuid);
-            const targetGroupType = groupTypeMap.get(action.targetGroupUuid) ?? 'SingleSelect';
+          // Phase 1: ensure every target IP has a host alias (single batch if any are missing).
+          const aliasesOk = await ensureAliasesExist(targetIps);
+          if (!aliasesOk) {
+            for (const ip of targetIps) {
+              await logAuditEvent({
+                action: 'OPNSENSE_GROUP_IP_ASSIGN_FAILURE',
+                details: {
+                  groupId: action.targetGroupUuid,
+                  groupName: targetGroup?.name ?? null,
+                  groupFriendlyName: targetGroup?.friendlyName ?? null,
+                  ipAddress: ip,
+                  hostAliasName: ipToAliasName.get(ip) ?? null,
+                  operationType: 'assign',
+                  ...scheduleCtx,
+                },
+                reason: 'Host alias creation failed',
+              });
+              results.push({ operation: action.operation, targetGroupUuid: action.targetGroupUuid, fromGroupUuid: action.fromGroupUuid, ip, success: false, error: 'Host alias creation failed' });
+            }
+            continue;
+          }
 
+          // Emit ATTEMPT audit events for all IPs.
+          for (const ip of targetIps) {
             await logAuditEvent({
               action: 'OPNSENSE_GROUP_IP_ASSIGN_ATTEMPT',
               details: {
                 groupId: action.targetGroupUuid,
-                groupName: group?.name ?? null,
-                groupFriendlyName: group?.friendlyName ?? null,
+                groupName: targetGroup?.name ?? null,
+                groupFriendlyName: targetGroup?.friendlyName ?? null,
                 ipAddress: ip,
                 hostAliasName: ipToAliasName.get(ip) ?? null,
                 operationType: 'assign',
                 ...scheduleCtx,
               },
             });
+          }
 
-            // SingleSelect enforcement: before assigning, remove the IP from every
-            // other enabled group it currently belongs to that should be treated as
-            // SingleSelect — mirrors the route handler's moveFromExisting=true behaviour.
-            //
-            // When enableGroupTypes=false (feature flag off): MultiSelect is inactive,
-            // so ALL groups are treated as SingleSelect and the IP is evicted from
-            // every other group it belongs to regardless of their configured type.
-            //
-            // When enableGroupTypes=true: only evict from groups whose type is
-            // SingleSelect (MultiSelect groups allow additive membership).
-            //
-            // Uses the runtime membership map (not rawContent) so multiple ASSIGN
-            // actions within the same execution see up-to-date membership.
-            const targetIsSingleSelect = !enableGroupTypes || targetGroupType === 'SingleSelect';
-            if (targetIsSingleSelect) {
+          // Phase 2: compute new content for all affected groups.
+          //
+          // SingleSelect enforcement (mirrors the route handler's restrictRemovalToSingleSelect logic):
+          //   enableGroupTypes=false → ALL groups treated as SingleSelect; evict from every
+          //                           current group regardless of its configured type.
+          //   enableGroupTypes=true  → evict only from other SingleSelect groups; preserve
+          //                           MultiSelect memberships.
+          //   target is MultiSelect  → targetIsSingleSelect=false; no eviction at all.
+          //
+          // Uses ipRuntimeGroups (not rawContent) so sequential ASSIGN actions within the
+          // same run see up-to-date membership after each batch.
+          const pendingContent = new Map<string, string[]>();
+          const targetIsSingleSelect = !enableGroupTypes || targetGroupType === 'SingleSelect';
+
+          if (targetIsSingleSelect) {
+            for (const ip of targetIps) {
               const aliasName = ipToAliasName.get(ip);
               const currentGroupUuids = ipRuntimeGroups.get(ip) ?? new Set<string>();
               for (const currentUuid of currentGroupUuids) {
                 if (currentUuid === action.targetGroupUuid) continue;
-                // When the feature flag is off, treat every group as SingleSelect.
-                // When enabled, skip groups whose type is MultiSelect.
+                // When enableGroupTypes=false the skip below never fires — all groups evicted.
+                // When enableGroupTypes=true skip MultiSelect groups (preserve their membership).
                 if (enableGroupTypes && (groupTypeMap.get(currentUuid) ?? 'SingleSelect') !== 'SingleSelect') continue;
                 const currentGroup = groupMap.get(currentUuid);
-                if (!currentGroup?.enabled) continue; // skip disabled groups
+                if (!currentGroup?.enabled) continue;
 
-                // IP is in another enabled SingleSelect group — evict it first.
                 await logAuditEvent({
                   action: 'OPNSENSE_GROUP_IP_MOVE_REMOVE',
                   details: {
@@ -879,36 +1010,81 @@ class ScheduleExecutionService {
                   },
                 });
 
-                await removeIpFromGroup(currentUuid, ip);
-                trackRemove(ip, currentUuid);
+                if (!pendingContent.has(currentUuid)) {
+                  pendingContent.set(currentUuid, [...(groupContentMap.get(currentUuid) ?? [])]);
+                }
+                const evictContent = pendingContent.get(currentUuid)!;
+                const item = resolveItemInContent(ip, evictContent);
+                if (item) pendingContent.set(currentUuid, evictContent.filter((x) => x !== item));
               }
             }
+          }
 
-            const res = await addIpToGroup(action.targetGroupUuid, ip);
-            result.success = res.success;
-            if (!res.success) result.error = res.message;
-            else trackAdd(ip, action.targetGroupUuid);
+          // Add all aliases into the target group content.
+          if (!pendingContent.has(action.targetGroupUuid)) {
+            pendingContent.set(action.targetGroupUuid, [...(groupContentMap.get(action.targetGroupUuid) ?? [])]);
+          }
+          const targetContent = pendingContent.get(action.targetGroupUuid)!;
+          for (const ip of targetIps) {
+            const aliasName = ipToAliasName.get(ip) ?? ip;
+            if (!targetContent.includes(aliasName) && !targetContent.includes(ip)) {
+              targetContent.push(aliasName);
+            }
+          }
 
+          // Execute single batch for all group mutations.
+          const groupOps = Array.from(pendingContent.entries()).map(([uuid, content]) => makeGroupUpdateOp(uuid, content));
+          const batchResult = await batchAliasOperations(groupOps);
+          const actionSuccess = batchResult.success;
+
+          if (actionSuccess) {
+            for (const [uuid, content] of pendingContent) groupContentMap.set(uuid, content);
+          } else {
+            logger.error(`ASSIGN batch failed for schedule ${schedule.id}:`, batchResult);
+          }
+
+          const batchErrorMsg = actionSuccess ? undefined : (batchResult.results.find((r) => r.error)?.error ?? 'Batch operation failed');
+
+          for (const ip of targetIps) {
+            if (actionSuccess) {
+              if (targetIsSingleSelect) {
+                const currentGroupUuids = ipRuntimeGroups.get(ip) ?? new Set<string>();
+                for (const currentUuid of currentGroupUuids) {
+                  if (currentUuid === action.targetGroupUuid) continue;
+                  if (enableGroupTypes && (groupTypeMap.get(currentUuid) ?? 'SingleSelect') !== 'SingleSelect') continue;
+                  if (groupMap.get(currentUuid)?.enabled) trackRemove(ip, currentUuid);
+                }
+              }
+              trackAdd(ip, action.targetGroupUuid);
+            }
             await logAuditEvent({
-              action: res.success
-                ? 'OPNSENSE_GROUP_IP_ASSIGN_SUCCESS'
-                : 'OPNSENSE_GROUP_IP_ASSIGN_FAILURE',
+              action: actionSuccess ? 'OPNSENSE_GROUP_IP_ASSIGN_SUCCESS' : 'OPNSENSE_GROUP_IP_ASSIGN_FAILURE',
               details: {
                 groupId: action.targetGroupUuid,
-                groupName: group?.name ?? null,
-                groupFriendlyName: group?.friendlyName ?? null,
+                groupName: targetGroup?.name ?? null,
+                groupFriendlyName: targetGroup?.friendlyName ?? null,
+                // Structured object required by device-group-history graph (getGroupInfo lookup)
+                targetGroup: {
+                  id: action.targetGroupUuid,
+                  name: targetGroup?.name ?? null,
+                  friendlyName: targetGroup?.friendlyName ?? null,
+                },
                 ipAddress: ip,
                 hostAliasName: ipToAliasName.get(ip) ?? null,
                 operationType: 'assign',
                 ...scheduleCtx,
               },
-              reason: res.success ? undefined : res.message,
+              reason: batchErrorMsg,
             });
+            results.push({ operation: action.operation, targetGroupUuid: action.targetGroupUuid, fromGroupUuid: action.fromGroupUuid, ip, success: actionSuccess, error: batchErrorMsg });
+          }
 
-          } else if (action.operation === 'REMOVE') {
-            if (!action.targetGroupUuid) throw new Error('targetGroupUuid is required for REMOVE');
-            const group = groupMap.get(action.targetGroupUuid);
+        // ── REMOVE ────────────────────────────────────────────────────────────
+        } else if (action.operation === 'REMOVE') {
+          if (!action.targetGroupUuid) throw new Error('targetGroupUuid is required for REMOVE');
+          const group = groupMap.get(action.targetGroupUuid);
 
+          for (const ip of targetIps) {
             await logAuditEvent({
               action: 'OPNSENSE_GROUP_IP_UNASSIGN_ATTEMPT',
               details: {
@@ -921,33 +1097,82 @@ class ScheduleExecutionService {
                 ...scheduleCtx,
               },
             });
+          }
 
-            const res = await removeIpFromGroup(action.targetGroupUuid, ip);
-            result.success = res.success;
-            if (!res.success) result.error = res.message;
+          // Compute new content: remove every target IP's representative from the group.
+          const prevContent = [...(groupContentMap.get(action.targetGroupUuid) ?? [])];
+          let newContent = [...prevContent];
+          for (const ip of targetIps) {
+            const item = resolveItemInContent(ip, newContent);
+            if (item) newContent = newContent.filter((x) => x !== item);
+          }
 
+          const batchResult = await batchAliasOperations([makeGroupUpdateOp(action.targetGroupUuid, newContent)]);
+          const actionSuccess = batchResult.success;
+
+          if (actionSuccess) {
+            groupContentMap.set(action.targetGroupUuid, newContent);
+          } else {
+            logger.error(`REMOVE batch failed for schedule ${schedule.id}:`, batchResult);
+          }
+
+          const batchErrorMsg = actionSuccess ? undefined : (batchResult.results.find((r) => r.error)?.error ?? 'Batch operation failed');
+
+          for (const ip of targetIps) {
+            if (actionSuccess) trackRemove(ip, action.targetGroupUuid);
             await logAuditEvent({
-              action: res.success
-                ? 'OPNSENSE_GROUP_IP_UNASSIGN_SUCCESS'
-                : 'OPNSENSE_GROUP_IP_UNASSIGN_FAILURE',
+              action: actionSuccess ? 'OPNSENSE_GROUP_IP_UNASSIGN_SUCCESS' : 'OPNSENSE_GROUP_IP_UNASSIGN_FAILURE',
               details: {
                 groupId: action.targetGroupUuid,
                 groupName: group?.name ?? null,
                 groupFriendlyName: group?.friendlyName ?? null,
+                // Structured object required by device-group-history graph (getGroupInfo lookup)
+                unassignedGroup: {
+                  id: action.targetGroupUuid,
+                  name: group?.name ?? null,
+                  friendlyName: group?.friendlyName ?? null,
+                },
                 ipAddress: ip,
                 hostAliasName: ipToAliasName.get(ip) ?? null,
                 operationType: 'unassign',
                 ...scheduleCtx,
               },
-              reason: res.success ? undefined : res.message,
+              reason: batchErrorMsg,
             });
+            results.push({ operation: action.operation, targetGroupUuid: action.targetGroupUuid, fromGroupUuid: action.fromGroupUuid, ip, success: actionSuccess, error: batchErrorMsg });
+          }
 
-          } else if (action.operation === 'MOVE') {
-            if (!action.fromGroupUuid) throw new Error('fromGroupUuid is required for MOVE');
-            if (!action.targetGroupUuid) throw new Error('targetGroupUuid is required for MOVE');
-            const fromGroup = groupMap.get(action.fromGroupUuid);
-            const toGroup = groupMap.get(action.targetGroupUuid);
+        // ── MOVE ──────────────────────────────────────────────────────────────
+        } else if (action.operation === 'MOVE') {
+          if (!action.fromGroupUuid) throw new Error('fromGroupUuid is required for MOVE');
+          if (!action.targetGroupUuid) throw new Error('targetGroupUuid is required for MOVE');
+          const fromGroup = groupMap.get(action.fromGroupUuid);
+          const toGroup = groupMap.get(action.targetGroupUuid);
 
+          // Phase 1: ensure every target IP has a host alias.
+          // (MOVE adds to target group, so aliases must exist.)
+          const aliasesOk = await ensureAliasesExist(targetIps);
+          if (!aliasesOk) {
+            for (const ip of targetIps) {
+              await logAuditEvent({
+                action: 'OPNSENSE_GROUP_IP_ASSIGN_FAILURE',
+                details: {
+                  groupId: action.targetGroupUuid,
+                  groupName: toGroup?.name ?? null,
+                  groupFriendlyName: toGroup?.friendlyName ?? null,
+                  ipAddress: ip,
+                  hostAliasName: ipToAliasName.get(ip) ?? null,
+                  operationType: 'move',
+                  ...scheduleCtx,
+                },
+                reason: 'Host alias creation failed',
+              });
+              results.push({ operation: action.operation, targetGroupUuid: action.targetGroupUuid, fromGroupUuid: action.fromGroupUuid, ip, success: false, error: 'Host alias creation failed' });
+            }
+            continue;
+          }
+
+          for (const ip of targetIps) {
             await logAuditEvent({
               action: 'OPNSENSE_GROUP_IP_ASSIGN_ATTEMPT',
               details: {
@@ -961,24 +1186,40 @@ class ScheduleExecutionService {
                 ...scheduleCtx,
               },
             });
+          }
 
-            const removeRes = await removeIpFromGroup(action.fromGroupUuid, ip);
-            if (!removeRes.success) {
-              result.error = `Remove failed: ${removeRes.message}`;
-              await logAuditEvent({
-                action: 'OPNSENSE_GROUP_IP_ASSIGN_FAILURE',
-                details: {
-                  groupId: action.targetGroupUuid,
-                  groupName: toGroup?.name ?? null,
-                  groupFriendlyName: toGroup?.friendlyName ?? null,
-                  ipAddress: ip,
-                  hostAliasName: ipToAliasName.get(ip) ?? null,
-                  operationType: 'move',
-                  ...scheduleCtx,
-                },
-                reason: `Remove from source group failed: ${removeRes.message}`,
-              });
-            } else {
+          // Compute new content for both groups.
+          // MOVE is an explicit point-to-point operation: no group-type enforcement.
+          // Remove all target aliases from fromGroup; add all to targetGroup.
+          let newFromContent = [...(groupContentMap.get(action.fromGroupUuid) ?? [])];
+          const newTargetContent = [...(groupContentMap.get(action.targetGroupUuid) ?? [])];
+
+          for (const ip of targetIps) {
+            const item = resolveItemInContent(ip, newFromContent);
+            if (item) newFromContent = newFromContent.filter((x) => x !== item);
+            const aliasName = ipToAliasName.get(ip) ?? ip;
+            if (!newTargetContent.includes(aliasName) && !newTargetContent.includes(ip)) {
+              newTargetContent.push(aliasName);
+            }
+          }
+
+          const batchResult = await batchAliasOperations([
+            makeGroupUpdateOp(action.fromGroupUuid, newFromContent),
+            makeGroupUpdateOp(action.targetGroupUuid, newTargetContent),
+          ]);
+          const actionSuccess = batchResult.success;
+
+          if (actionSuccess) {
+            groupContentMap.set(action.fromGroupUuid, newFromContent);
+            groupContentMap.set(action.targetGroupUuid, newTargetContent);
+          } else {
+            logger.error(`MOVE batch failed for schedule ${schedule.id}:`, batchResult);
+          }
+
+          const batchErrorMsg = actionSuccess ? undefined : (batchResult.results.find((r) => r.error)?.error ?? 'Batch operation failed');
+
+          for (const ip of targetIps) {
+            if (actionSuccess) {
               await logAuditEvent({
                 action: 'OPNSENSE_GROUP_IP_MOVE_REMOVE',
                 details: {
@@ -992,40 +1233,47 @@ class ScheduleExecutionService {
                   ...scheduleCtx,
                 },
               });
-
-              const addRes = await addIpToGroup(action.targetGroupUuid, ip);
-              result.success = addRes.success;
-              if (!addRes.success) result.error = `Add failed: ${addRes.message}`;
-
-              await logAuditEvent({
-                action: result.success
-                  ? 'OPNSENSE_GROUP_IP_MOVE_SUCCESS'
-                  : 'OPNSENSE_GROUP_IP_ASSIGN_FAILURE',
-                details: {
-                  operationType: 'move',
-                  groupId: action.targetGroupUuid,
-                  groupName: toGroup?.name ?? null,
-                  groupFriendlyName: toGroup?.friendlyName ?? null,
-                  ipAddress: ip,
-                  hostAliasName: ipToAliasName.get(ip) ?? null,
-                  sourceGroups: [{
-                    id: action.fromGroupUuid,
-                    name: fromGroup?.name ?? null,
-                    friendlyName: fromGroup?.friendlyName ?? null,
-                  }],
-                  ...scheduleCtx,
-                },
-                reason: result.success ? undefined : result.error,
-              });
+              trackRemove(ip, action.fromGroupUuid);
+              trackAdd(ip, action.targetGroupUuid);
             }
+            await logAuditEvent({
+              action: actionSuccess ? 'OPNSENSE_GROUP_IP_MOVE_SUCCESS' : 'OPNSENSE_GROUP_IP_ASSIGN_FAILURE',
+              details: {
+                operationType: 'move',
+                groupId: action.targetGroupUuid,
+                groupName: toGroup?.name ?? null,
+                groupFriendlyName: toGroup?.friendlyName ?? null,
+                // Structured object required by device-group-history graph —
+                // without targetGroup the history route's if (targetGroupInfo) gate
+                // silently skips the event entirely.
+                targetGroup: {
+                  id: action.targetGroupUuid,
+                  name: toGroup?.name ?? null,
+                  friendlyName: toGroup?.friendlyName ?? null,
+                },
+                sourceGroups: [{ id: action.fromGroupUuid, name: fromGroup?.name ?? null, friendlyName: fromGroup?.friendlyName ?? null }],
+                ipAddress: ip,
+                hostAliasName: ipToAliasName.get(ip) ?? null,
+                ...scheduleCtx,
+              },
+              reason: batchErrorMsg,
+            });
+            results.push({ operation: action.operation, targetGroupUuid: action.targetGroupUuid, fromGroupUuid: action.fromGroupUuid, ip, success: actionSuccess, error: batchErrorMsg });
+          }
 
-          } else if (action.operation === 'CLEAR_ALL') {
-            // Remove the IP from every group it belongs to.
-            let allCleared = true;
+        // ── CLEAR_ALL ─────────────────────────────────────────────────────────
+        } else if (action.operation === 'CLEAR_ALL') {
+          // For each (ip, group) pair where the IP is represented in the group content,
+          // collect the item to remove, emit ATTEMPT events, then execute a single batch.
+          //
+          // groupItemsToRemove: groupUuid → Map<ip, itemToRemove>
+          const groupItemsToRemove = new Map<string, Map<string, string>>();
+
+          for (const ip of targetIps) {
             for (const group of allGroups) {
-              const memberNames = parseGroupContent(group.rawContent, group.name);
-              const matchingAlias = memberNames.find((name) => nameToIp.get(name) === ip);
-              if (matchingAlias !== undefined) {
+              const content = groupContentMap.get(group.uuid) ?? [];
+              const item = resolveItemInContent(ip, content);
+              if (item !== null) {
                 await logAuditEvent({
                   action: 'OPNSENSE_GROUP_IP_UNASSIGN_ATTEMPT',
                   details: {
@@ -1038,57 +1286,84 @@ class ScheduleExecutionService {
                     ...scheduleCtx,
                   },
                 });
+                if (!groupItemsToRemove.has(group.uuid)) groupItemsToRemove.set(group.uuid, new Map());
+                groupItemsToRemove.get(group.uuid)!.set(ip, item);
+              }
+            }
+          }
 
-                const res = await removeIpFromGroup(group.uuid, ip);
-                if (!res.success) {
-                  allCleared = false;
-                  result.error = res.message;
-                }
+          let actionSuccess = true;
+          const newGroupContents = new Map<string, string[]>();
 
+          if (groupItemsToRemove.size > 0) {
+            for (const [groupUuid, ipItemMap] of groupItemsToRemove) {
+              const current = groupContentMap.get(groupUuid) ?? [];
+              const itemsToRemove = new Set(ipItemMap.values());
+              newGroupContents.set(groupUuid, current.filter((x) => !itemsToRemove.has(x)));
+            }
+            const clearOps = Array.from(newGroupContents.entries()).map(([uuid, content]) => makeGroupUpdateOp(uuid, content));
+            const batchResult = await batchAliasOperations(clearOps);
+            actionSuccess = batchResult.success;
+
+            if (actionSuccess) {
+              for (const [uuid, content] of newGroupContents) groupContentMap.set(uuid, content);
+            } else {
+              logger.error(`CLEAR_ALL batch failed for schedule ${schedule.id}:`, batchResult);
+            }
+          }
+
+          const batchErrorMsg = actionSuccess ? undefined : 'Batch operation failed';
+
+          for (const ip of targetIps) {
+            for (const group of allGroups) {
+              if (groupItemsToRemove.get(group.uuid)?.has(ip)) {
+                if (actionSuccess) trackRemove(ip, group.uuid);
                 await logAuditEvent({
-                  action: res.success
-                    ? 'OPNSENSE_GROUP_IP_UNASSIGN_SUCCESS'
-                    : 'OPNSENSE_GROUP_IP_UNASSIGN_FAILURE',
+                  action: actionSuccess ? 'OPNSENSE_GROUP_IP_UNASSIGN_SUCCESS' : 'OPNSENSE_GROUP_IP_UNASSIGN_FAILURE',
                   details: {
                     groupId: group.uuid,
                     groupName: group.name,
                     groupFriendlyName: group.friendlyName ?? null,
+                    // Structured object required by device-group-history graph (getGroupInfo lookup)
+                    unassignedGroup: {
+                      id: group.uuid,
+                      name: group.name,
+                      friendlyName: group.friendlyName ?? null,
+                    },
                     ipAddress: ip,
                     hostAliasName: ipToAliasName.get(ip) ?? null,
                     operationType: 'clear_all',
                     ...scheduleCtx,
                   },
-                  reason: res.success ? undefined : res.message,
+                  reason: batchErrorMsg,
                 });
               }
             }
-            result.success = allCleared;
-
-          } else {
-            result.error = `Unknown operation: ${action.operation}`;
-          }
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          result.error = message;
-
-          // Detect network errors (OPNsense unreachable)
-          if (
-            message.includes('ECONNREFUSED') ||
-            message.includes('ENOTFOUND') ||
-            message.includes('ETIMEDOUT') ||
-            message.includes('fetch failed') ||
-            message.includes('network')
-          ) {
-            isNetworkError = true;
+            results.push({ operation: action.operation, targetGroupUuid: action.targetGroupUuid, fromGroupUuid: action.fromGroupUuid, ip, success: actionSuccess, error: batchErrorMsg });
           }
 
-          logger.error(
-            `Action ${action.operation} failed for IP ${ip} in schedule ${schedule.id}:`,
-            err,
-          );
+        // ── Unknown ───────────────────────────────────────────────────────────
+        } else {
+          for (const ip of targetIps) {
+            results.push({ operation: action.operation, targetGroupUuid: action.targetGroupUuid, fromGroupUuid: action.fromGroupUuid, ip, success: false, error: `Unknown operation: ${action.operation}` });
+          }
         }
 
-        results.push(result);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (
+          message.includes('ECONNREFUSED') ||
+          message.includes('ENOTFOUND') ||
+          message.includes('ETIMEDOUT') ||
+          message.includes('fetch failed') ||
+          message.includes('network')
+        ) {
+          isNetworkError = true;
+        }
+        logger.error(`Action ${action.operation} failed for schedule ${schedule.id}:`, err);
+        for (const ip of targetIps) {
+          results.push({ operation: action.operation, targetGroupUuid: action.targetGroupUuid, fromGroupUuid: action.fromGroupUuid, ip, success: false, error: message });
+        }
       }
     }
 
