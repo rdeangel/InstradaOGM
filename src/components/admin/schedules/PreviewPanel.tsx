@@ -98,7 +98,7 @@ export function PreviewPanel({ getFormData }: PreviewPanelProps) {
             <p className="text-sm font-medium mb-1">Resolved Targets</p>
             {result.resolvedTargets.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                No targets resolved (HOST_ALIAS and NETWORK_GROUP require live OPNsense data).
+                No targets resolved. Host alias lookup requires live OPNsense data.
               </p>
             ) : (
               <p className="text-sm text-muted-foreground">

@@ -19,9 +19,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { SearchableSelect } from '@/components/ui/searchable-select';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useOpnsenseNetworkGroups } from '@/hooks/use-opnsense-network-groups';
-import { ArrowUp, ArrowDown, Trash2, Plus } from 'lucide-react';
+import { GroupCombobox } from './GroupCombobox';
+import { ArrowUp, ArrowDown, Trash2, Plus, AlertTriangle, Loader2 } from 'lucide-react';
+import type { NetworkGroup } from '@/types/opnsense';
 
 type ActionFormData = {
   operation: 'ASSIGN' | 'REMOVE' | 'MOVE' | 'CLEAR_ALL';
@@ -49,7 +51,9 @@ function ActionRow({
   action,
   index,
   total,
-  groupOptions,
+  groups,
+  boundaryType,
+  startTargetUuids,
   onUpdate,
   onRemove,
   onMoveUp,
@@ -58,12 +62,26 @@ function ActionRow({
   action: ActionFormData;
   index: number;
   total: number;
-  groupOptions: { value: string; label: string; isDisabled: boolean }[];
+  groups: NetworkGroup[];
+  boundaryType: 'START' | 'END';
+  /** Group UUIDs targeted by start actions — used to filter end-action group selectors. */
+  startTargetUuids?: Set<string>;
   onUpdate: (updated: ActionFormData) => void;
   onRemove: () => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
 }) {
+  // Start actions: always show all groups freely.
+  // End actions: REMOVE/MOVE-from are restricted to what start actions assigned;
+  //   ASSIGN/MOVE-to are unrestricted (you may assign/move to any group at window end).
+  const hasStartTargets = boundaryType === 'END' && startTargetUuids && startTargetUuids.size > 0;
+
+  const targetFilterMode =
+    hasStartTargets && action.operation === 'REMOVE' ? 'only-assigned' : 'none';
+
+  const fromFilterMode =
+    hasStartTargets && action.operation === 'MOVE' ? 'only-assigned' : 'none';
+
   return (
     <div className="flex items-start gap-2 p-3 border rounded-lg bg-muted/30">
       <div className="flex flex-col gap-1">
@@ -117,12 +135,15 @@ function ActionRow({
             <Label className="text-xs text-muted-foreground mb-1">
               {action.operation === 'MOVE' ? 'To Group' : 'Group'}
             </Label>
-            <SearchableSelect
-              options={groupOptions}
+            <GroupCombobox
+              groups={groups}
               value={action.targetGroupUuid ?? null}
               onValueChange={val => onUpdate({ ...action, targetGroupUuid: val ?? undefined })}
               placeholder="Select group..."
-              className="h-8 w-full"
+              assignedGroupUuids={hasStartTargets ? startTargetUuids : undefined}
+              filterMode={targetFilterMode}
+              excludeUuids={action.operation === 'MOVE' && action.fromGroupUuid ? [action.fromGroupUuid] : []}
+              className="w-full"
             />
           </div>
         )}
@@ -130,12 +151,15 @@ function ActionRow({
         {action.operation === 'MOVE' && (
           <div>
             <Label className="text-xs text-muted-foreground mb-1">From Group</Label>
-            <SearchableSelect
-              options={groupOptions}
+            <GroupCombobox
+              groups={groups}
               value={action.fromGroupUuid ?? null}
               onValueChange={val => onUpdate({ ...action, fromGroupUuid: val ?? undefined })}
               placeholder="Select source group..."
-              className="h-8 w-full"
+              assignedGroupUuids={hasStartTargets ? startTargetUuids : undefined}
+              filterMode={fromFilterMode}
+              excludeUuids={action.targetGroupUuid ? [action.targetGroupUuid] : []}
+              className="w-full"
             />
           </div>
         )}
@@ -161,16 +185,17 @@ export function BoundaryActionEditor({
   onClose,
 }: BoundaryActionEditorProps) {
   const [editedWindow, setEditedWindow] = useState<TimeWindowFormData>(initialWindow);
-  const { groups, isLoading: groupsLoading } = useOpnsenseNetworkGroups();
-
-  const groupOptions = groups.map(g => ({
-    value: g.uuid,
-    label: g.friendlyName ?? g.name,
-    isDisabled: !g.enabled,
-  }));
+  const { groups, isLoading: groupsLoading, error: groupsError } = useOpnsenseNetworkGroups();
 
   const startActions = editedWindow.actions.filter(a => a.boundaryType === 'START');
   const endActions = editedWindow.actions.filter(a => a.boundaryType === 'END');
+
+  // Groups targeted by start ASSIGN/MOVE actions — used to filter end-action group selectors.
+  const startTargetUuids = new Set(
+    startActions
+      .map(a => a.targetGroupUuid)
+      .filter((uuid): uuid is string => Boolean(uuid)),
+  );
 
   function updateActions(boundaryType: 'START' | 'END', newActions: ActionFormData[]) {
     const other = editedWindow.actions.filter(a => a.boundaryType !== boundaryType);
@@ -216,7 +241,26 @@ export function BoundaryActionEditor({
     const actions = editedWindow.actions.filter(a => a.boundaryType === boundaryType);
     return (
       <div className="space-y-2">
-        {actions.length === 0 && (
+        {groupsError && (
+          <Alert variant="destructive">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>Failed to load network groups. Group selectors will be empty.</AlertDescription>
+          </Alert>
+        )}
+        {!groupsError && !groupsLoading && groups.length === 0 && (
+          <Alert variant="default" className="border-amber-400 bg-amber-50 dark:bg-amber-950/20">
+            <AlertTriangle className="h-4 w-4 text-amber-600" />
+            <AlertDescription className="text-amber-700 dark:text-amber-400">
+              No network groups found in OPNsense. Groups must exist before actions can be configured.
+            </AlertDescription>
+          </Alert>
+        )}
+        {groupsLoading && (
+          <p className="text-xs text-muted-foreground flex items-center gap-1 py-2">
+            <Loader2 className="h-3 w-3 animate-spin" /> Loading network groups…
+          </p>
+        )}
+        {actions.length === 0 && !groupsLoading && (
           <p className="text-sm text-muted-foreground text-center py-4">
             No actions defined. Add one below.
           </p>
@@ -227,7 +271,9 @@ export function BoundaryActionEditor({
             action={action}
             index={i}
             total={actions.length}
-            groupOptions={groupOptions}
+            groups={groups}
+            boundaryType={boundaryType}
+            startTargetUuids={startTargetUuids}
             onUpdate={updated => updateAction(boundaryType, i, updated)}
             onRemove={() => removeAction(boundaryType, i)}
             onMoveUp={() => moveAction(boundaryType, i, i - 1)}
@@ -240,7 +286,6 @@ export function BoundaryActionEditor({
           size="sm"
           className="w-full"
           onClick={() => addAction(boundaryType)}
-          disabled={groupsLoading}
         >
           <Plus className="h-4 w-4 mr-2" />
           Add {boundaryType === 'START' ? 'Start' : 'End'} Action

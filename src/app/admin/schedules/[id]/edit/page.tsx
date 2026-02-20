@@ -32,7 +32,7 @@ interface ScheduleDetail {
   timezone: string;
   executeAt: string | null;
   cronExpression: string | null;
-  targetType: 'IP_LIST' | 'HOST_ALIAS' | 'NETWORK_GROUP';
+  targetType: string;
   targetSelector: unknown;
   days?: Array<{
     dayOfWeek: number;
@@ -86,19 +86,8 @@ function mapToFormValues(schedule: ScheduleDetail): Partial<ScheduleFormValues> 
       fromGroupUuid: a.fromGroupUuid ?? undefined,
       sortOrder: a.sortOrder,
     })),
-    targetType: schedule.targetType,
-    ipListText:
-      schedule.targetType === 'IP_LIST'
-        ? ((selector?.ips as string[]) ?? []).join('\n')
-        : '',
-    hostAliasUuids:
-      schedule.targetType === 'HOST_ALIAS'
-        ? ((selector?.hostAliasUuids as string[]) ?? [])
-        : [],
-    networkGroupUuid:
-      schedule.targetType === 'NETWORK_GROUP'
-        ? ((selector?.networkGroupUuid as string) ?? '')
-        : '',
+    targetType: 'HOST_ALIAS',
+    hostAliasUuids: (selector?.hostAliasUuids as string[]) ?? [],
   };
 }
 

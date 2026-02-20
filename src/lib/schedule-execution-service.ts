@@ -739,11 +739,76 @@ class ScheduleExecutionService {
       fromGroupUuid: string | null;
       sortOrder: number;
     }>,
-    schedule: { id: string },
+    schedule: { id: string; name: string },
   ): Promise<ExecutionSummary> {
     const sortedActions = [...actions].sort((a, b) => a.sortOrder - b.sortOrder);
     const results: ActionResult[] = [];
     let isNetworkError = false;
+
+    // Fetch group, alias, group-type, and global settings data once upfront.
+    const [allGroups, aliasesResponse, groupDisplays, globalSettings] = await Promise.all([
+      getNetworkGroups(),
+      exportAliases(),
+      prisma.opnsenseGroupDisplay.findMany(),
+      prisma.globalSettings.findFirst({ orderBy: { id: 'asc' } }),
+    ]);
+    const groupMap = new Map(allGroups.map((g) => [g.uuid, g]));
+    const allAliases = aliasesResponse?.aliases?.alias ?? {};
+
+    // When enableGroupTypes is false, MultiSelect is inactive and every assignment
+    // must behave as SingleSelect (evict from all current groups before assigning).
+    const enableGroupTypes = globalSettings?.enableGroupTypes ?? false;
+
+    // UUID → groupType ('SingleSelect' | 'MultiSelect'); default to SingleSelect when not configured.
+    const groupTypeMap = new Map<string, 'SingleSelect' | 'MultiSelect'>(
+      groupDisplays.map((d) => [
+        d.opnsenseUuid,
+        d.groupType === 'MultiSelect' ? 'MultiSelect' : 'SingleSelect',
+      ]),
+    );
+
+    // IP → alias name (for audit details and SingleSelect membership lookup)
+    const ipToAliasName = new Map<string, string>();
+    // alias name → IP (for CLEAR_ALL membership lookup)
+    const nameToIp = new Map<string, string>();
+    for (const [, alias] of Object.entries(allAliases)) {
+      if (alias.type === 'host' && alias.name && alias.content) {
+        const trimmed = alias.content.trim();
+        ipToAliasName.set(trimmed, alias.name);
+        nameToIp.set(alias.name, trimmed);
+      }
+    }
+
+    // Runtime membership: ip → Set<groupUuid> — initialised from allGroups rawContent,
+    // then kept up-to-date as each action executes so that subsequent ASSIGN operations
+    // within the same run see the correct current membership (avoids stale-cache bugs
+    // when multiple ASSIGN actions target different SingleSelect groups).
+    const ipRuntimeGroups = new Map<string, Set<string>>();
+    for (const group of allGroups) {
+      const memberNames = parseGroupContent(group.rawContent, group.name);
+      for (const name of memberNames) {
+        const memberIp = nameToIp.get(name);
+        if (memberIp) {
+          if (!ipRuntimeGroups.has(memberIp)) ipRuntimeGroups.set(memberIp, new Set());
+          ipRuntimeGroups.get(memberIp)!.add(group.uuid);
+        }
+      }
+    }
+
+    const trackAdd = (memberIp: string, groupUuid: string) => {
+      if (!ipRuntimeGroups.has(memberIp)) ipRuntimeGroups.set(memberIp, new Set());
+      ipRuntimeGroups.get(memberIp)!.add(groupUuid);
+    };
+    const trackRemove = (memberIp: string, groupUuid: string) => {
+      ipRuntimeGroups.get(memberIp)?.delete(groupUuid);
+    };
+
+    // Common context included in every operation's audit entry
+    const scheduleCtx = {
+      authMethod: 'SCHEDULED',
+      scheduleId: schedule.id,
+      scheduleName: schedule.name,
+    };
 
     for (const action of sortedActions) {
       for (const ip of targetIps) {
@@ -758,55 +823,247 @@ class ScheduleExecutionService {
         try {
           if (action.operation === 'ASSIGN') {
             if (!action.targetGroupUuid) throw new Error('targetGroupUuid is required for ASSIGN');
-            const res = await addIpToGroup(action.targetGroupUuid, ip);
-            result.success = res.success;
-            if (!res.success) result.error = res.message;
-          } else if (action.operation === 'REMOVE') {
-            if (!action.targetGroupUuid) throw new Error('targetGroupUuid is required for REMOVE');
-            const res = await removeIpFromGroup(action.targetGroupUuid, ip);
-            result.success = res.success;
-            if (!res.success) result.error = res.message;
-          } else if (action.operation === 'MOVE') {
-            if (!action.fromGroupUuid) throw new Error('fromGroupUuid is required for MOVE');
-            if (!action.targetGroupUuid) throw new Error('targetGroupUuid is required for MOVE');
-            const removeRes = await removeIpFromGroup(action.fromGroupUuid, ip);
-            if (!removeRes.success) {
-              result.error = `Remove failed: ${removeRes.message}`;
-            } else {
-              const addRes = await addIpToGroup(action.targetGroupUuid, ip);
-              result.success = addRes.success;
-              if (!addRes.success) result.error = `Add failed: ${addRes.message}`;
-              else result.success = true;
-            }
-          } else if (action.operation === 'CLEAR_ALL') {
-            // Remove the IP from every group it belongs to.
-            // Group content is alias names, not IPs — build a name→IP map first.
-            const [groups, aliasesResponse] = await Promise.all([
-              getNetworkGroups(),
-              exportAliases(),
-            ]);
-            const allAliases = aliasesResponse?.aliases?.alias ?? {};
-            const nameToIp = new Map<string, string>();
-            for (const [, alias] of Object.entries(allAliases)) {
-              if (alias.type === 'host' && alias.name && alias.content) {
-                nameToIp.set(alias.name, alias.content.trim());
+            const group = groupMap.get(action.targetGroupUuid);
+            const targetGroupType = groupTypeMap.get(action.targetGroupUuid) ?? 'SingleSelect';
+
+            await logAuditEvent({
+              action: 'OPNSENSE_GROUP_IP_ASSIGN_ATTEMPT',
+              details: {
+                groupId: action.targetGroupUuid,
+                groupName: group?.name ?? null,
+                groupFriendlyName: group?.friendlyName ?? null,
+                ipAddress: ip,
+                hostAliasName: ipToAliasName.get(ip) ?? null,
+                operationType: 'assign',
+                ...scheduleCtx,
+              },
+            });
+
+            // SingleSelect enforcement: before assigning, remove the IP from every
+            // other enabled group it currently belongs to that should be treated as
+            // SingleSelect — mirrors the route handler's moveFromExisting=true behaviour.
+            //
+            // When enableGroupTypes=false (feature flag off): MultiSelect is inactive,
+            // so ALL groups are treated as SingleSelect and the IP is evicted from
+            // every other group it belongs to regardless of their configured type.
+            //
+            // When enableGroupTypes=true: only evict from groups whose type is
+            // SingleSelect (MultiSelect groups allow additive membership).
+            //
+            // Uses the runtime membership map (not rawContent) so multiple ASSIGN
+            // actions within the same execution see up-to-date membership.
+            const targetIsSingleSelect = !enableGroupTypes || targetGroupType === 'SingleSelect';
+            if (targetIsSingleSelect) {
+              const aliasName = ipToAliasName.get(ip);
+              const currentGroupUuids = ipRuntimeGroups.get(ip) ?? new Set<string>();
+              for (const currentUuid of currentGroupUuids) {
+                if (currentUuid === action.targetGroupUuid) continue;
+                // When the feature flag is off, treat every group as SingleSelect.
+                // When enabled, skip groups whose type is MultiSelect.
+                if (enableGroupTypes && (groupTypeMap.get(currentUuid) ?? 'SingleSelect') !== 'SingleSelect') continue;
+                const currentGroup = groupMap.get(currentUuid);
+                if (!currentGroup?.enabled) continue; // skip disabled groups
+
+                // IP is in another enabled SingleSelect group — evict it first.
+                await logAuditEvent({
+                  action: 'OPNSENSE_GROUP_IP_MOVE_REMOVE',
+                  details: {
+                    operationType: 'assign',
+                    sourceGroupId: currentUuid,
+                    sourceGroupName: currentGroup.name,
+                    sourceGroupFriendlyName: currentGroup.friendlyName ?? null,
+                    targetGroupId: action.targetGroupUuid,
+                    ipAddress: ip,
+                    hostAliasName: aliasName ?? null,
+                    ...scheduleCtx,
+                  },
+                });
+
+                await removeIpFromGroup(currentUuid, ip);
+                trackRemove(ip, currentUuid);
               }
             }
 
+            const res = await addIpToGroup(action.targetGroupUuid, ip);
+            result.success = res.success;
+            if (!res.success) result.error = res.message;
+            else trackAdd(ip, action.targetGroupUuid);
+
+            await logAuditEvent({
+              action: res.success
+                ? 'OPNSENSE_GROUP_IP_ASSIGN_SUCCESS'
+                : 'OPNSENSE_GROUP_IP_ASSIGN_FAILURE',
+              details: {
+                groupId: action.targetGroupUuid,
+                groupName: group?.name ?? null,
+                groupFriendlyName: group?.friendlyName ?? null,
+                ipAddress: ip,
+                hostAliasName: ipToAliasName.get(ip) ?? null,
+                operationType: 'assign',
+                ...scheduleCtx,
+              },
+              reason: res.success ? undefined : res.message,
+            });
+
+          } else if (action.operation === 'REMOVE') {
+            if (!action.targetGroupUuid) throw new Error('targetGroupUuid is required for REMOVE');
+            const group = groupMap.get(action.targetGroupUuid);
+
+            await logAuditEvent({
+              action: 'OPNSENSE_GROUP_IP_UNASSIGN_ATTEMPT',
+              details: {
+                groupId: action.targetGroupUuid,
+                groupName: group?.name ?? null,
+                groupFriendlyName: group?.friendlyName ?? null,
+                ipAddress: ip,
+                hostAliasName: ipToAliasName.get(ip) ?? null,
+                operationType: 'unassign',
+                ...scheduleCtx,
+              },
+            });
+
+            const res = await removeIpFromGroup(action.targetGroupUuid, ip);
+            result.success = res.success;
+            if (!res.success) result.error = res.message;
+
+            await logAuditEvent({
+              action: res.success
+                ? 'OPNSENSE_GROUP_IP_UNASSIGN_SUCCESS'
+                : 'OPNSENSE_GROUP_IP_UNASSIGN_FAILURE',
+              details: {
+                groupId: action.targetGroupUuid,
+                groupName: group?.name ?? null,
+                groupFriendlyName: group?.friendlyName ?? null,
+                ipAddress: ip,
+                hostAliasName: ipToAliasName.get(ip) ?? null,
+                operationType: 'unassign',
+                ...scheduleCtx,
+              },
+              reason: res.success ? undefined : res.message,
+            });
+
+          } else if (action.operation === 'MOVE') {
+            if (!action.fromGroupUuid) throw new Error('fromGroupUuid is required for MOVE');
+            if (!action.targetGroupUuid) throw new Error('targetGroupUuid is required for MOVE');
+            const fromGroup = groupMap.get(action.fromGroupUuid);
+            const toGroup = groupMap.get(action.targetGroupUuid);
+
+            await logAuditEvent({
+              action: 'OPNSENSE_GROUP_IP_ASSIGN_ATTEMPT',
+              details: {
+                groupId: action.targetGroupUuid,
+                groupName: toGroup?.name ?? null,
+                groupFriendlyName: toGroup?.friendlyName ?? null,
+                ipAddress: ip,
+                hostAliasName: ipToAliasName.get(ip) ?? null,
+                moveFromExisting: true,
+                operationType: 'move',
+                ...scheduleCtx,
+              },
+            });
+
+            const removeRes = await removeIpFromGroup(action.fromGroupUuid, ip);
+            if (!removeRes.success) {
+              result.error = `Remove failed: ${removeRes.message}`;
+              await logAuditEvent({
+                action: 'OPNSENSE_GROUP_IP_ASSIGN_FAILURE',
+                details: {
+                  groupId: action.targetGroupUuid,
+                  groupName: toGroup?.name ?? null,
+                  groupFriendlyName: toGroup?.friendlyName ?? null,
+                  ipAddress: ip,
+                  hostAliasName: ipToAliasName.get(ip) ?? null,
+                  operationType: 'move',
+                  ...scheduleCtx,
+                },
+                reason: `Remove from source group failed: ${removeRes.message}`,
+              });
+            } else {
+              await logAuditEvent({
+                action: 'OPNSENSE_GROUP_IP_MOVE_REMOVE',
+                details: {
+                  operationType: 'move',
+                  sourceGroupId: action.fromGroupUuid,
+                  sourceGroupName: fromGroup?.name ?? null,
+                  sourceGroupFriendlyName: fromGroup?.friendlyName ?? null,
+                  targetGroupId: action.targetGroupUuid,
+                  ipAddress: ip,
+                  hostAliasName: ipToAliasName.get(ip) ?? null,
+                  ...scheduleCtx,
+                },
+              });
+
+              const addRes = await addIpToGroup(action.targetGroupUuid, ip);
+              result.success = addRes.success;
+              if (!addRes.success) result.error = `Add failed: ${addRes.message}`;
+
+              await logAuditEvent({
+                action: result.success
+                  ? 'OPNSENSE_GROUP_IP_MOVE_SUCCESS'
+                  : 'OPNSENSE_GROUP_IP_ASSIGN_FAILURE',
+                details: {
+                  operationType: 'move',
+                  groupId: action.targetGroupUuid,
+                  groupName: toGroup?.name ?? null,
+                  groupFriendlyName: toGroup?.friendlyName ?? null,
+                  ipAddress: ip,
+                  hostAliasName: ipToAliasName.get(ip) ?? null,
+                  sourceGroups: [{
+                    id: action.fromGroupUuid,
+                    name: fromGroup?.name ?? null,
+                    friendlyName: fromGroup?.friendlyName ?? null,
+                  }],
+                  ...scheduleCtx,
+                },
+                reason: result.success ? undefined : result.error,
+              });
+            }
+
+          } else if (action.operation === 'CLEAR_ALL') {
+            // Remove the IP from every group it belongs to.
             let allCleared = true;
-            for (const group of groups) {
+            for (const group of allGroups) {
               const memberNames = parseGroupContent(group.rawContent, group.name);
-              // Find any alias in this group whose resolved IP matches the target IP
               const matchingAlias = memberNames.find((name) => nameToIp.get(name) === ip);
               if (matchingAlias !== undefined) {
+                await logAuditEvent({
+                  action: 'OPNSENSE_GROUP_IP_UNASSIGN_ATTEMPT',
+                  details: {
+                    groupId: group.uuid,
+                    groupName: group.name,
+                    groupFriendlyName: group.friendlyName ?? null,
+                    ipAddress: ip,
+                    hostAliasName: ipToAliasName.get(ip) ?? null,
+                    operationType: 'clear_all',
+                    ...scheduleCtx,
+                  },
+                });
+
                 const res = await removeIpFromGroup(group.uuid, ip);
                 if (!res.success) {
                   allCleared = false;
                   result.error = res.message;
                 }
+
+                await logAuditEvent({
+                  action: res.success
+                    ? 'OPNSENSE_GROUP_IP_UNASSIGN_SUCCESS'
+                    : 'OPNSENSE_GROUP_IP_UNASSIGN_FAILURE',
+                  details: {
+                    groupId: group.uuid,
+                    groupName: group.name,
+                    groupFriendlyName: group.friendlyName ?? null,
+                    ipAddress: ip,
+                    hostAliasName: ipToAliasName.get(ip) ?? null,
+                    operationType: 'clear_all',
+                    ...scheduleCtx,
+                  },
+                  reason: res.success ? undefined : res.message,
+                });
               }
             }
             result.success = allCleared;
+
           } else {
             result.error = `Unknown operation: ${action.operation}`;
           }

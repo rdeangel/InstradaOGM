@@ -26,7 +26,8 @@ export function useOpnsenseNetworkGroups(): UseOpnsenseNetworkGroupsResult {
       })
       .then(data => {
         if (!cancelled) {
-          setGroups(Array.isArray(data) ? data : []);
+          const list = Array.isArray(data) ? data : (Array.isArray(data?.networkGroups) ? data.networkGroups : []);
+          setGroups(list);
           setIsLoading(false);
         }
       })

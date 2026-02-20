@@ -33,7 +33,9 @@ import {
 import { Loader2, AlertTriangle, Info, ArrowUp, ArrowDown, Trash2, Plus } from 'lucide-react';
 import { ScheduleTimelineGrid, type ScheduleDayFormData } from './ScheduleTimelineGrid';
 import { PreviewPanel } from './PreviewPanel';
+import { GroupCombobox } from './GroupCombobox';
 import { useOpnsenseNetworkGroups } from '@/hooks/use-opnsense-network-groups';
+import type { NetworkGroup } from '@/types/opnsense';
 import { CronExpressionParser } from 'cron-parser';
 
 // Inline pure helper — avoids importing server-only schedule-validation module
@@ -85,10 +87,8 @@ export type ScheduleFormValues = {
   recurringActions: StandaloneAction[];
   // COMPLEX_WEEKLY — managed separately as `days` state
   // Targeting
-  targetType: 'IP_LIST' | 'HOST_ALIAS' | 'NETWORK_GROUP';
-  ipListText: string;
+  targetType: 'HOST_ALIAS';
   hostAliasUuids: string[];
-  networkGroupUuid: string;
 };
 
 const emptyFormValues: ScheduleFormValues = {
@@ -102,10 +102,8 @@ const emptyFormValues: ScheduleFormValues = {
   onceActions: [],
   cronExpression: '',
   recurringActions: [],
-  targetType: 'IP_LIST',
-  ipListText: '',
+  targetType: 'HOST_ALIAS',
   hostAliasUuids: [],
-  networkGroupUuid: '',
 };
 
 const defaultDays: ScheduleDayFormData[] = Array.from({ length: 7 }, (_, i) => ({
@@ -126,7 +124,7 @@ function StandaloneActionRow({
   action,
   index,
   total,
-  groupOptions,
+  groups,
   onUpdate,
   onRemove,
   onMoveUp,
@@ -135,7 +133,7 @@ function StandaloneActionRow({
   action: StandaloneAction;
   index: number;
   total: number;
-  groupOptions: { value: string; label: string; isDisabled: boolean }[];
+  groups: NetworkGroup[];
   onUpdate: (a: StandaloneAction) => void;
   onRemove: () => void;
   onMoveUp: () => void;
@@ -174,24 +172,28 @@ function StandaloneActionRow({
             <Label className="text-xs text-muted-foreground mb-1">
               {action.operation === 'MOVE' ? 'To Group' : 'Group'}
             </Label>
-            <SearchableSelect
-              options={groupOptions}
+            <GroupCombobox
+              groups={groups}
               value={action.targetGroupUuid ?? null}
               onValueChange={val => onUpdate({ ...action, targetGroupUuid: val ?? undefined })}
               placeholder="Select group..."
-              className="h-8 w-full"
+              filterMode="none"
+              excludeUuids={action.operation === 'MOVE' && action.fromGroupUuid ? [action.fromGroupUuid] : []}
+              className="w-full"
             />
           </div>
         )}
         {action.operation === 'MOVE' && (
           <div>
             <Label className="text-xs text-muted-foreground mb-1">From Group</Label>
-            <SearchableSelect
-              options={groupOptions}
+            <GroupCombobox
+              groups={groups}
               value={action.fromGroupUuid ?? null}
               onValueChange={val => onUpdate({ ...action, fromGroupUuid: val ?? undefined })}
               placeholder="Select source group..."
-              className="h-8 w-full"
+              filterMode="none"
+              excludeUuids={action.targetGroupUuid ? [action.targetGroupUuid] : []}
+              className="w-full"
             />
           </div>
         )}
@@ -212,7 +214,7 @@ export function ScheduleForm({
   submitLabel = 'Save',
 }: ScheduleFormProps) {
   const router = useRouter();
-  const { groups, isLoading: groupsLoading } = useOpnsenseNetworkGroups();
+  const { groups, isLoading: groupsLoading, error: groupsError } = useOpnsenseNetworkGroups();
 
   const [values, setValues] = useState<ScheduleFormValues>({
     ...emptyFormValues,
@@ -225,22 +227,15 @@ export function ScheduleForm({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [hostAliasOptions, setHostAliasOptions] = useState<{ value: string; label: string; isDisabled: boolean }[]>([]);
 
-  const groupOptions = groups.map(g => ({
-    value: g.uuid,
-    label: g.friendlyName ?? g.name,
-    isDisabled: !g.enabled,
-  }));
-
   const timezones = Intl.supportedValuesOf('timeZone');
   const timezoneOptions = timezones.map(tz => ({ value: tz, label: tz, isDisabled: false }));
 
-  // Fetch host aliases for HOST_ALIAS target type
+  // Fetch host aliases on mount
   useEffect(() => {
-    if (values.targetType !== 'HOST_ALIAS') return;
     fetch('/api/opnsense/filtered-host-aliases')
       .then(r => r.json())
       .then(data => {
-        const aliases = Array.isArray(data) ? data : (data.aliases ?? []);
+        const aliases = Array.isArray(data) ? data : (data.displayableHostAliases ?? []);
         setHostAliasOptions(
           aliases.map((a: { uuid?: string; name?: string; description?: string }) => ({
             value: a.uuid ?? '',
@@ -250,7 +245,7 @@ export function ScheduleForm({
         );
       })
       .catch(() => setHostAliasOptions([]));
-  }, [values.targetType]);
+  }, []);
 
   // Compute overlap warnings for COMPLEX_WEEKLY
   const overlapWarnings = values.scheduleType === 'COMPLEX_WEEKLY'
@@ -335,13 +330,8 @@ export function ScheduleForm({
       priority: values.priority,
       scheduleType: values.scheduleType,
       timezone: values.timezone,
-      targetType: values.targetType,
-      targetSelector:
-        values.targetType === 'IP_LIST'
-          ? { ips: values.ipListText.split('\n').map(s => s.trim()).filter(Boolean) }
-          : values.targetType === 'HOST_ALIAS'
-          ? { hostAliasUuids: values.hostAliasUuids }
-          : { networkGroupUuid: values.networkGroupUuid },
+      targetType: 'HOST_ALIAS',
+      targetSelector: { hostAliasUuids: values.hostAliasUuids },
     };
 
     if (values.scheduleType === 'COMPLEX_WEEKLY') {
@@ -380,16 +370,7 @@ export function ScheduleForm({
       try { CronExpressionParser.parse(values.cronExpression); } catch { errs.cronExpression = 'Invalid cron expression'; }
       if (values.recurringActions.length === 0) errs.recurringActions = 'At least one action is required';
     }
-    if (values.targetType === 'IP_LIST') {
-      const ips = values.ipListText.split('\n').map(s => s.trim()).filter(Boolean);
-      if (ips.length === 0) errs.targetSelector = 'At least one IP address is required';
-    }
-    if (values.targetType === 'HOST_ALIAS') {
-      if (values.hostAliasUuids.length === 0) errs.targetSelector = 'Select at least one host alias';
-    }
-    if (values.targetType === 'NETWORK_GROUP') {
-      if (!values.networkGroupUuid) errs.targetSelector = 'Select a network group';
-    }
+    if (values.hostAliasUuids.length === 0) errs.targetSelector = 'Select at least one host alias';
 
     setErrors(errs);
     return Object.keys(errs).length === 0;
@@ -411,13 +392,32 @@ export function ScheduleForm({
     const actions = values[field];
     return (
       <div className="space-y-2">
+        {groupsError && (
+          <Alert variant="destructive">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>Failed to load network groups: {groupsError}. Group selectors will be empty.</AlertDescription>
+          </Alert>
+        )}
+        {!groupsError && !groupsLoading && groups.length === 0 && (
+          <Alert variant="default" className="border-amber-400 bg-amber-50 dark:bg-amber-950/20">
+            <AlertTriangle className="h-4 w-4 text-amber-600" />
+            <AlertDescription className="text-amber-700 dark:text-amber-400">
+              No network groups found. Groups must exist in OPNsense before actions can be configured.
+            </AlertDescription>
+          </Alert>
+        )}
+        {groupsLoading && (
+          <p className="text-xs text-muted-foreground flex items-center gap-1">
+            <Loader2 className="h-3 w-3 animate-spin" /> Loading network groups…
+          </p>
+        )}
         {actions.map((action, i) => (
           <StandaloneActionRow
             key={i}
             action={action}
             index={i}
             total={actions.length}
-            groupOptions={groupOptions}
+            groups={groups}
             onUpdate={updated => updateStandaloneAction(field, i, updated)}
             onRemove={() => removeStandaloneAction(field, i)}
             onMoveUp={() => moveStandaloneAction(field, i, i - 1)}
@@ -430,7 +430,6 @@ export function ScheduleForm({
           size="sm"
           className="w-full"
           onClick={() => addStandaloneAction(field)}
-          disabled={groupsLoading}
         >
           <Plus className="h-4 w-4 mr-2" />
           Add Action
@@ -532,6 +531,13 @@ export function ScheduleForm({
           <div className="space-y-3">
             <Label>Weekly Schedule</Label>
 
+            <Alert variant="default" className="border-blue-300 bg-blue-50 dark:bg-blue-950/20">
+              <Info className="h-4 w-4 text-blue-600" />
+              <AlertDescription className="text-blue-700 dark:text-blue-400">
+                <strong>How to add actions:</strong> Click and drag on any day row to create a time window. Then click the coloured block to open the action editor — where you define which network group operations (Assign, Remove, Move) fire at the start and end of that window.
+              </AlertDescription>
+            </Alert>
+
             {/* Overlap warning */}
             {overlapWarnings.length > 0 && (
               <Alert variant="default" className="border-amber-400 bg-amber-50 dark:bg-amber-950/20">
@@ -600,92 +606,38 @@ export function ScheduleForm({
           </div>
         )}
 
-        {/* ── Target type ── */}
+        {/* ── Target host aliases ── */}
         <div className="space-y-3">
-          <Label>Target Type</Label>
-          <RadioGroup
-            value={values.targetType}
-            onValueChange={val => set('targetType', val as ScheduleFormValues['targetType'])}
-            className="flex flex-wrap gap-4"
-          >
-            <div className="flex items-center space-x-2">
-              <RadioGroupItem value="IP_LIST" id="target-ip" />
-              <Label htmlFor="target-ip">IP List</Label>
-            </div>
-            <div className="flex items-center space-x-2">
-              <RadioGroupItem value="HOST_ALIAS" id="target-alias" />
-              <Label htmlFor="target-alias">Host Alias</Label>
-            </div>
-            <div className="flex items-center space-x-2">
-              <RadioGroupItem value="NETWORK_GROUP" id="target-group" />
-              <Label htmlFor="target-group">Network Group</Label>
-            </div>
-          </RadioGroup>
-
-          {values.targetType === 'IP_LIST' && (
-            <div className="space-y-1">
-              <Label htmlFor="ip-list">IP Addresses (one per line)</Label>
-              <Textarea
-                id="ip-list"
-                value={values.ipListText}
-                onChange={e => set('ipListText', e.target.value)}
-                placeholder="192.168.1.1&#10;10.0.0.5"
-                rows={4}
-                className="font-mono text-sm"
-              />
-              {errors.targetSelector && <p className="text-xs text-destructive">{errors.targetSelector}</p>}
-            </div>
-          )}
-
-          {values.targetType === 'HOST_ALIAS' && (
-            <div className="space-y-2">
-              <Label>Host Aliases</Label>
-              <div className="flex flex-wrap gap-2 min-h-[36px] p-2 border rounded-md bg-muted/20">
-                {values.hostAliasUuids.map((uuid, i) => {
-                  const opt = hostAliasOptions.find(o => o.value === uuid);
-                  return (
-                    <Badge key={i} variant="secondary" className="gap-1">
-                      {opt?.label ?? uuid}
-                      <button
-                        type="button"
-                        className="ml-1 text-muted-foreground hover:text-foreground"
-                        onClick={() => set('hostAliasUuids', values.hostAliasUuids.filter(id => id !== uuid))}
-                      >
-                        ×
-                      </button>
-                    </Badge>
-                  );
-                })}
-              </div>
-              <SearchableSelect
-                options={hostAliasOptions.filter(o => !values.hostAliasUuids.includes(o.value))}
-                value={null}
-                onValueChange={val => {
-                  if (val && !values.hostAliasUuids.includes(val)) {
-                    set('hostAliasUuids', [...values.hostAliasUuids, val]);
-                  }
-                }}
-                placeholder="Add host alias..."
-                className="w-full"
-              />
-              {errors.targetSelector && <p className="text-xs text-destructive">{errors.targetSelector}</p>}
-            </div>
-          )}
-
-          {values.targetType === 'NETWORK_GROUP' && (
-            <div className="space-y-1">
-              <Label>Network Group</Label>
-              <SearchableSelect
-                options={groupOptions}
-                value={values.networkGroupUuid || null}
-                onValueChange={val => set('networkGroupUuid', val ?? '')}
-                placeholder="Select network group..."
-                className="w-full"
-                isRefreshLoading={groupsLoading}
-              />
-              {errors.targetSelector && <p className="text-xs text-destructive">{errors.targetSelector}</p>}
-            </div>
-          )}
+          <Label>Target Host Aliases</Label>
+          <div className="flex flex-wrap gap-2 min-h-[36px] p-2 border rounded-md bg-muted/20">
+            {values.hostAliasUuids.map((uuid, i) => {
+              const opt = hostAliasOptions.find(o => o.value === uuid);
+              return (
+                <Badge key={i} variant="secondary" className="gap-1">
+                  {opt?.label ?? uuid}
+                  <button
+                    type="button"
+                    className="ml-1 text-muted-foreground hover:text-foreground"
+                    onClick={() => set('hostAliasUuids', values.hostAliasUuids.filter(id => id !== uuid))}
+                  >
+                    ×
+                  </button>
+                </Badge>
+              );
+            })}
+          </div>
+          <SearchableSelect
+            options={hostAliasOptions.filter(o => !values.hostAliasUuids.includes(o.value))}
+            value={null}
+            onValueChange={val => {
+              if (val && !values.hostAliasUuids.includes(val)) {
+                set('hostAliasUuids', [...values.hostAliasUuids, val]);
+              }
+            }}
+            placeholder="Add host alias..."
+            className="w-full"
+          />
+          {errors.targetSelector && <p className="text-xs text-destructive">{errors.targetSelector}</p>}
         </div>
 
         {/* ── Preview panel ── */}

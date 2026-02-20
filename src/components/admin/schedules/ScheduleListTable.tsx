@@ -34,7 +34,7 @@ export interface ScheduleListItem {
   enabled: boolean;
   priority: number;
   scheduleType: 'COMPLEX_WEEKLY' | 'ONCE' | 'RECURRING';
-  targetType: 'IP_LIST' | 'HOST_ALIAS' | 'NETWORK_GROUP';
+  targetType: string;
   targetSelector: unknown;
   timezone: string;
   lastExecutedAt?: string | null;
@@ -58,21 +58,8 @@ function typeVariant(type: string): 'default' | 'secondary' | 'outline' {
 
 function formatTargetSummary(item: ScheduleListItem): string {
   const selector = item.targetSelector as Record<string, unknown>;
-  switch (item.targetType) {
-    case 'IP_LIST': {
-      const ips = selector?.ips as string[] | undefined;
-      if (!ips) return 'IP List';
-      return `${ips.length} IP${ips.length !== 1 ? 's' : ''}`;
-    }
-    case 'HOST_ALIAS': {
-      const uuids = selector?.hostAliasUuids as string[] | undefined;
-      return `${uuids?.length ?? 0} alias${(uuids?.length ?? 0) !== 1 ? 'es' : ''}`;
-    }
-    case 'NETWORK_GROUP':
-      return 'Network Group';
-    default:
-      return '—';
-  }
+  const uuids = selector?.hostAliasUuids as string[] | undefined;
+  return `${uuids?.length ?? 0} alias${(uuids?.length ?? 0) !== 1 ? 'es' : ''}`;
 }
 
 export function ScheduleListTable({ schedules, onRefresh, onEnabledFilterChange }: ScheduleListTableProps) {
