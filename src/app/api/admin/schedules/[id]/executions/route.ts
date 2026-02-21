@@ -31,7 +31,7 @@ export const GET = withAdminApiTracking(
       const queryValidation = executionHistoryQuerySchema.safeParse({
         page: searchParams.get('page'),
         limit: searchParams.get('limit'),
-        status: searchParams.get('status'),
+        status: searchParams.get('status') ?? undefined,
       });
 
       if (!queryValidation.success) {

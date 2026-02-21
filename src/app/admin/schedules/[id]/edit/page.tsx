@@ -7,19 +7,21 @@ import { Role } from '@/types/opnsense';
 import { AppHeader } from '@/components/layout/AppHeader';
 import { AppFooter } from '@/components/layout/AppFooter';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
 import { ClientOnly } from '@/components/util/ClientOnly';
 import { ScheduleForm, type ScheduleFormValues } from '@/components/admin/schedules/ScheduleForm';
 import { ExecutionHistory } from '@/components/admin/schedules/ExecutionHistory';
 import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '@/components/ui/accordion';
-import { CardSkeleton } from '@/components/ui/card-skeleton';
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 import type { ScheduleDayFormData } from '@/components/admin/schedules/ScheduleTimelineGrid';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, LogIn, Ban, AlertCircle } from 'lucide-react';
+import { Loader2, LogIn, Ban, AlertCircle, ChevronLeft, CalendarClock, History } from 'lucide-react';
 
 // Shape returned by GET /api/admin/schedules/[id]
 interface ScheduleDetail {
@@ -137,6 +139,7 @@ export default function EditSchedulePage() {
   const [schedule, setSchedule] = useState<ScheduleDetail | null>(null);
   const [isLoadingSchedule, setIsLoadingSchedule] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const fetchSchedule = useCallback(async () => {
     if (!scheduleId) return;
@@ -205,7 +208,7 @@ export default function EditSchedulePage() {
           <h1 className="text-2xl font-semibold">Not Authenticated</h1>
           <Button onClick={() => router.push('/login')}>Go to Login</Button>
         </main>
-        <AppFooter pageTitle="Edit Schedule" />
+        <AppFooter pageTitle="Admin Panel" />
       </div>
     );
   }
@@ -237,63 +240,102 @@ export default function EditSchedulePage() {
         title: 'Error',
         description: err.message ?? 'Failed to update schedule.',
       });
-      throw new Error(err.message ?? 'Update failed');
+      return;
     }
 
     toast({ title: 'Schedule updated', description: 'The schedule has been updated successfully.' });
-    router.push('/admin/schedules');
+    router.push('/admin?tab=scheduling');
   }
 
   return (
-    <div className="flex flex-col min-h-screen bg-background">
+    <div className="fixed inset-0 flex flex-col overflow-hidden bg-background">
       <AppHeader />
-      <main className="flex-grow container mx-auto px-4 py-6 pb-20 max-w-4xl">
-        <h1 className="text-3xl font-bold text-foreground mb-6">
-          Edit Schedule{schedule ? `: ${schedule.name}` : ''}
-        </h1>
+      <main className="flex-grow container mx-auto px-4 py-4 pb-16 max-w-4xl flex flex-col min-h-0">
+        {/* Back navigation */}
+        <Button
+          variant="ghost"
+          className="shrink-0 mb-3 -ml-2 gap-1 text-muted-foreground hover:text-foreground"
+          onClick={() => router.push('/admin?tab=scheduling')}
+        >
+          <ClientOnly><ChevronLeft className="h-4 w-4" /></ClientOnly>
+          Back to Scheduling
+        </Button>
 
-        {/* Loading skeleton */}
-        {isLoadingSchedule && (
-          <div className="space-y-4">
-            <CardSkeleton />
-            <CardSkeleton />
-          </div>
-        )}
+        <Card className="flex flex-col flex-1 min-h-0 overflow-hidden">
+          <CardHeader className="shrink-0 pb-4">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <ClientOnly><CalendarClock className="h-5 w-5 text-primary shrink-0" /></ClientOnly>
+                <div className="min-w-0">
+                  <CardTitle className="text-2xl truncate">
+                    {isLoadingSchedule ? 'Edit Schedule' : `Edit Schedule: ${schedule?.name ?? ''}`}
+                  </CardTitle>
+                  {!isLoadingSchedule && schedule && (
+                    <CardDescription>Modify the schedule configuration.</CardDescription>
+                  )}
+                </div>
+              </div>
+              {!isLoadingSchedule && schedule && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0"
+                  onClick={() => setHistoryOpen(true)}
+                >
+                  <ClientOnly><History className="h-4 w-4 mr-2" /></ClientOnly>
+                  History
+                </Button>
+              )}
+            </div>
+          </CardHeader>
 
-        {/* Error */}
-        {!isLoadingSchedule && loadError && (
-          <div className="flex flex-col items-center gap-4 py-12">
-            <AlertCircle className="h-12 w-12 text-destructive" />
-            <p className="text-muted-foreground">{loadError}</p>
-            <Button variant="outline" onClick={fetchSchedule}>Retry</Button>
-          </div>
-        )}
+          <CardContent className="flex-1 overflow-auto p-4 pt-0">
+            {/* Loading skeleton */}
+            {isLoadingSchedule && (
+              <div className="space-y-2 mt-2">
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-3/4" />
+              </div>
+            )}
 
-        {/* Form */}
-        {!isLoadingSchedule && schedule && (
-          <div className="space-y-8">
-            <ScheduleForm
-              initialValues={mapToFormValues(schedule)}
-              initialDays={schedule.scheduleType === 'COMPLEX_WEEKLY' ? mapToDays(schedule) : undefined}
-              onSubmit={handleSubmit}
-              submitLabel="Save Changes"
-            />
+            {/* Error */}
+            {!isLoadingSchedule && loadError && (
+              <div className="flex flex-col items-center gap-4 py-12">
+                <ClientOnly><AlertCircle className="h-12 w-12 text-destructive" /></ClientOnly>
+                <p className="text-muted-foreground">{loadError}</p>
+                <Button variant="outline" onClick={fetchSchedule}>Retry</Button>
+              </div>
+            )}
 
-            {/* Execution history */}
-            <Accordion type="single" collapsible>
-              <AccordionItem value="history">
-                <AccordionTrigger className="text-base font-medium">
-                  Execution History
-                </AccordionTrigger>
-                <AccordionContent>
-                  <ExecutionHistory scheduleId={scheduleId} />
-                </AccordionContent>
-              </AccordionItem>
-            </Accordion>
-          </div>
-        )}
+            {/* Form */}
+            {!isLoadingSchedule && schedule && (
+              <ScheduleForm
+                initialValues={mapToFormValues(schedule)}
+                initialDays={schedule.scheduleType === 'COMPLEX_WEEKLY' ? mapToDays(schedule) : undefined}
+                onSubmit={handleSubmit}
+                submitLabel="Save Changes"
+              />
+            )}
+          </CardContent>
+        </Card>
       </main>
-      <AppFooter pageTitle="Edit Schedule" />
+      <AppFooter pageTitle="Admin Panel" />
+
+      <Sheet open={historyOpen} onOpenChange={setHistoryOpen}>
+        <SheetContent side="right" className="w-full sm:max-w-2xl flex flex-col p-0">
+          <SheetHeader className="px-6 py-4 border-b shrink-0">
+            <SheetTitle>Execution History</SheetTitle>
+            <SheetDescription>
+              Past executions for <strong>{schedule?.name}</strong>.
+            </SheetDescription>
+          </SheetHeader>
+          <div className="flex-1 overflow-auto px-6 py-4">
+            {historyOpen && <ExecutionHistory scheduleId={scheduleId} />}
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

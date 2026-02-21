@@ -4,16 +4,17 @@ import { useEffect, useState, useCallback } from 'react';
 import type { NetworkGroup, OpnsenseAliasDetailFromExport } from '@/types/opnsense';
 import { Role } from '@/types/opnsense';
 import { useAuth } from '@/context/AuthContext';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ClientOnly } from '@/components/util/ClientOnly';
 import HostAliasesTab from '@/components/admin/HostAliasesTab';
 import { NetworkGroupsTab } from '@/components/admin/NetworkGroupsTab'; // Import the new component
 import { ManageDhcpCard } from '@/components/admin/ManageDhcpCard'; // Import the new card component
+import { SchedulingTab } from '@/components/admin/SchedulingTab';
 import { AppFooter } from '@/components/layout/AppFooter';
 import { AppHeader } from '@/components/layout/AppHeader';
-import { Loader2, Ban, LogIn, Network as NetworkIconLucide, Laptop, AlertCircle, Server, ChevronDown, ChevronUp } from 'lucide-react';
+import { Loader2, Ban, LogIn, Network as NetworkIconLucide, Laptop, AlertCircle, Server, ChevronDown, ChevronUp, CalendarClock } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useLocalStorage } from '@/hooks/use-local-storage';
@@ -51,6 +52,7 @@ interface EnrichedHostAlias {
 export default function AdminPage() {
   const { data: session, status: authStatus } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
   const isMobile = useIsMobile();
 
@@ -322,6 +324,15 @@ export default function AdminPage() {
     // setCurrentYear(new Date().getFullYear()); // Removed unused currentYear
   }, []);
 
+  // Handle ?tab= query param to allow direct linking to a tab
+  useEffect(() => {
+    const tabParam = searchParams?.get('tab');
+    const validTabs = ['network-groups', 'host-aliases', 'manage-dhcp', 'scheduling'];
+    if (tabParam && validTabs.includes(tabParam)) {
+      setActiveTab(tabParam);
+    }
+  }, [searchParams, setActiveTab]);
+
   // Update connection error modal from useOpnsenseData hook
   useEffect(() => {
     setShowConnectionErrorModal(opnsenseConnectionError);
@@ -428,7 +439,8 @@ export default function AdminPage() {
   const tabConfig = [
     { value: 'network-groups', label: 'Network Groups', icon: <NetworkIconLucide className="h-4 w-4" /> },
     { value: 'host-aliases', label: 'Host Aliases (Devices)', icon: <Laptop className="h-4 w-4" /> },
-    { value: 'manage-dhcp', label: 'DHCP Reservations', icon: <Server className="h-4 w-4" /> }
+    { value: 'manage-dhcp', label: 'DHCP Reservations', icon: <Server className="h-4 w-4" /> },
+    { value: 'scheduling', label: 'Scheduling', icon: <CalendarClock className="h-4 w-4" /> },
   ];
 
   const currentTab = tabConfig.find(tab => tab.value === activeTab);
@@ -462,7 +474,7 @@ export default function AdminPage() {
           className="w-full flex flex-col flex-grow min-h-0"
         >
           {/* Hidden TabsList for mobile - needed for Tabs component to work */}
-          <TabsList className={`${isMobile ? 'sr-only' : 'grid w-full grid-cols-1 sm:grid-cols-2 md:grid-cols-3 h-auto'}`}>
+          <TabsList className={`${isMobile ? 'sr-only' : 'grid w-full grid-cols-2 sm:grid-cols-2 md:grid-cols-4 h-auto'}`}>
             {tabConfig.map((tab) => (
               <TabsTrigger key={tab.value} value={tab.value}>
                 <ClientOnly><span className="mr-2">{tab.icon}</span></ClientOnly> {tab.label}
@@ -592,6 +604,10 @@ export default function AdminPage() {
                 selectedSubnet={dhcpSelectedSubnet}
                 onSelectedSubnetChange={setDhcpSelectedSubnet}
               />
+            )}
+
+            {activeTab === 'scheduling' && (
+              <SchedulingTab isActive={activeTab === 'scheduling'} />
             )}
           </div>
 

@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { logger } from '@/lib/logger';
 import { formatVersionForDisplay } from '@/lib/version-utils';
-import { UserCog, Users, LogOut, Shield, LogIn, Settings, UserCircle, ChevronDown, Laptop, BrickWallFire, Monitor, CalendarClock } from 'lucide-react'; // Added LayoutDashboard icon, ChevronDown, Laptop
+import { UserCog, Users, LogOut, Shield, LogIn, Settings, UserCircle, ChevronDown, Laptop, BrickWallFire, Monitor } from 'lucide-react'; // Added LayoutDashboard icon, ChevronDown, Laptop
 import { GoDeviceDesktop } from 'react-icons/go'; // Added GoDeviceDesktop icon
 import { ThemeToggle } from '@/components/layout/ThemeToggle';
 import { signOut } from 'next-auth/react'; // Import signOut from next-auth/react
@@ -160,12 +160,6 @@ export const AppHeaderClient = forwardRef<HTMLDivElement, AppHeaderProps>(({
                 <DropdownMenuItem onClick={() => router.push('/admin/monitoring-analytics')}>
                   <ClientOnly><Shield className="mr-2 h-4 w-4" /></ClientOnly>
                   Monitoring & Analytics
-                </DropdownMenuItem>
-              )}
-              {isAdmin && (
-                <DropdownMenuItem onClick={() => router.push('/admin/schedules')}>
-                  <ClientOnly><CalendarClock className="mr-2 h-4 w-4" /></ClientOnly>
-                  Scheduled Assignments
                 </DropdownMenuItem>
               )}
               {isAdmin && macTrackingEnabled && (

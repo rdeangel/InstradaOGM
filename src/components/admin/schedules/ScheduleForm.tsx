@@ -17,12 +17,6 @@ import {
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { SearchableSelect } from '@/components/ui/searchable-select';
 import { DateTimePicker } from '@/components/ui/date-time-picker';
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '@/components/ui/accordion';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   Tooltip,
@@ -31,7 +25,14 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { Switch } from '@/components/ui/switch';
-import { Loader2, AlertTriangle, Info, ArrowUp, ArrowDown, Trash2, Plus } from 'lucide-react';
+import { Loader2, AlertTriangle, Info, ArrowUp, ArrowDown, Trash2, Plus, Play } from 'lucide-react';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 import { ScheduleTimelineGrid, type ScheduleDayFormData } from './ScheduleTimelineGrid';
 import { PreviewPanel } from './PreviewPanel';
 import { GroupCombobox } from './GroupCombobox';
@@ -226,6 +227,7 @@ export function ScheduleForm({
   const [templateDay, setTemplateDay] = useState(1); // Monday
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [hostAliasOptions, setHostAliasOptions] = useState<{ value: string; label: string; isDisabled: boolean }[]>([]);
 
   const timezones = Intl.supportedValuesOf('timeZone');
@@ -446,7 +448,7 @@ export function ScheduleForm({
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* ── Basic info ── */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-1">
+          <div className="flex flex-col gap-1">
             <Label htmlFor="sched-name">Name *</Label>
             <Input
               id="sched-name"
@@ -457,7 +459,7 @@ export function ScheduleForm({
             {errors.name && <p className="text-xs text-destructive">{errors.name}</p>}
           </div>
 
-          <div className="space-y-1">
+          <div className="flex flex-col gap-1">
             <div className="flex items-center gap-2">
               <Label htmlFor="sched-priority">Priority</Label>
               <Tooltip>
@@ -657,18 +659,6 @@ export function ScheduleForm({
           {errors.targetSelector && <p className="text-xs text-destructive">{errors.targetSelector}</p>}
         </div>
 
-        {/* ── Preview panel ── */}
-        <Accordion type="single" collapsible>
-            <AccordionItem value="preview">
-              <AccordionTrigger className="text-sm font-medium">
-                Schedule Preview (Dry Run)
-              </AccordionTrigger>
-              <AccordionContent>
-                <PreviewPanel getFormData={buildPayload} />
-              </AccordionContent>
-            </AccordionItem>
-          </Accordion>
-
         {/* ── Form footer ── */}
         <div className="flex items-center gap-3 pt-4 border-t">
           <Button
@@ -683,8 +673,32 @@ export function ScheduleForm({
             {isSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
             {submitLabel}
           </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            className="ml-auto text-muted-foreground hover:text-foreground"
+            onClick={() => setPreviewOpen(true)}
+          >
+            <Play className="h-4 w-4 mr-2" />
+            Dry Run
+          </Button>
         </div>
       </form>
+
+      {/* ── Dry run sheet ── */}
+      <Sheet open={previewOpen} onOpenChange={setPreviewOpen}>
+        <SheetContent side="right" className="w-full sm:max-w-md overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle>Schedule Preview (Dry Run)</SheetTitle>
+            <SheetDescription>
+              Simulate what this schedule would do at a specific time, based on the current form values.
+            </SheetDescription>
+          </SheetHeader>
+          <div className="mt-6">
+            <PreviewPanel getFormData={buildPayload} />
+          </div>
+        </SheetContent>
+      </Sheet>
     </TooltipProvider>
   );
 }

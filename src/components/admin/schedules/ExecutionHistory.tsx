@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Fragment } from 'react';
 import { Badge } from '@/components/ui/badge';
 import {
   Select,
@@ -9,16 +9,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '@/components/ui/accordion';
 import { PaginationControls } from '@/components/ui/pagination-controls';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatDistanceToNow } from 'date-fns';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, ChevronDown, ChevronRight } from 'lucide-react';
 
 interface ScheduleExecution {
   id: string;
@@ -34,10 +28,12 @@ interface ScheduleExecution {
 
 interface ExecutionHistoryResponse {
   executions: ScheduleExecution[];
-  totalCount: number;
-  page: number;
-  limit: number;
-  totalPages: number;
+  pagination: {
+    page: number;
+    limit: number;
+    totalCount: number;
+    totalPages: number;
+  };
 }
 
 interface ExecutionHistoryProps {
@@ -72,6 +68,8 @@ export function ExecutionHistory({ scheduleId }: ExecutionHistoryProps) {
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [hasLoaded, setHasLoaded] = useState(false);
 
   const fetchExecutions = useCallback(async () => {
     setIsLoading(true);
@@ -89,8 +87,9 @@ export function ExecutionHistory({ scheduleId }: ExecutionHistoryProps) {
       if (!res.ok) throw new Error('Failed to fetch execution history');
       const data: ExecutionHistoryResponse = await res.json();
       setExecutions(data.executions ?? []);
-      setTotalCount(data.totalCount ?? 0);
-      setTotalPages(data.totalPages ?? 1);
+      setTotalCount(data.pagination?.totalCount ?? 0);
+      setTotalPages(data.pagination?.totalPages ?? 1);
+      setHasLoaded(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load execution history');
     } finally {
@@ -127,8 +126,8 @@ export function ExecutionHistory({ scheduleId }: ExecutionHistoryProps) {
         </Select>
       </div>
 
-      {/* Loading skeleton */}
-      {isLoading && (
+      {/* Loading skeleton — only on initial load */}
+      {isLoading && !hasLoaded && (
         <div className="space-y-2">
           {Array.from({ length: 5 }).map((_, i) => (
             <Skeleton key={i} className="h-12 w-full" />
@@ -136,91 +135,111 @@ export function ExecutionHistory({ scheduleId }: ExecutionHistoryProps) {
         </div>
       )}
 
-      {/* Error state */}
-      {!isLoading && error && (
+      {/* Error state — only if no data has loaded yet */}
+      {!isLoading && error && !hasLoaded && (
         <div className="flex items-center gap-2 text-destructive text-sm p-3 border border-destructive/30 rounded-md">
           <AlertCircle className="h-4 w-4 shrink-0" />
           <span>{error}</span>
         </div>
       )}
 
-      {/* Empty state */}
-      {!isLoading && !error && executions.length === 0 && (
-        <p className="text-sm text-muted-foreground text-center py-6">
-          No execution history found.
-        </p>
-      )}
+      {/* Content — stays visible after first load; dims while refreshing */}
+      {hasLoaded && (
+        <div className={isLoading ? 'opacity-50 pointer-events-none transition-opacity' : 'transition-opacity'}>
+          {/* Empty state */}
+          {executions.length === 0 && (
+            <p className="text-sm text-muted-foreground text-center py-6">
+              No execution history found.
+            </p>
+          )}
 
-      {/* Table */}
-      {!isLoading && !error && executions.length > 0 && (
-        <Accordion type="multiple" className="space-y-1">
-          {/* Header */}
-          <div className="grid grid-cols-[1fr_80px_80px_120px_60px_80px] gap-2 px-4 py-2 text-xs font-medium text-muted-foreground border-b">
-            <span>Timestamp</span>
-            <span>Boundary</span>
-            <span>Status</span>
-            <span>Target IPs</span>
-            <span>Duration</span>
-            <span>Error</span>
-          </div>
+          {/* Table */}
+          {executions.length > 0 && (
+            <div className="border rounded-lg overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/50">
+                  <tr>
+                    <th className="w-6 p-2" />
+                    <th className="text-left p-2 text-xs font-medium text-muted-foreground">Timestamp</th>
+                    <th className="text-left p-2 text-xs font-medium text-muted-foreground">Boundary</th>
+                    <th className="text-left p-2 text-xs font-medium text-muted-foreground">Status</th>
+                    <th className="text-left p-2 text-xs font-medium text-muted-foreground">Target IPs</th>
+                    <th className="text-left p-2 text-xs font-medium text-muted-foreground">Duration</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {executions.map(exec => (
+                    <Fragment key={exec.id}>
+                      <tr
+                        className="hover:bg-muted/30 cursor-pointer transition-colors"
+                        onClick={() => setExpandedId(expandedId === exec.id ? null : exec.id)}
+                      >
+                        <td className="p-2 text-muted-foreground">
+                          {expandedId === exec.id
+                            ? <ChevronDown className="h-3.5 w-3.5" />
+                            : <ChevronRight className="h-3.5 w-3.5" />}
+                        </td>
+                        <td className="p-2 text-xs">
+                          {formatDistanceToNow(new Date(exec.executedAt), { addSuffix: true })}
+                        </td>
+                        <td className="p-2 text-xs text-muted-foreground">{exec.boundaryType}</td>
+                        <td className="p-2">
+                          <Badge variant={statusVariant(exec.status)} className="text-xs">
+                            {exec.status}
+                          </Badge>
+                        </td>
+                        <td className="p-2 text-xs text-muted-foreground max-w-[140px] truncate">
+                          {formatTargetIps(exec.targetIps)}
+                        </td>
+                        <td className="p-2 text-xs text-muted-foreground">
+                          {exec.durationMs != null ? `${exec.durationMs}ms` : '—'}
+                        </td>
+                      </tr>
+                      {expandedId === exec.id && (
+                        <tr className="bg-muted/20">
+                          <td colSpan={6} className="px-4 py-3">
+                            <div className="text-xs text-muted-foreground space-y-2">
+                              <p><span className="font-medium text-foreground">Executed at:</span> {new Date(exec.executedAt).toLocaleString()}</p>
+                              {exec.errorMessage && (
+                                <p className="text-destructive">
+                                  <span className="font-medium">Error:</span> {exec.errorMessage}
+                                </p>
+                              )}
+                              <div>
+                                <p className="font-medium text-foreground mb-1">Actions Run:</p>
+                                <pre className="bg-muted p-3 rounded-md overflow-auto text-xs leading-relaxed">
+                                  {JSON.stringify(exec.actionsRun, null, 2)}
+                                </pre>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
 
-          {executions.map(exec => (
-            <AccordionItem key={exec.id} value={exec.id} className="border rounded-md">
-              <AccordionTrigger className="px-4 py-2 hover:no-underline">
-                <div className="grid grid-cols-[1fr_80px_80px_120px_60px_80px] gap-2 w-full text-left items-center">
-                  <span className="text-sm">
-                    {formatDistanceToNow(new Date(exec.executedAt), { addSuffix: true })}
-                  </span>
-                  <span className="text-xs text-muted-foreground">{exec.boundaryType}</span>
-                  <Badge variant={statusVariant(exec.status)} className="text-xs w-fit">
-                    {exec.status}
-                  </Badge>
-                  <span className="text-xs text-muted-foreground truncate">
-                    {formatTargetIps(exec.targetIps)}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {exec.durationMs != null ? `${exec.durationMs}ms` : '—'}
-                  </span>
-                  <span className="text-xs text-destructive truncate">
-                    {exec.errorMessage ?? '—'}
-                  </span>
-                </div>
-              </AccordionTrigger>
-              <AccordionContent className="px-4 pb-3">
-                <div className="text-xs text-muted-foreground">
-                  <p className="font-medium mb-1">Timestamp: {new Date(exec.executedAt).toLocaleString()}</p>
-                  <p className="font-medium mb-2">Actions Run:</p>
-                  <pre className="bg-muted p-3 rounded-md overflow-auto text-xs">
-                    {JSON.stringify(exec.actionsRun, null, 2)}
-                  </pre>
-                  {exec.errorMessage && (
-                    <p className="mt-2 text-destructive">
-                      <span className="font-medium">Error:</span> {exec.errorMessage}
-                    </p>
-                  )}
-                </div>
-              </AccordionContent>
-            </AccordionItem>
-          ))}
-        </Accordion>
-      )}
-
-      {/* Pagination */}
-      {!isLoading && totalCount > 0 && (
-        <PaginationControls
-          currentPage={page}
-          totalPages={totalPages}
-          totalCount={totalCount}
-          filteredCount={totalCount}
-          pageSize={pageSize}
-          onPageChange={setPage}
-          onPageSizeChange={size => {
-            setPageSize(size as number);
-            setPage(1);
-          }}
-          isLoading={isLoading}
-          pageSizeOptions={[10, 20, 50]}
-        />
+          {/* Pagination */}
+          {totalCount > 0 && (
+            <PaginationControls
+              currentPage={page}
+              totalPages={totalPages}
+              totalCount={totalCount}
+              filteredCount={totalCount}
+              pageSize={pageSize}
+              onPageChange={setPage}
+              onPageSizeChange={size => {
+                setPageSize(size as number);
+                setPage(1);
+              }}
+              isLoading={isLoading}
+              pageSizeOptions={[10, 20, 50]}
+            />
+          )}
+        </div>
       )}
     </div>
   );
