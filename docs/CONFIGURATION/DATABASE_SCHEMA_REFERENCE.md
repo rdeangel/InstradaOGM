@@ -42,6 +42,12 @@ This document provides a comprehensive reference for the InstradaOGM database sc
   - [MacExclusion](#macexclusion)
   - [MacIpHistoryEntry](#maciphistoryentry)
   - [MacIpActivationPeriod](#macipactivationperiod)
+- [Schedule System](#schedule-system)
+  - [ScheduledAssignment](#scheduledassignment)
+  - [ScheduleDay](#scheduleday)
+  - [TimeWindow](#timewindow)
+  - [ScheduleAction](#scheduleaction)
+  - [ScheduleExecution](#scheduleexecution)
 - [Database Relationships](#database-relationships)
 - [Common Query Patterns](#common-query-patterns)
 
@@ -685,6 +691,102 @@ This document provides a comprehensive reference for the InstradaOGM database sc
 - History consolidation
 - IP change tracking
 - Full history modal display
+
+---
+
+## Schedule System
+
+### ScheduledAssignment
+
+**Purpose**: Master record defining a schedule configuration.
+
+**Key Fields**:
+- `id` - Unique identifier
+- `name` - Schedule name
+- `description` - Optional description
+- `enabled` - Boolean toggle for execution
+- `priority` - Execution priority (higher resolves conflicts)
+- `scheduleType` - Mode: `COMPLEX_WEEKLY`, `ONCE`, or `RECURRING`
+- `timezone` - IANA timezone database identifier
+- `targetType` - Resolution technique (`IP_LIST`, `HOST_ALIAS`, `NETWORK_GROUP`)
+- `targetSelector` - JSON resolving payload
+
+**Relationships**:
+- Has many `ScheduleDay` records (if Complex Weekly)
+- Has many `ScheduleAction` records (if Once or Recurring)
+- Has many `ScheduleExecution` records (Audit log execution history)
+
+**Use Cases**:
+- Complex daily patterns
+- Single time-based execution mapping
+- Recurring cron rule mapping
+
+---
+
+### ScheduleDay
+
+**Purpose**: Defines a single day within a Complex Weekly pattern.
+
+**Key Fields**:
+- `id` - Unique identifier
+- `scheduleId` - Link to ScheduledAssignment
+- `dayOfWeek` - Integer representation of the day (0 = Sun, 6 = Sat)
+
+**Relationships**:
+- Belongs to `ScheduledAssignment`
+- Has many `TimeWindow` records
+
+---
+
+### TimeWindow
+
+**Purpose**: Discrete duration block within a day, establishing `START` and `END` boundaries.
+
+**Key Fields**:
+- `id` - Unique identifier
+- `scheduleDayId` - Link to ScheduleDay
+- `startTime` - 24-hour HH:MM format boundary start
+- `endTime` - 24-hour HH:MM format boundary end
+- `label` - Human-readable label
+
+**Relationships**:
+- Belongs to `ScheduleDay`
+- Has many `ScheduleAction` records
+
+---
+
+### ScheduleAction
+
+**Purpose**: Specifies the action operation applied at a given boundary logic point.
+
+**Key Fields**:
+- `id` - Unique identifier
+- `operation` - Type: `ASSIGN`, `REMOVE`, `MOVE`, `CLEAR_ALL`
+- `boundaryType` - Execution anchor (`START` or `END`)
+- `targetGroupUuid` - OPNsense Network Group UUID referencing target
+- `fromGroupUuid` - Optional source mapping for MOVE operations
+- `sortOrder` - Priority sequence integer logic
+
+**Relationships**:
+- Belongs to `TimeWindow`, `ScheduledAssignment` (OnceActions), or `ScheduledAssignment` (RecurringActions)
+
+---
+
+### ScheduleExecution
+
+**Purpose**: Detailed audit telemetry recording boundary operations.
+
+**Key Fields**:
+- `id` - Unique log execution identifier
+- `scheduleId` - Link to ScheduledAssignment
+- `boundaryType` - Boundary fired (`START`, `END`, `ONCE`, `RECURRING`)
+- `executedAt` - Execution UTC Timestamp
+- `status` - Operation success tracker (`SUCCESS`, `PARTIAL`, `FAILED`, `SKIPPED`)
+- `targetIps` - JSON array of dynamically resolved IPs at execution time
+- `actionsRun` - JSON array of operational logic steps applied
+
+**Relationships**:
+- Belongs to `ScheduledAssignment`
 
 ---
 

@@ -61,6 +61,7 @@ This documentation is organized to help you find information quickly based on yo
 - [📱 MAC Address Tracking](FEATURES/MAC_ADDRESS_TRACKING.md) - Device tracking
 - [💾 Backup Management](FEATURES/BACKUP_MANAGEMENT.md) - Backup creation and management
 - [👥 Group Management](FEATURES/) - User and group features
+- [📅 Scheduled Assignments](FEATURES/SCHEDULED_ASSIGNMENTS.md) - Time-based automation features
 
 ### 🛠️ **Setup & Deployment**
 - [📋 Setup Index](SETUP/SETUP_INDEX.md) - Complete setup and deployment documentation
@@ -180,7 +181,8 @@ docs/
 │   ├── 🌐 NETWORK_GROUP_VALIDATION.md
 │   ├── 🔐 PASSWORD_MANAGEMENT.md
 │   ├── 📊 SINGLE_SELECT_MULTI_SELECT_FEATURE.md
-│   └── 👥 UNMANAGED_GROUPS_FEATURE.md
+│   ├── 👥 UNMANAGED_GROUPS_FEATURE.md
+│   └── 📅 SCHEDULED_ASSIGNMENTS.md
 ├── 🔧 api/api_docs/                  # API documentation
 │   ├── 📖 README.md                  # API overview
 │   ├── 🔍 API_Index.md               # Complete API index
@@ -195,6 +197,7 @@ docs/
 │   ├── 🧪 09_utility_endpoints.md
 │   ├── 🔐 10_vpn_endpoints.md
 │   ├── 📊 11_analytics_endpoints.md
+│   ├── 📅 32_schedule_endpoints.md
 │   └── ... (30+ endpoint files)
 ├── 🔍 TROUBLESHOOTING/              # Troubleshooting guides
 │   ├── 📋 TROUBLESHOOTING_INDEX.md # Troubleshooting section index

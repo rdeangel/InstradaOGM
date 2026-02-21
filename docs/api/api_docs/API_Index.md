@@ -64,9 +64,10 @@ This document serves as the **primary navigation hub** for the InstradaOGM API e
 | [29_self_service_additional_endpoints.md](29_self_service_additional_endpoints.md) | Extended self-service | Additional self-service operations |
 | [30_backup_endpoints.md](30_backup_endpoints.md) | Backup API and script usage | Complete backup creation and download workflows |
 | [31_update_endpoints.md](31_update_endpoints.md) | Update detection and management | Check for updates, release notes |
+| [32_schedule_endpoints.md](32_schedule_endpoints.md) | Schedule system endpoints | List, create, toggle, and view executions |
 
 ### 🚀 Enhanced Features Overview
-- **Complete Endpoint Coverage**: 95+ endpoints across 8 major categories
+- **Complete Endpoint Coverage**: 100+ endpoints across 9 major categories
 - **Context-Aware Endpoints**: Dynamic responses based on authentication status
 - **Comprehensive 2FA Management**: Full two-factor authentication lifecycle
 - **Self-Service Operations**: Unauthenticated operations with IP validation
@@ -302,7 +303,7 @@ API key rate limit exceeded responses include detailed information:
 ## Summary Statistics
 
 ### API Coverage
-- **Total Endpoints**: 95+ documented endpoints
+- **Total Endpoints**: 100+ documented endpoints
 - **Authentication Methods**: 4 distinct approaches (Session, API Key, Public, Context-Aware)
 - **User Roles**: 3 permission levels (USER, ADMIN, SUPER_ADMIN)
 - **Documentation Files**: 30 specialized files with detailed examples

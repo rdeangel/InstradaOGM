@@ -36,6 +36,7 @@ If you're new to InstradaOGM, we recommend exploring these core features first:
 ### Group Management
 - [👥 Unmanaged Groups Feature](UNMANAGED_GROUPS_FEATURE.md) - Configure and use unmanaged groups
 - [📝 Single Select Multi Select Feature](SINGLE_SELECT_MULTI_SELECT_FEATURE.md) - Use selection features in group management
+- [📅 Scheduled Assignments](SCHEDULED_ASSIGNMENTS.md) - Automate group assignments on a schedule
 
 ### System Administration
 - [💾 Backup Management](BACKUP_MANAGEMENT.md) - Create, download, and manage encrypted backups
@@ -83,6 +84,7 @@ If you're new to InstradaOGM, we recommend exploring these core features first:
 | Network Organization | [Network Group Validation](NETWORK_GROUP_VALIDATION.md) | Structure network groups |
 | User Autonomy | [Global Self Service Disable](GLOBAL_SELF_SERVICE_DISABLE.md) | Control user permissions |
 | UI Interactions | [Single Select Multi Select Feature](SINGLE_SELECT_MULTI_SELECT_FEATURE.md) | Interface selection patterns |
+| Scheduled Automation | [Scheduled Assignments](SCHEDULED_ASSIGNMENTS.md) | Time-based group assignments |
 | Backup Management | [Backup Management](BACKUP_MANAGEMENT.md) | Create and manage encrypted backups |
 
 ---
