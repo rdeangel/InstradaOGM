@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   Select,
   SelectContent,
@@ -16,7 +17,10 @@ import {
 } from '@/components/ui/select';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { SearchableSelect } from '@/components/ui/searchable-select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { DateTimePicker } from '@/components/ui/date-time-picker';
+import { cn } from '@/lib/utils';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   Tooltip,
@@ -25,7 +29,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { Switch } from '@/components/ui/switch';
-import { Loader2, AlertTriangle, Info, ArrowUp, ArrowDown, Trash2, Plus, Play } from 'lucide-react';
+import { Loader2, AlertTriangle, Info, ArrowUp, ArrowDown, Trash2, Plus, Play, Search, ChevronsUpDown, Check } from 'lucide-react';
 import {
   Sheet,
   SheetContent,
@@ -229,12 +233,17 @@ export function ScheduleForm({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [previewOpen, setPreviewOpen] = useState(false);
   const [hostAliasOptions, setHostAliasOptions] = useState<{ value: string; label: string; isDisabled: boolean }[]>([]);
+  const [hostAliasOptionsLoading, setHostAliasOptionsLoading] = useState(true);
+  const [aliasPopoverOpen, setAliasPopoverOpen] = useState(false);
+  const [aliasSearch, setAliasSearch] = useState('');
+  const [aliasDisplayCount, setAliasDisplayCount] = useState(50);
 
   const timezones = Intl.supportedValuesOf('timeZone');
   const timezoneOptions = timezones.map(tz => ({ value: tz, label: tz, isDisabled: false }));
 
   // Fetch host aliases on mount
   useEffect(() => {
+    setHostAliasOptionsLoading(true);
     fetch('/api/opnsense/filtered-host-aliases')
       .then(r => r.json())
       .then(data => {
@@ -247,7 +256,8 @@ export function ScheduleForm({
           })),
         );
       })
-      .catch(() => setHostAliasOptions([]));
+      .catch(() => setHostAliasOptions([]))
+      .finally(() => setHostAliasOptionsLoading(false));
   }, []);
 
   // Compute overlap warnings for COMPLEX_WEEKLY
@@ -514,7 +524,7 @@ export function ScheduleForm({
             <SearchableSelect
               options={timezoneOptions}
               value={values.timezone}
-              onValueChange={val => set('timezone', val ?? '')}
+              onValueChange={(val: string | null) => set('timezone', val ?? '')}
               placeholder="Select timezone..."
               className="w-full"
             />
@@ -543,6 +553,136 @@ export function ScheduleForm({
               <Label htmlFor="type-recurring">Recurring</Label>
             </div>
           </RadioGroup>
+        </div>
+
+        {/* ── Execution time (ONCE only) ── */}
+        {values.scheduleType === 'ONCE' && (
+          <div className="space-y-1">
+            <Label>Execution Time</Label>
+            <div className="max-w-xs">
+              <DateTimePicker
+                date={values.executeAt}
+                setDate={d => set('executeAt', d)}
+              />
+            </div>
+            {errors.executeAt && <p className="text-xs text-destructive">{errors.executeAt}</p>}
+          </div>
+        )}
+
+        {/* ── Target host aliases ── */}
+        <div className="space-y-2">
+          <Label>Target Host Aliases</Label>
+
+          {/* Selected chips — skeletons while aliases are loading */}
+          {values.hostAliasUuids.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {hostAliasOptionsLoading
+                ? values.hostAliasUuids.map((_, i) => (
+                    <Skeleton key={i} className="h-6 w-20 rounded-full" />
+                  ))
+                : values.hostAliasUuids.map(uuid => {
+                    const opt = hostAliasOptions.find(o => o.value === uuid);
+                    return (
+                      <Badge key={uuid} variant="secondary" className="gap-1 pr-1">
+                        {opt?.label ?? uuid}
+                        <button
+                          type="button"
+                          className="ml-1 text-muted-foreground hover:text-foreground leading-none"
+                          onClick={() => set('hostAliasUuids', values.hostAliasUuids.filter(id => id !== uuid))}
+                        >
+                          ×
+                        </button>
+                      </Badge>
+                    );
+                  })}
+            </div>
+          )}
+
+          {/* Popover multi-select */}
+          <Popover
+            open={aliasPopoverOpen}
+            onOpenChange={open => { setAliasPopoverOpen(open); if (!open) { setAliasSearch(''); setAliasDisplayCount(50); } }}
+          >
+            <PopoverTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-full justify-between font-normal text-muted-foreground"
+                disabled={hostAliasOptionsLoading}
+              >
+                <span className="flex items-center gap-2">
+                  {hostAliasOptionsLoading
+                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    : <Search className="h-3.5 w-3.5" />}
+                  {values.hostAliasUuids.length === 0
+                    ? 'Add host aliases...'
+                    : `${values.hostAliasUuids.length} selected — add or remove`}
+                </span>
+                <ChevronsUpDown className="h-4 w-4 opacity-50 shrink-0" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="p-0 w-[var(--radix-popover-trigger-width)]" align="start">
+              <div className="flex flex-col">
+                <div className="flex items-center border-b px-3">
+                  <Search className="h-4 w-4 mr-2 shrink-0 opacity-50" />
+                  <input
+                    type="text"
+                    placeholder="Search aliases..."
+                    value={aliasSearch}
+                    onChange={e => { setAliasSearch(e.target.value); setAliasDisplayCount(50); }}
+                    className="h-10 flex-grow bg-transparent text-sm focus:outline-none"
+                    autoFocus
+                  />
+                </div>
+                <ScrollArea
+                  className="h-[220px]"
+                  onViewportScroll={e => {
+                    const el = e.currentTarget;
+                    if (el.scrollHeight - el.scrollTop <= el.clientHeight * 1.5) {
+                      setAliasDisplayCount(prev => prev + 50);
+                    }
+                  }}
+                  onWheel={e => e.stopPropagation()}
+                >
+                  {hostAliasOptions.filter(o =>
+                    !aliasSearch || o.label.toLowerCase().includes(aliasSearch.toLowerCase())
+                  ).length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-4">No aliases found.</p>
+                  ) : (
+                    hostAliasOptions
+                      .filter(o => !aliasSearch || o.label.toLowerCase().includes(aliasSearch.toLowerCase()))
+                      .slice(0, aliasDisplayCount)
+                      .map(opt => {
+                        const isSelected = values.hostAliasUuids.includes(opt.value);
+                        return (
+                          <div
+                            key={opt.value}
+                            className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-muted text-sm transition-colors"
+                            onClick={() => {
+                              const next = isSelected
+                                ? values.hostAliasUuids.filter(id => id !== opt.value)
+                                : [...values.hostAliasUuids, opt.value];
+                              set('hostAliasUuids', next);
+                            }}
+                          >
+                            <div className={cn(
+                              'h-4 w-4 rounded border flex items-center justify-center shrink-0',
+                              isSelected ? 'bg-primary border-primary' : 'border-input',
+                            )}>
+                              {isSelected && <Check className="h-3 w-3 text-primary-foreground" />}
+                            </div>
+                            <span>{opt.label}</span>
+                          </div>
+                        );
+                      })
+                  )}
+                </ScrollArea>
+              </div>
+            </PopoverContent>
+          </Popover>
+
+          {errors.targetSelector && <p className="text-xs text-destructive">{errors.targetSelector}</p>}
         </div>
 
         {/* ── Schedule type content ── */}
@@ -580,22 +720,9 @@ export function ScheduleForm({
         )}
 
         {values.scheduleType === 'ONCE' && (
-          <div className="space-y-4">
-            <div className="space-y-1">
-              <Label>Execution Time</Label>
-              <div className="max-w-xs">
-                <DateTimePicker
-                  date={values.executeAt}
-                  setDate={d => set('executeAt', d)}
-                />
-              </div>
-              {errors.executeAt && <p className="text-xs text-destructive">{errors.executeAt}</p>}
-            </div>
-
-            <div className="space-y-1">
-              <Label>Actions</Label>
-              {renderStandaloneActionList('onceActions')}
-            </div>
+          <div className="space-y-1">
+            <Label>Actions</Label>
+            {renderStandaloneActionList('onceActions')}
           </div>
         )}
 
@@ -624,40 +751,6 @@ export function ScheduleForm({
             </div>
           </div>
         )}
-
-        {/* ── Target host aliases ── */}
-        <div className="space-y-3">
-          <Label>Target Host Aliases</Label>
-          <div className="flex flex-wrap gap-2 min-h-[36px] p-2 border rounded-md bg-muted/20">
-            {values.hostAliasUuids.map((uuid, i) => {
-              const opt = hostAliasOptions.find(o => o.value === uuid);
-              return (
-                <Badge key={i} variant="secondary" className="gap-1">
-                  {opt?.label ?? uuid}
-                  <button
-                    type="button"
-                    className="ml-1 text-muted-foreground hover:text-foreground"
-                    onClick={() => set('hostAliasUuids', values.hostAliasUuids.filter(id => id !== uuid))}
-                  >
-                    ×
-                  </button>
-                </Badge>
-              );
-            })}
-          </div>
-          <SearchableSelect
-            options={hostAliasOptions.filter(o => !values.hostAliasUuids.includes(o.value))}
-            value={null}
-            onValueChange={val => {
-              if (val && !values.hostAliasUuids.includes(val)) {
-                set('hostAliasUuids', [...values.hostAliasUuids, val]);
-              }
-            }}
-            placeholder="Add host alias..."
-            className="w-full"
-          />
-          {errors.targetSelector && <p className="text-xs text-destructive">{errors.targetSelector}</p>}
-        </div>
 
         {/* ── Form footer ── */}
         <div className="flex items-center gap-3 pt-4 border-t">
