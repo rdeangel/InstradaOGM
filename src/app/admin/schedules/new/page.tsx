@@ -104,7 +104,7 @@ export default function NewSchedulePage() {
   return (
     <div className="fixed inset-0 flex flex-col overflow-hidden bg-background">
       <AppHeader />
-      <main className="flex-grow container mx-auto px-4 py-4 pb-16 max-w-4xl flex flex-col min-h-0">
+      <main className="flex-grow container-responsive py-3 flex flex-col min-h-0 pb-16">
         {/* Back navigation */}
         <Button
           variant="ghost"
