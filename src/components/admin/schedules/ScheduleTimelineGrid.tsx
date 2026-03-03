@@ -9,7 +9,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Link2, Unlink2, Copy } from 'lucide-react';
+import { Link2, Unlink2, Copy, Plus } from 'lucide-react';
 import { BoundaryActionEditor, type TimeWindowFormData } from './BoundaryActionEditor';
 
 // Inline pure helper — avoids importing server-only schedule-validation module
@@ -53,6 +53,7 @@ const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const TOTAL_MINUTES = 1440;
 
 const HOUR_LABELS = [0, 3, 6, 9, 12, 15, 18, 21, 24];
+const ALL_HOURS = Array.from({ length: 25 }, (_, i) => i);
 
 function minutesToPercent(minutes: number): number {
   return (minutes / TOTAL_MINUTES) * 100;
@@ -320,7 +321,7 @@ export function ScheduleTimelineGrid({
     <TooltipProvider>
       <div className="space-y-1">
         {/* Header row */}
-        <div className="flex items-center gap-1 mb-1 pl-16">
+        <div className="flex items-center gap-1 mb-1 pl-24">
           <div className="flex-1 relative h-4">
             {HOUR_LABELS.map(h => (
               <span
@@ -388,8 +389,8 @@ export function ScheduleTimelineGrid({
 
           return (
             <div key={dayIndex} className="flex items-center gap-1">
-              {/* Day label + mirror toggle */}
-              <div className="w-16 flex items-center gap-1 shrink-0">
+              {/* Day label + mirror toggle + add button */}
+              <div className="w-24 flex items-center gap-1 shrink-0">
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
@@ -411,36 +412,49 @@ export function ScheduleTimelineGrid({
                     {isTemplate
                       ? 'Template day'
                       : isMirrored
-                      ? 'Unlink from template'
-                      : 'Mirror from template'}
+                        ? 'Unlink from template'
+                        : 'Mirror from template'}
                   </TooltipContent>
                 </Tooltip>
                 <span
-                  className={`text-sm font-medium ${
-                    isTemplate ? 'text-primary' : isMirrored ? 'text-muted-foreground' : ''
-                  }`}
+                  className={`text-sm font-medium ${isTemplate ? 'text-primary' : isMirrored ? 'text-muted-foreground' : ''
+                    }`}
                 >
                   {/* eslint-disable-next-line security/detect-object-injection -- dayIndex is 0-6 from Array.from loop, not user input */}
                   {DAY_NAMES[dayIndex]}
                 </span>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-5 w-5 text-muted-foreground ml-auto"
+                      onClick={() => openCreateDialog(dayIndex, 480, 540)} // default 08:00 to 09:00
+                    >
+                      <Plus className="h-3 w-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Add time range</TooltipContent>
+                </Tooltip>
               </div>
 
               {/* Timeline row */}
               <div
                 // eslint-disable-next-line security/detect-object-injection -- dayIndex is 0-6 from Array.from loop, not user input
                 ref={el => { rowRefs.current[dayIndex] = el; }}
-                className={`flex-1 relative h-8 border rounded cursor-crosshair select-none ${
-                  isMirrored ? 'bg-muted/30 opacity-70' : 'bg-muted/10'
-                } ${overlapResult.hasOverlap ? 'ring-1 ring-red-400' : ''}`}
+                className={`flex-1 relative h-8 border rounded cursor-crosshair select-none ${isMirrored ? 'bg-muted/30 opacity-70' : 'bg-muted/10'
+                  } ${overlapResult.hasOverlap ? 'ring-1 ring-red-400' : ''}`}
                 onPointerDown={e => handleRowPointerDown(e, dayIndex)}
                 onPointerMove={e => handleRowPointerMove(e, dayIndex)}
                 onPointerUp={e => handleRowPointerUp(e, dayIndex)}
               >
                 {/* Hour grid lines */}
-                {HOUR_LABELS.slice(1, -1).map(h => (
+                {ALL_HOURS.slice(1, -1).map(h => (
                   <div
                     key={h}
-                    className="absolute top-0 bottom-0 w-px bg-border/50"
+                    className={`absolute top-0 bottom-0 w-px ${h % 3 === 0 ? 'bg-border/60' : 'bg-border/30'
+                      }`}
                     style={{ left: `${(h / 24) * 100}%` }}
                   />
                 ))}
@@ -454,14 +468,19 @@ export function ScheduleTimelineGrid({
                   let leftPercent = minutesToPercent(startMin);
                   let widthPercent = minutesToPercent(endMin - startMin);
 
+                  let displayStart = win.startTime;
+                  let displayEnd = win.endTime;
+
                   // Apply live resize preview
                   if (dragState?.type === 'resize-left' && dragState.dayIndex === dayIndex && dragState.windowIndex === wi) {
                     const newStart = clamp(dragState.currentMinutes, 0, endMin - 15);
                     leftPercent = minutesToPercent(newStart);
                     widthPercent = minutesToPercent(endMin - newStart);
+                    displayStart = minutesToTime(newStart);
                   } else if (dragState?.type === 'resize-right' && dragState.dayIndex === dayIndex && dragState.windowIndex === wi) {
                     const newEnd = clamp(dragState.currentMinutes, startMin + 15, TOTAL_MINUTES);
                     widthPercent = minutesToPercent(newEnd - startMin);
+                    displayEnd = minutesToTime(newEnd);
                   }
 
                   const colorClass = getWindowColor(win);
@@ -470,9 +489,8 @@ export function ScheduleTimelineGrid({
                     <div
                       key={wi}
                       data-window-block
-                      className={`absolute top-1 bottom-1 rounded ${colorClass} opacity-80 hover:opacity-100 cursor-pointer flex items-center ${
-                        isOverlapping ? 'ring-2 ring-red-500' : ''
-                      }`}
+                      className={`absolute top-1 bottom-1 rounded ${colorClass} opacity-80 hover:opacity-100 cursor-pointer flex items-center ${isOverlapping ? 'ring-2 ring-red-500' : ''
+                        }`}
                       style={{ left: `${leftPercent}%`, width: `${widthPercent}%`, minWidth: '4px' }}
                       onClick={e => {
                         e.stopPropagation();
@@ -488,8 +506,8 @@ export function ScheduleTimelineGrid({
 
                       {/* Label */}
                       {widthPercent > 5 && (
-                        <span className="px-2 text-xs text-white truncate pointer-events-none">
-                          {win.label || `${win.startTime}`}
+                        <span className="px-1 text-[10px] sm:text-xs text-white truncate pointer-events-none">
+                          {win.label || `${displayStart} - ${displayEnd}`}
                         </span>
                       )}
 
@@ -534,11 +552,15 @@ export function ScheduleTimelineGrid({
                 })}
 
                 {/* Drag create preview */}
-                {previewBlock && (
+                {previewBlock && dragState?.type === 'create' && (
                   <div
-                    className="absolute top-1 bottom-1 rounded bg-blue-400/50 border border-blue-400 border-dashed pointer-events-none"
+                    className="absolute top-1 bottom-1 rounded bg-blue-400/50 border border-blue-400 border-dashed pointer-events-none flex items-center justify-center overflow-hidden"
                     style={{ left: previewBlock.left, width: previewBlock.width }}
-                  />
+                  >
+                    <span className="text-[10px] sm:text-xs text-blue-900 font-bold whitespace-nowrap px-1 bg-white/50 rounded">
+                      {minutesToTime(Math.min(dragState.startMinutes, dragState.currentMinutes))} - {minutesToTime(Math.max(dragState.startMinutes, dragState.currentMinutes))}
+                    </span>
+                  </div>
                 )}
               </div>
             </div>
