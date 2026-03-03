@@ -276,7 +276,7 @@ export function BoundaryActionEditor({
         </DialogHeader>
 
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <Label htmlFor="window-label">Label (optional)</Label>
               <Input
@@ -291,7 +291,7 @@ export function BoundaryActionEditor({
             </div>
             <div>
               <Label className="text-muted-foreground">Time Range</Label>
-              <div className="flex items-center gap-2 mt-1">
+              <div className="flex flex-wrap items-center gap-1 sm:gap-2 mt-1">
                 <Input
                   type="time"
                   className="font-mono bg-muted w-auto"
