@@ -110,6 +110,7 @@ export function ScheduleTimelineGrid({
 }: ScheduleTimelineGridProps) {
   const rowRefs = useRef<(HTMLDivElement | null)[]>([]);
   const [dragState, setDragState] = useState<DragState>(null);
+  const [hoverState, setHoverState] = useState<{ dayIndex: number; minutes: number } | null>(null);
   const [editState, setEditState] = useState<EditState>(null);
 
   const getMinutesFromPointerX = useCallback((dayIndex: number, clientX: number): number => {
@@ -205,8 +206,10 @@ export function ScheduleTimelineGrid({
     e: React.PointerEvent<HTMLDivElement>,
     dayIndex: number,
   ) {
-    if (!dragState || dragState.dayIndex !== dayIndex) return;
     const minutes = getMinutesFromPointerX(dayIndex, e.clientX);
+    setHoverState({ dayIndex, minutes });
+
+    if (!dragState || dragState.dayIndex !== dayIndex) return;
 
     if (dragState.type === 'create') {
       setDragState({ ...dragState, currentMinutes: minutes });
@@ -252,6 +255,15 @@ export function ScheduleTimelineGrid({
     }
 
     setDragState(null);
+  }
+
+  function handleRowPointerLeave(
+    e: React.PointerEvent<HTMLDivElement>,
+    dayIndex: number,
+  ) {
+    if (hoverState?.dayIndex === dayIndex) {
+      setHoverState(null);
+    }
   }
 
   function handleResizePointerDown(
@@ -448,6 +460,7 @@ export function ScheduleTimelineGrid({
                 onPointerDown={e => handleRowPointerDown(e, dayIndex)}
                 onPointerMove={e => handleRowPointerMove(e, dayIndex)}
                 onPointerUp={e => handleRowPointerUp(e, dayIndex)}
+                onPointerLeave={e => handleRowPointerLeave(e, dayIndex)}
               >
                 {/* Hour grid lines */}
                 {ALL_HOURS.slice(1, -1).map(h => (
@@ -554,12 +567,23 @@ export function ScheduleTimelineGrid({
                 {/* Drag create preview */}
                 {previewBlock && dragState?.type === 'create' && (
                   <div
-                    className="absolute top-1 bottom-1 rounded bg-blue-400/50 border border-blue-400 border-dashed pointer-events-none flex items-center justify-center overflow-hidden"
+                    className="absolute top-1 bottom-1 rounded bg-blue-400/50 border border-blue-400 border-dashed pointer-events-none"
                     style={{ left: previewBlock.left, width: previewBlock.width }}
+                  />
+                )}
+
+                {/* Hover / Drag Tooltip */}
+                {hoverState?.dayIndex === dayIndex && (
+                  <div
+                    className="absolute -top-8 pointer-events-none z-50 transform -translate-x-1/2 flex flex-col items-center"
+                    style={{ left: `${minutesToPercent(hoverState.minutes)}%` }}
                   >
-                    <span className="text-[10px] sm:text-xs text-blue-900 font-bold whitespace-nowrap px-1 bg-white/50 rounded">
-                      {minutesToTime(Math.min(dragState.startMinutes, dragState.currentMinutes))} - {minutesToTime(Math.max(dragState.startMinutes, dragState.currentMinutes))}
-                    </span>
+                    <div className="bg-popover text-popover-foreground text-xs font-medium py-1 px-2 rounded shadow-md border whitespace-nowrap">
+                      {dragState?.type === 'create' && dragState.dayIndex === dayIndex
+                        ? `${minutesToTime(Math.min(dragState.startMinutes, dragState.currentMinutes))} - ${minutesToTime(Math.max(dragState.startMinutes, dragState.currentMinutes))}`
+                        : minutesToTime(hoverState.minutes)}
+                    </div>
+                    <div className="w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-t-[5px] border-popover drop-shadow-sm -mt-px" />
                   </div>
                 )}
               </div>
