@@ -72,9 +72,8 @@ function checkWindowOverlaps(windows: Array<{ startTime: string; endTime: string
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 type StandaloneAction = {
-  operation: 'ASSIGN' | 'REMOVE' | 'MOVE' | 'CLEAR_ALL';
+  operation: 'ASSIGN' | 'UNASSIGN' | 'CLEAR_ALL';
   targetGroupUuid?: string;
-  fromGroupUuid?: string;
   sortOrder: number;
 };
 
@@ -167,38 +166,20 @@ function StandaloneActionRow({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="ASSIGN">Assign</SelectItem>
-              <SelectItem value="REMOVE">Remove</SelectItem>
-              <SelectItem value="MOVE">Move</SelectItem>
+              <SelectItem value="UNASSIGN">Unassign</SelectItem>
               <SelectItem value="CLEAR_ALL">Clear All</SelectItem>
             </SelectContent>
           </Select>
         </div>
-        {(action.operation === 'ASSIGN' || action.operation === 'REMOVE' || action.operation === 'MOVE') && (
+        {(action.operation === 'ASSIGN' || action.operation === 'UNASSIGN') && (
           <div>
-            <Label className="text-xs text-muted-foreground mb-1">
-              {action.operation === 'MOVE' ? 'To Group' : 'Group'}
-            </Label>
+            <Label className="text-xs text-muted-foreground mb-1">Group</Label>
             <GroupCombobox
               groups={groups}
               value={action.targetGroupUuid ?? null}
               onValueChange={val => onUpdate({ ...action, targetGroupUuid: val ?? undefined })}
               placeholder="Select group..."
               filterMode="none"
-              excludeUuids={action.operation === 'MOVE' && action.fromGroupUuid ? [action.fromGroupUuid] : []}
-              className="w-full"
-            />
-          </div>
-        )}
-        {action.operation === 'MOVE' && (
-          <div>
-            <Label className="text-xs text-muted-foreground mb-1">From Group</Label>
-            <GroupCombobox
-              groups={groups}
-              value={action.fromGroupUuid ?? null}
-              onValueChange={val => onUpdate({ ...action, fromGroupUuid: val ?? undefined })}
-              placeholder="Select source group..."
-              filterMode="none"
-              excludeUuids={action.targetGroupUuid ? [action.targetGroupUuid] : []}
               className="w-full"
             />
           </div>
@@ -693,7 +674,7 @@ export function ScheduleForm({
             <Alert variant="default" className="border-blue-300 bg-blue-50 dark:bg-blue-950/20">
               <Info className="h-4 w-4 text-blue-600" />
               <AlertDescription className="text-blue-700 dark:text-blue-400">
-                <strong>How to add actions:</strong> Click and drag on any day row to create a time window. Then click the coloured block to open the action editor — where you define which network group operations (Assign, Remove, Move) fire at the start and end of that window.
+                <strong>How to add actions:</strong> Click and drag on any day row to create a time window. Then click the coloured block to open the action editor — where you define which network group operations (Assign, Unassign, Clear All) fire at the start and end of that window.
               </AlertDescription>
             </Alert>
 

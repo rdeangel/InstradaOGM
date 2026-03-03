@@ -26,10 +26,9 @@ import { ArrowUp, ArrowDown, Trash2, Plus, AlertTriangle, Loader2 } from 'lucide
 import type { NetworkGroup } from '@/types/opnsense';
 
 type ActionFormData = {
-  operation: 'ASSIGN' | 'REMOVE' | 'MOVE' | 'CLEAR_ALL';
+  operation: 'ASSIGN' | 'UNASSIGN' | 'CLEAR_ALL';
   boundaryType: 'START' | 'END';
   targetGroupUuid?: string;
-  fromGroupUuid?: string;
   sortOrder: number;
 };
 
@@ -72,15 +71,12 @@ function ActionRow({
   onMoveDown: () => void;
 }) {
   // Start actions: always show all groups freely.
-  // End actions: REMOVE/MOVE-from are restricted to what start actions assigned;
-  //   ASSIGN/MOVE-to are unrestricted (you may assign/move to any group at window end).
+  // End actions: UNASSIGN is restricted to what start actions assigned;
+  //   ASSIGN is unrestricted (you may assign to any group at window end).
   const hasStartTargets = boundaryType === 'END' && startTargetUuids && startTargetUuids.size > 0;
 
   const targetFilterMode =
-    hasStartTargets && action.operation === 'REMOVE' ? 'only-assigned' : 'none';
-
-  const fromFilterMode =
-    hasStartTargets && action.operation === 'MOVE' ? 'only-assigned' : 'none';
+    hasStartTargets && action.operation === 'UNASSIGN' ? 'only-assigned' : 'none';
 
   return (
     <div className="flex items-start gap-2 p-3 border rounded-lg bg-muted/30">
@@ -121,20 +117,15 @@ function ActionRow({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="ASSIGN">Assign</SelectItem>
-              <SelectItem value="REMOVE">Remove</SelectItem>
-              <SelectItem value="MOVE">Move</SelectItem>
+              <SelectItem value="UNASSIGN">Unassign</SelectItem>
               <SelectItem value="CLEAR_ALL">Clear All</SelectItem>
             </SelectContent>
           </Select>
         </div>
 
-        {(action.operation === 'ASSIGN' ||
-          action.operation === 'REMOVE' ||
-          action.operation === 'MOVE') && (
+        {(action.operation === 'ASSIGN' || action.operation === 'UNASSIGN') && (
           <div>
-            <Label className="text-xs text-muted-foreground mb-1">
-              {action.operation === 'MOVE' ? 'To Group' : 'Group'}
-            </Label>
+            <Label className="text-xs text-muted-foreground mb-1">Group</Label>
             <GroupCombobox
               groups={groups}
               value={action.targetGroupUuid ?? null}
@@ -142,23 +133,6 @@ function ActionRow({
               placeholder="Select group..."
               assignedGroupUuids={hasStartTargets ? startTargetUuids : undefined}
               filterMode={targetFilterMode}
-              excludeUuids={action.operation === 'MOVE' && action.fromGroupUuid ? [action.fromGroupUuid] : []}
-              className="w-full"
-            />
-          </div>
-        )}
-
-        {action.operation === 'MOVE' && (
-          <div>
-            <Label className="text-xs text-muted-foreground mb-1">From Group</Label>
-            <GroupCombobox
-              groups={groups}
-              value={action.fromGroupUuid ?? null}
-              onValueChange={val => onUpdate({ ...action, fromGroupUuid: val ?? undefined })}
-              placeholder="Select source group..."
-              assignedGroupUuids={hasStartTargets ? startTargetUuids : undefined}
-              filterMode={fromFilterMode}
-              excludeUuids={action.targetGroupUuid ? [action.targetGroupUuid] : []}
               className="w-full"
             />
           </div>
@@ -190,7 +164,7 @@ export function BoundaryActionEditor({
   const startActions = editedWindow.actions.filter(a => a.boundaryType === 'START');
   const endActions = editedWindow.actions.filter(a => a.boundaryType === 'END');
 
-  // Groups targeted by start ASSIGN/MOVE actions — used to filter end-action group selectors.
+  // Groups targeted by start ASSIGN actions — used to filter end-action UNASSIGN group selectors.
   const startTargetUuids = new Set(
     startActions
       .map(a => a.targetGroupUuid)

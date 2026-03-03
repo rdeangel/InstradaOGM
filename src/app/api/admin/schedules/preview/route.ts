@@ -55,8 +55,6 @@ export const POST = withAdminApiTracking(async (request: NextRequest) => {
         operation: string;
         targetGroupUuid?: string;
         targetGroupName?: string;
-        fromGroupUuid?: string;
-        fromGroupName?: string;
       }>;
     }> = [];
 
@@ -86,10 +84,6 @@ export const POST = withAdminApiTracking(async (request: NextRequest) => {
                   targetGroupName: a.targetGroupUuid
                     ? groups.find(g => g.uuid === a.targetGroupUuid)?.name
                     : undefined,
-                  fromGroupUuid: a.fromGroupUuid,
-                  fromGroupName: a.fromGroupUuid
-                    ? groups.find(g => g.uuid === a.fromGroupUuid)?.name
-                    : undefined,
                 })),
             });
           }
@@ -116,10 +110,6 @@ export const POST = withAdminApiTracking(async (request: NextRequest) => {
             targetGroupUuid: a.targetGroupUuid,
             targetGroupName: a.targetGroupUuid
               ? groups.find(g => g.uuid === a.targetGroupUuid)?.name
-              : undefined,
-            fromGroupUuid: a.fromGroupUuid,
-            fromGroupName: a.fromGroupUuid
-              ? groups.find(g => g.uuid === a.fromGroupUuid)?.name
               : undefined,
           })),
         });

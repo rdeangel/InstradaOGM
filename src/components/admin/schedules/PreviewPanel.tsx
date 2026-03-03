@@ -14,8 +14,6 @@ interface BoundaryFiring {
     operation: string;
     targetGroupUuid?: string;
     targetGroupName?: string;
-    fromGroupUuid?: string;
-    fromGroupName?: string;
   }>;
 }
 
@@ -145,7 +143,6 @@ export function PreviewPanel({ getFormData }: PreviewPanelProps) {
                           <tr className="text-muted-foreground">
                             <th className="text-left pb-1 font-medium">Operation</th>
                             <th className="text-left pb-1 font-medium">Target Group</th>
-                            <th className="text-left pb-1 font-medium">From Group</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -153,7 +150,6 @@ export function PreviewPanel({ getFormData }: PreviewPanelProps) {
                             <tr key={ai}>
                               <td className="py-0.5">{action.operation}</td>
                               <td className="py-0.5">{action.targetGroupName ?? action.targetGroupUuid ?? '—'}</td>
-                              <td className="py-0.5">{action.fromGroupName ?? action.fromGroupUuid ?? '—'}</td>
                             </tr>
                           ))}
                         </tbody>

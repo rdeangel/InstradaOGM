@@ -1,5 +1,3 @@
--- SQLite does not support enums — stored as TEXT with CHECK constraints
-
 -- CreateTable
 CREATE TABLE "ScheduledAssignment" (
     "id" TEXT NOT NULL PRIMARY KEY,
@@ -12,7 +10,7 @@ CREATE TABLE "ScheduledAssignment" (
     "executeAt" DATETIME,
     "cronExpression" TEXT,
     "targetType" TEXT NOT NULL,
-    "targetSelector" TEXT NOT NULL,
+    "targetSelector" JSONB NOT NULL,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL,
     "lastExecutedAt" DATETIME
@@ -59,12 +57,31 @@ CREATE TABLE "ScheduleExecution" (
     "boundaryType" TEXT NOT NULL,
     "executedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "status" TEXT NOT NULL,
-    "targetIps" TEXT NOT NULL,
-    "actionsRun" TEXT NOT NULL,
+    "targetIps" JSONB NOT NULL,
+    "actionsRun" JSONB NOT NULL,
     "durationMs" INTEGER,
     "errorMessage" TEXT,
     CONSTRAINT "ScheduleExecution_scheduleId_fkey" FOREIGN KEY ("scheduleId") REFERENCES "ScheduledAssignment" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
+
+-- RedefineTables
+PRAGMA defer_foreign_keys=ON;
+PRAGMA foreign_keys=OFF;
+CREATE TABLE "new_OpnsenseGroupDisplay" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "opnsenseUuid" TEXT NOT NULL,
+    "friendlyName" TEXT NOT NULL,
+    "iconIdentifier" TEXT,
+    "groupType" TEXT NOT NULL DEFAULT 'SingleSelect',
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL
+);
+INSERT INTO "new_OpnsenseGroupDisplay" ("createdAt", "friendlyName", "groupType", "iconIdentifier", "id", "opnsenseUuid", "updatedAt") SELECT "createdAt", "friendlyName", "groupType", "iconIdentifier", "id", "opnsenseUuid", "updatedAt" FROM "OpnsenseGroupDisplay";
+DROP TABLE "OpnsenseGroupDisplay";
+ALTER TABLE "new_OpnsenseGroupDisplay" RENAME TO "OpnsenseGroupDisplay";
+CREATE UNIQUE INDEX "OpnsenseGroupDisplay_opnsenseUuid_key" ON "OpnsenseGroupDisplay"("opnsenseUuid");
+PRAGMA foreign_keys=ON;
+PRAGMA defer_foreign_keys=OFF;
 
 -- CreateIndex
 CREATE INDEX "ScheduledAssignment_enabled_scheduleType_idx" ON "ScheduledAssignment"("enabled", "scheduleType");
@@ -73,10 +90,10 @@ CREATE INDEX "ScheduledAssignment_enabled_scheduleType_idx" ON "ScheduledAssignm
 CREATE INDEX "ScheduledAssignment_priority_idx" ON "ScheduledAssignment"("priority");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "ScheduleDay_scheduleId_dayOfWeek_key" ON "ScheduleDay"("scheduleId", "dayOfWeek");
+CREATE INDEX "ScheduleDay_scheduleId_dayOfWeek_idx" ON "ScheduleDay"("scheduleId", "dayOfWeek");
 
 -- CreateIndex
-CREATE INDEX "ScheduleDay_scheduleId_dayOfWeek_idx" ON "ScheduleDay"("scheduleId", "dayOfWeek");
+CREATE UNIQUE INDEX "ScheduleDay_scheduleId_dayOfWeek_key" ON "ScheduleDay"("scheduleId", "dayOfWeek");
 
 -- CreateIndex
 CREATE INDEX "ScheduleAction_timeWindowId_boundaryType_sortOrder_idx" ON "ScheduleAction"("timeWindowId", "boundaryType", "sortOrder");
@@ -89,3 +106,16 @@ CREATE INDEX "ScheduleExecution_executedAt_idx" ON "ScheduleExecution"("executed
 
 -- CreateIndex
 CREATE INDEX "ScheduleExecution_status_idx" ON "ScheduleExecution"("status");
+
+-- RedefineIndex
+DROP INDEX "new_Group_name_key";
+CREATE UNIQUE INDEX "Group_name_key" ON "Group"("name");
+
+-- RedefineIndex
+DROP INDEX "new_User_email_key";
+CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
+
+-- RedefineIndex
+DROP INDEX "new_User_username_key";
+CREATE UNIQUE INDEX "User_username_key" ON "User"("username");
+

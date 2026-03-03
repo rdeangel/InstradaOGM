@@ -5,7 +5,7 @@ CREATE TYPE "ScheduleType" AS ENUM ('COMPLEX_WEEKLY', 'ONCE', 'RECURRING');
 CREATE TYPE "ScheduleTargetType" AS ENUM ('IP_LIST', 'HOST_ALIAS', 'NETWORK_GROUP');
 
 -- CreateEnum
-CREATE TYPE "ScheduleOpType" AS ENUM ('ASSIGN', 'REMOVE', 'MOVE', 'CLEAR_ALL');
+CREATE TYPE "ScheduleOpType" AS ENUM ('ASSIGN', 'UNASSIGN', 'CLEAR_ALL');
 
 -- CreateEnum
 CREATE TYPE "ScheduleBoundaryType" AS ENUM ('START', 'END');
@@ -90,10 +90,10 @@ CREATE INDEX "ScheduledAssignment_enabled_scheduleType_idx" ON "ScheduledAssignm
 CREATE INDEX "ScheduledAssignment_priority_idx" ON "ScheduledAssignment"("priority");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "ScheduleDay_scheduleId_dayOfWeek_key" ON "ScheduleDay"("scheduleId", "dayOfWeek");
+CREATE INDEX "ScheduleDay_scheduleId_dayOfWeek_idx" ON "ScheduleDay"("scheduleId", "dayOfWeek");
 
 -- CreateIndex
-CREATE INDEX "ScheduleDay_scheduleId_dayOfWeek_idx" ON "ScheduleDay"("scheduleId", "dayOfWeek");
+CREATE UNIQUE INDEX "ScheduleDay_scheduleId_dayOfWeek_key" ON "ScheduleDay"("scheduleId", "dayOfWeek");
 
 -- CreateIndex
 CREATE INDEX "ScheduleAction_timeWindowId_boundaryType_sortOrder_idx" ON "ScheduleAction"("timeWindowId", "boundaryType", "sortOrder");
@@ -124,3 +124,4 @@ ALTER TABLE "ScheduleAction" ADD CONSTRAINT "ScheduleAction_recurringScheduleId_
 
 -- AddForeignKey
 ALTER TABLE "ScheduleExecution" ADD CONSTRAINT "ScheduleExecution_scheduleId_fkey" FOREIGN KEY ("scheduleId") REFERENCES "ScheduledAssignment"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+

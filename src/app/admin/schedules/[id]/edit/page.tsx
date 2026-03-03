@@ -43,26 +43,31 @@ interface ScheduleDetail {
       endTime: string;
       label?: string | null;
       actions: Array<{
-        operation: 'ASSIGN' | 'REMOVE' | 'MOVE' | 'CLEAR_ALL';
+        operation: string;
         boundaryType: 'START' | 'END';
         targetGroupUuid?: string | null;
-        fromGroupUuid?: string | null;
         sortOrder: number;
       }>;
     }>;
   }>;
   onceActions?: Array<{
-    operation: 'ASSIGN' | 'REMOVE' | 'MOVE' | 'CLEAR_ALL';
+    operation: string;
     targetGroupUuid?: string | null;
-    fromGroupUuid?: string | null;
     sortOrder: number;
   }>;
   recurringActions?: Array<{
-    operation: 'ASSIGN' | 'REMOVE' | 'MOVE' | 'CLEAR_ALL';
+    operation: string;
     targetGroupUuid?: string | null;
-    fromGroupUuid?: string | null;
     sortOrder: number;
   }>;
+}
+
+// Normalize legacy operation names to current ones
+function normalizeOp(op: string): 'ASSIGN' | 'UNASSIGN' | 'CLEAR_ALL' {
+  if (op === 'REMOVE') return 'UNASSIGN';
+  if (op === 'MOVE') return 'ASSIGN'; // ASSIGN now handles move semantics automatically
+  if (op === 'ASSIGN' || op === 'UNASSIGN' || op === 'CLEAR_ALL') return op;
+  return 'ASSIGN';
 }
 
 function mapToFormValues(schedule: ScheduleDetail): Partial<ScheduleFormValues> {
@@ -76,16 +81,14 @@ function mapToFormValues(schedule: ScheduleDetail): Partial<ScheduleFormValues> 
     timezone: schedule.timezone,
     executeAt: schedule.executeAt ? new Date(schedule.executeAt) : undefined,
     onceActions: (schedule.onceActions ?? []).map(a => ({
-      operation: a.operation,
+      operation: normalizeOp(a.operation),
       targetGroupUuid: a.targetGroupUuid ?? undefined,
-      fromGroupUuid: a.fromGroupUuid ?? undefined,
       sortOrder: a.sortOrder,
     })),
     cronExpression: schedule.cronExpression ?? '',
     recurringActions: (schedule.recurringActions ?? []).map(a => ({
-      operation: a.operation,
+      operation: normalizeOp(a.operation),
       targetGroupUuid: a.targetGroupUuid ?? undefined,
-      fromGroupUuid: a.fromGroupUuid ?? undefined,
       sortOrder: a.sortOrder,
     })),
     targetType: 'HOST_ALIAS',
@@ -111,10 +114,9 @@ function mapToDays(schedule: ScheduleDetail): ScheduleDayFormData[] {
             endTime: w.endTime,
             label: w.label ?? undefined,
             actions: w.actions.map(a => ({
-              operation: a.operation,
+              operation: normalizeOp(a.operation),
               boundaryType: a.boundaryType,
               targetGroupUuid: a.targetGroupUuid ?? undefined,
-              fromGroupUuid: a.fromGroupUuid ?? undefined,
               sortOrder: a.sortOrder,
             })),
           })),

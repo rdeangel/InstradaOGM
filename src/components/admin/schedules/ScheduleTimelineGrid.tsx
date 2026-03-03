@@ -82,8 +82,7 @@ function getWindowColor(window: TimeWindowFormData): string {
   if (!firstStart) return 'bg-gray-500';
   switch (firstStart.operation) {
     case 'ASSIGN': return 'bg-green-500';
-    case 'REMOVE': return 'bg-red-500';
-    case 'MOVE': return 'bg-purple-500';
+    case 'UNASSIGN': return 'bg-red-500';
     case 'CLEAR_ALL': return 'bg-gray-500';
     default: return 'bg-gray-500';
   }

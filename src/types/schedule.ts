@@ -5,18 +5,16 @@ const TIME_FORMAT_REGEX = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 // Action schema (reused across window actions, once actions, recurring actions)
 const actionSchema = z.object({
-  operation: z.enum(['ASSIGN', 'REMOVE', 'MOVE', 'CLEAR_ALL']),
+  operation: z.enum(['ASSIGN', 'UNASSIGN', 'CLEAR_ALL']),
   boundaryType: z.enum(['START', 'END']),
   targetGroupUuid: z.string().optional(),
-  fromGroupUuid: z.string().optional(),
   sortOrder: z.number().int().default(0),
 });
 
 // Standalone action schema (for ONCE and RECURRING — no boundaryType needed, always START)
 const standaloneActionSchema = z.object({
-  operation: z.enum(['ASSIGN', 'REMOVE', 'MOVE', 'CLEAR_ALL']),
+  operation: z.enum(['ASSIGN', 'UNASSIGN', 'CLEAR_ALL']),
   targetGroupUuid: z.string().optional(),
-  fromGroupUuid: z.string().optional(),
   sortOrder: z.number().int().default(0),
 });
 

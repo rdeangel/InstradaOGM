@@ -40,17 +40,12 @@ export async function validateGroupUuid(uuid: string): Promise<{ valid: boolean;
 export function validateAction(action: {
   operation: string;
   targetGroupUuid?: string;
-  fromGroupUuid?: string;
 }): { valid: boolean; error?: string } {
-  if (action.operation === 'MOVE') {
-    if (!action.targetGroupUuid || !action.fromGroupUuid) {
-      return { valid: false, error: 'MOVE operation requires both targetGroupUuid and fromGroupUuid' };
+  if (action.operation === 'CLEAR_ALL') {
+    if (action.targetGroupUuid) {
+      return { valid: false, error: 'CLEAR_ALL operation should not have targetGroupUuid' };
     }
-  } else if (action.operation === 'CLEAR_ALL') {
-    if (action.targetGroupUuid || action.fromGroupUuid) {
-      return { valid: false, error: 'CLEAR_ALL operation should not have targetGroupUuid or fromGroupUuid' };
-    }
-  } else if (action.operation === 'ASSIGN' || action.operation === 'REMOVE') {
+  } else if (action.operation === 'ASSIGN' || action.operation === 'UNASSIGN') {
     if (!action.targetGroupUuid) {
       return { valid: false, error: `${action.operation} operation requires targetGroupUuid` };
     }
@@ -122,10 +117,9 @@ export async function validateScheduleData(
 
   // Collect all group UUIDs referenced in actions
   const groupUuids = new Set<string>();
-  const collectGroupUuids = (actions: Array<{ targetGroupUuid?: string; fromGroupUuid?: string }>) => {
+  const collectGroupUuids = (actions: Array<{ targetGroupUuid?: string }>) => {
     actions.forEach(action => {
       if (action.targetGroupUuid) groupUuids.add(action.targetGroupUuid);
-      if (action.fromGroupUuid) groupUuids.add(action.fromGroupUuid);
     });
   };
 
@@ -155,7 +149,7 @@ export async function validateScheduleData(
     }
   }
 
-  // Validate action constraints (MOVE needs both UUIDs, CLEAR_ALL needs neither, etc.)
+  // Validate action constraints (ASSIGN/UNASSIGN need targetGroupUuid, CLEAR_ALL needs neither)
   const allActions = [
     ...(data.onceActions || []).map(a => ({ ...a, boundaryType: 'START' as const })),
     ...(data.recurringActions || []).map(a => ({ ...a, boundaryType: 'START' as const })),

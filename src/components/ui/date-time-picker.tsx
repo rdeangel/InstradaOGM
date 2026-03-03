@@ -52,9 +52,11 @@ export function DateTimePicker({ date, setDate, disabled }: DateTimePickerProps)
 
     const handleTimeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const timeStr = e.target.value
-        if (!selectedDateTime) return
+        if (!selectedDateTime || !timeStr) return
 
         const [hours, minutes] = timeStr.split(':').map(Number)
+        if (isNaN(hours) || isNaN(minutes)) return
+
         const newDateTime = new Date(selectedDateTime)
         newDateTime.setHours(hours)
         newDateTime.setMinutes(minutes)

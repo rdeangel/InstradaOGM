@@ -629,8 +629,7 @@ enum ScheduleTargetType {
 
 enum ScheduleOpType {
   ASSIGN
-  REMOVE
-  MOVE
+  UNASSIGN
   CLEAR_ALL
 }
 
