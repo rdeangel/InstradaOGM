@@ -291,9 +291,24 @@ export function BoundaryActionEditor({
             </div>
             <div>
               <Label className="text-muted-foreground">Time Range</Label>
-              <p className="mt-1 text-sm font-mono bg-muted px-3 py-2 rounded-md">
-                {editedWindow.startTime} – {editedWindow.endTime}
-              </p>
+              <div className="flex items-center gap-2 mt-1">
+                <Input
+                  type="time"
+                  className="font-mono bg-muted w-auto"
+                  value={editedWindow.startTime}
+                  onChange={e => setEditedWindow({ ...editedWindow, startTime: e.target.value })}
+                />
+                <span className="text-muted-foreground">–</span>
+                <Input
+                  type="time"
+                  className="font-mono bg-muted w-auto"
+                  value={editedWindow.endTime}
+                  onChange={e => setEditedWindow({ ...editedWindow, endTime: e.target.value })}
+                />
+              </div>
+              {editedWindow.startTime >= editedWindow.endTime && (
+                <p className="text-xs text-destructive mt-1">End time must be after start time.</p>
+              )}
             </div>
           </div>
 
@@ -319,7 +334,11 @@ export function BoundaryActionEditor({
           <Button type="button" variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="button" onClick={() => onSave(editedWindow)}>
+          <Button
+            type="button"
+            onClick={() => onSave(editedWindow)}
+            disabled={editedWindow.startTime >= editedWindow.endTime}
+          >
             Save
           </Button>
         </DialogFooter>
