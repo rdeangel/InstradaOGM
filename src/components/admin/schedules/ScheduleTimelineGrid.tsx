@@ -7,9 +7,12 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Link2, Unlink2, Copy, Plus } from 'lucide-react';
+import { Link2, Unlink2, Copy, Plus, Trash2 } from 'lucide-react';
 import { BoundaryActionEditor, type TimeWindowFormData } from './BoundaryActionEditor';
 
 // Inline pure helper — avoids importing server-only schedule-validation module
@@ -112,6 +115,12 @@ export function ScheduleTimelineGrid({
   const [dragState, setDragState] = useState<DragState>(null);
   const [hoverState, setHoverState] = useState<{ dayIndex: number; minutes: number } | null>(null);
   const [editState, setEditState] = useState<EditState>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    dayIndex: number;
+    windowIndex: number;
+  } | null>(null);
 
   const getMinutesFromPointerX = useCallback((dayIndex: number, clientX: number): number => {
     // eslint-disable-next-line security/detect-object-injection -- dayIndex is 0-6 integer from props, not user input
@@ -188,6 +197,20 @@ export function ScheduleTimelineGrid({
 
   function handleDeleteWindow(dayIndex: number, windowIndex: number) {
     updateDayWindows(dayIndex, windows => windows.filter((_, i) => i !== windowIndex));
+  }
+
+  function handleCopyToDay(sourceDayIndex: number, windowIndex: number, targetDayIndex: number) {
+    const sourceDay = days.find(d => d.dayOfWeek === sourceDayIndex);
+    const winToCopy = sourceDay?.windows[windowIndex];
+    if (!winToCopy) return;
+
+    // Create deep copy of the window and its actions
+    const newWindow = {
+      ...winToCopy,
+      actions: winToCopy.actions.map(a => ({ ...a }))
+    };
+
+    updateDayWindows(targetDayIndex, windows => [...windows, newWindow]);
   }
 
   // Pointer event handlers for a row
@@ -509,6 +532,16 @@ export function ScheduleTimelineGrid({
                         e.stopPropagation();
                         if (!dragState) openEditDialog(dayIndex, wi);
                       }}
+                      onContextMenu={e => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setContextMenu({
+                          x: e.clientX,
+                          y: e.clientY,
+                          dayIndex,
+                          windowIndex: wi
+                        });
+                      }}
                     >
                       {/* Resize left handle */}
                       <div
@@ -601,6 +634,53 @@ export function ScheduleTimelineGrid({
           onClose={() => setEditState(null)}
         />
       )}
+
+      {/* Context Menu Dropdown */}
+      <DropdownMenu open={!!contextMenu} onOpenChange={(open) => !open && setContextMenu(null)}>
+        <DropdownMenuTrigger
+          className="fixed pointer-events-none opacity-0 m-0 p-0"
+          style={{
+            left: contextMenu?.x ?? 0,
+            top: contextMenu?.y ?? 0,
+            width: 0,
+            height: 0,
+          }}
+        />
+        <DropdownMenuContent align="start" sideOffset={5} className="w-48">
+          <DropdownMenuItem
+            className="text-destructive focus:bg-destructive focus:text-destructive-foreground cursor-pointer"
+            onClick={() => {
+              if (contextMenu) handleDeleteWindow(contextMenu.dayIndex, contextMenu.windowIndex);
+              setContextMenu(null);
+            }}
+          >
+            <Trash2 className="mr-2 h-4 w-4" />
+            <span>Delete</span>
+          </DropdownMenuItem>
+
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger className="cursor-pointer">
+              <Copy className="mr-2 h-4 w-4" />
+              <span>Copy to day...</span>
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent className="w-48">
+              {DAY_NAMES.map((targetName, targetIndex) => (
+                <DropdownMenuItem
+                  key={targetIndex}
+                  disabled={contextMenu?.dayIndex === targetIndex}
+                  className="cursor-pointer"
+                  onClick={() => {
+                    if (contextMenu) handleCopyToDay(contextMenu.dayIndex, contextMenu.windowIndex, targetIndex);
+                    setContextMenu(null);
+                  }}
+                >
+                  {targetName}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </TooltipProvider>
   );
 }

@@ -11,37 +11,38 @@ Replace the following variables in the examples below:
 
 **Example:**
 ```bash
-# Set variables
 SERVER_URL="https://instrada-ogm.example.com"
 API_KEY="your-api-key-here"
 
-# Use in curl commands
 curl -X GET "${SERVER_URL}/api/admin/schedules" \
   -H "Authorization: Bearer ${API_KEY}"
 ```
 
-This section covers the administrative endpoints for the Schedule System, allowing the creation and management of scheduled network group assignments.
+This section covers the administrative endpoints for the Schedule System — creating and managing scheduled network group assignments for OPNsense host aliases.
+
+For a conceptual overview of how scheduling works, see [Scheduled Assignments](../../FEATURES/SCHEDULED_ASSIGNMENTS.md).
 
 ## Role-Based Access Control
 
 **Authentication Required:** Yes
 
 **Role Requirements:**
-- **USER**: ❌ Cannot access any schedule endpoints (returns "Unauthorized")
-- **ADMIN**: ✅ Can access all schedule endpoints
-- **SUPER_ADMIN**: ✅ Can access all schedule endpoints
+- **USER**: ❌ Cannot access any schedule endpoints (returns `401 Unauthorized`)
+- **ADMIN**: ✅ Full access to all schedule endpoints
+- **SUPER_ADMIN**: ✅ Full access to all schedule endpoints
 
 ---
 
+## Endpoints
+
 ### POST /api/admin/schedules
 
-**Description**: Create a new schedule. Triggers timer re-arm on the background engine upon success.
+**Description**: Create a new schedule. Triggers an immediate timer re-arm on the background execution engine so the schedule takes effect without waiting for the next reconciliation sweep.
 
 **Role Access**: ADMIN, SUPER_ADMIN
 
-#### Usage Case 1: Create a Weekly Schedule
+#### Usage Case 1: Create a Complex Weekly Schedule
 
-**Example Request**:
 ```bash
 curl -X POST "{{SERVER_URL}}/api/admin/schedules" \
   -H "Authorization: Bearer {{API_KEY}}" \
@@ -54,238 +55,444 @@ curl -X POST "{{SERVER_URL}}/api/admin/schedules" \
     "scheduleType": "COMPLEX_WEEKLY",
     "timezone": "Europe/London",
     "targetType": "HOST_ALIAS",
-    "targetSelector": { "hostAliasUuids": ["uuid-1234"] },
+    "targetSelector": { "hostAliasUuids": ["<alias-uuid>"] },
     "days": [{
       "dayOfWeek": 1,
       "windows": [{
         "startTime": "21:00",
-        "endTime": "23:59",
+        "endTime": "07:00",
         "label": "Bedtime block",
         "actions": [
-          { "operation": "REMOVE", "boundaryType": "START", "targetGroupUuid": "opn-uuid-internet", "sortOrder": 0 },
-          { "operation": "ASSIGN", "boundaryType": "END", "targetGroupUuid": "opn-uuid-internet", "sortOrder": 0 }
+          { "operation": "UNASSIGN", "boundaryType": "START", "targetGroupUuid": "<group-uuid>", "sortOrder": 0 },
+          { "operation": "ASSIGN",   "boundaryType": "END",   "targetGroupUuid": "<group-uuid>", "sortOrder": 0 }
         ]
       }]
     }]
   }'
 ```
 
-**Success Response**:
+**Success Response** `200 OK`:
 ```json
 {
   "id": "cuid-schedule-1",
   "name": "Kids Bedtime",
-  "enabled": true
+  "enabled": true,
+  "scheduleType": "COMPLEX_WEEKLY",
+  "priority": 10,
+  "timezone": "Europe/London",
+  "targetType": "HOST_ALIAS",
+  "createdAt": "2026-03-03T10:00:00.000Z",
+  "updatedAt": "2026-03-03T10:00:00.000Z"
 }
 ```
 
 **Error Cases**:
-- `400 Bad Request` if invalid `scheduleType` combination or timezone.
-- `401 Unauthorized` / `403 Forbidden` if missing or incorrect role permissions.
+- `400 Bad Request` — validation failure (invalid timezone, missing required fields for the chosen `scheduleType`, `startTime` not before `endTime`, etc.)
+- `401 Unauthorized` / `403 Forbidden` — missing or insufficient permissions
+
+---
+
+#### Usage Case 2: Create a Once (One-Off) Schedule
+
+```bash
+curl -X POST "{{SERVER_URL}}/api/admin/schedules" \
+  -H "Authorization: Bearer {{API_KEY}}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Exam Day Block",
+    "enabled": true,
+    "priority": 5,
+    "scheduleType": "ONCE",
+    "timezone": "Europe/London",
+    "targetType": "HOST_ALIAS",
+    "targetSelector": { "hostAliasUuids": ["<alias-uuid>"] },
+    "executeAt": "2026-06-01T09:00:00Z",
+    "onceActions": [
+      { "operation": "UNASSIGN", "targetGroupUuid": "<group-uuid>", "sortOrder": 0 }
+    ]
+  }'
+```
+
+> Once schedules automatically set `enabled: false` in the database after their actions execute, preventing re-execution on subsequent reconciliation sweeps.
+
+---
+
+#### Usage Case 3: Create a Recurring Schedule
+
+```bash
+curl -X POST "{{SERVER_URL}}/api/admin/schedules" \
+  -H "Authorization: Bearer {{API_KEY}}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Weekend VPN",
+    "enabled": true,
+    "priority": 0,
+    "scheduleType": "RECURRING",
+    "timezone": "Europe/London",
+    "targetType": "HOST_ALIAS",
+    "targetSelector": { "hostAliasUuids": ["<alias-uuid>"] },
+    "cronExpression": "0 17 * * 5",
+    "recurringActions": [
+      { "operation": "ASSIGN", "targetGroupUuid": "<group-uuid>", "sortOrder": 0 }
+    ]
+  }'
+```
 
 ---
 
 ### GET /api/admin/schedules
 
-**Description**: Retrieve a list of schedules.
+**Description**: List all schedules ordered by priority descending, then name ascending. Includes an execution count per schedule.
 
 **Role Access**: ADMIN, SUPER_ADMIN
 
 **Query Parameters**:
-- `enabled` (optional): Filter by boolean status
-- `scheduleType` (optional): Filter by schedule type (COMPLEX_WEEKLY, ONCE, RECURRING)
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `enabled` | boolean | Filter by enabled status (`true` or `false`) |
+| `scheduleType` | string | Filter by type: `COMPLEX_WEEKLY`, `ONCE`, or `RECURRING` |
 
-#### Usage Case 1: List Filtered Schedules
+#### Usage Case 1: List All Enabled Recurring Schedules
 
-**Example Request**:
 ```bash
-curl -X GET "{{SERVER_URL}}/api/admin/schedules?scheduleType=COMPLEX_WEEKLY" \
+curl -X GET "{{SERVER_URL}}/api/admin/schedules?enabled=true&scheduleType=RECURRING" \
   -H "Authorization: Bearer {{API_KEY}}"
 ```
 
-**Success Response**:
+**Success Response** `200 OK`:
 ```json
 [
   {
     "id": "cuid-schedule-1",
-    "name": "Kids Bedtime",
-    "scheduleType": "COMPLEX_WEEKLY",
+    "name": "Weekend VPN",
+    "scheduleType": "RECURRING",
     "enabled": true,
+    "priority": 0,
+    "timezone": "Europe/London",
     "targetType": "HOST_ALIAS",
-    "priority": 10,
-    "timezone": "Europe/London"
+    "cronExpression": "0 17 * * 5",
+    "lastExecutedAt": "2026-02-28T17:00:00.000Z",
+    "_count": { "executions": 4 }
   }
 ]
 ```
 
 ---
 
-### GET /api/admin/schedules/[id]
+### GET /api/admin/schedules/:id
 
-**Description**: Retrieve full details of a single schedule, including nested days, windows, and standalone actions.
+**Description**: Retrieve full details of a single schedule including nested days, time windows, and all actions.
 
 **Role Access**: ADMIN, SUPER_ADMIN
 
-#### Usage Case 1: Fetch Schedule Details
-
-**Example Request**:
 ```bash
 curl -X GET "{{SERVER_URL}}/api/admin/schedules/cuid-schedule-1" \
   -H "Authorization: Bearer {{API_KEY}}"
 ```
 
-**Success Response**: *(Full schedule object payload)*
-
 **Error Cases**:
-- `404 Not Found` if schedule does not exist.
+- `404 Not Found` — schedule does not exist
 
 ---
 
-### PUT /api/admin/schedules/[id]
+### PUT /api/admin/schedules/:id
 
-**Description**: Perform a complete replacement update of a schedule in a transaction. Triggers a timer re-arm.
+**Description**: Fully replace a schedule's configuration in a single database transaction. All existing days, windows, and actions are deleted and recreated from the request body. Triggers an immediate timer re-arm.
 
 **Role Access**: ADMIN, SUPER_ADMIN
 
-**Example Request**:
 ```bash
 curl -X PUT "{{SERVER_URL}}/api/admin/schedules/cuid-schedule-1" \
   -H "Authorization: Bearer {{API_KEY}}" \
   -H "Content-Type: application/json" \
-  -d '{ ... full schedule object ... }'
+  -d '{ ... full schedule definition ... }'
 ```
+
+**Error Cases**:
+- `400 Bad Request` — validation failure
+- `404 Not Found` — schedule does not exist
 
 ---
 
-### DELETE /api/admin/schedules/[id]
+### DELETE /api/admin/schedules/:id
 
-**Description**: Delete a schedule and automatically cascade deletion of all child days, windows, actions, and execution histories.
+**Description**: Delete a schedule. Cascades to all child days, windows, actions, and execution history records.
 
 **Role Access**: ADMIN, SUPER_ADMIN
 
-**Example Request**:
 ```bash
 curl -X DELETE "{{SERVER_URL}}/api/admin/schedules/cuid-schedule-1" \
   -H "Authorization: Bearer {{API_KEY}}"
 ```
 
+**Success Response** `200 OK`:
+```json
+{ "message": "Schedule deleted" }
+```
+
 ---
 
-### POST /api/admin/schedules/[id]/toggle
+### POST /api/admin/schedules/:id/toggle
 
-**Description**: Toggle schedule enabled status quickly.
+**Description**: Enable or disable a schedule. Triggers an immediate timer re-arm so the change takes effect without waiting for the next reconciliation sweep.
 
 **Role Access**: ADMIN, SUPER_ADMIN
 
-**Example Request**:
 ```bash
 curl -X POST "{{SERVER_URL}}/api/admin/schedules/cuid-schedule-1/toggle" \
   -H "Authorization: Bearer {{API_KEY}}" \
   -H "Content-Type: application/json" \
-  -d '{"enabled": false}'
+  -d '{ "enabled": false }'
 ```
+
+**Request Body**:
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `enabled` | boolean | Yes | New enabled state |
+
+**Success Response** `200 OK`: Full updated schedule object.
 
 ---
 
-### GET /api/admin/schedules/[id]/executions
+### GET /api/admin/schedules/:id/executions
 
-**Description**: Paginated execution history for a schedule.
+**Description**: Paginated execution history for a schedule, ordered by most recent first.
 
 **Role Access**: ADMIN, SUPER_ADMIN
 
 **Query Parameters**:
-- `page` (optional): Default `1`
-- `limit` (optional): Default `20`
-- `status` (optional): Filter history by status (`SUCCESS`, `PARTIAL`, `FAILED`, `SKIPPED`)
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `page` | integer | `1` | Page number |
+| `limit` | integer | `20` | Results per page (max `100`) |
+| `status` | string | — | Filter by status: `SUCCESS`, `PARTIAL`, `FAILED`, or `SKIPPED` |
 
-#### Usage Case 1: Fetch Executions
-
-**Example Request**:
 ```bash
-curl -X GET "{{SERVER_URL}}/api/admin/schedules/cuid-schedule-1/executions?status=SUCCESS&limit=5" \
+curl -X GET "{{SERVER_URL}}/api/admin/schedules/cuid-schedule-1/executions?status=PARTIAL&limit=10" \
   -H "Authorization: Bearer {{API_KEY}}"
 ```
 
-**Success Response**:
+**Success Response** `200 OK`:
 ```json
 {
   "executions": [
     {
       "id": "cuid-exec-1",
+      "scheduleId": "cuid-schedule-1",
       "boundaryType": "START",
-      "status": "SUCCESS",
-      "executedAt": "2026-02-14T21:00:00.000Z",
-      "targetIps": ["192.168.1.50"],
-      "actionsRun": [...]
+      "executedAt": "2026-03-03T21:00:00.000Z",
+      "status": "PARTIAL",
+      "durationMs": 342,
+      "targetIps": ["192.168.1.50", "192.168.1.51"],
+      "actionsRun": [
+        { "operation": "UNASSIGN", "targetGroupUuid": "<group-uuid>", "ip": "192.168.1.50", "success": true },
+        { "operation": "UNASSIGN", "targetGroupUuid": "<group-uuid>", "ip": "192.168.1.51", "success": false, "error": "OPNsense API timeout" }
+      ],
+      "errorMessage": null
     }
   ],
-  "pagination": { "page": 1, "limit": 5, "total": 12 }
+  "pagination": {
+    "page": 1,
+    "limit": 10,
+    "totalCount": 1,
+    "totalPages": 1
+  }
 }
 ```
+
+**Error Cases**:
+- `404 Not Found` — schedule does not exist
 
 ---
 
 ### POST /api/admin/schedules/preview
 
-**Description**: Dry-run simulation. Validates target resolutions and simulated boundaries firing without applying the modifications to the database or OPNsense node.
+**Description**: Dry-run simulation. Validates which boundaries and actions would fire at a given date/time without writing to the database or calling OPNsense.
+
+Uses `POST` (not `GET`) because the request body contains the full schedule definition, which can be large.
 
 **Role Access**: ADMIN, SUPER_ADMIN
 
 **Query Parameters**:
-- `at` (required): ISO8601 simulated datetime
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `at` | string | Yes | ISO 8601 datetime to simulate against (e.g. `2026-03-03T21:00:00Z`) |
 
-#### Usage Case 1: Preview boundary state
-
-**Example Request**:
 ```bash
-curl -X POST "{{SERVER_URL}}/api/admin/schedules/preview?at=2026-02-14T21:00:00Z" \
+curl -X POST "{{SERVER_URL}}/api/admin/schedules/preview?at=2026-03-03T21:00:00Z" \
   -H "Authorization: Bearer {{API_KEY}}" \
   -H "Content-Type: application/json" \
-  -d '{ ... full schedule object body ... }'
+  -d '{
+    "name": "Kids Bedtime",
+    "scheduleType": "COMPLEX_WEEKLY",
+    "timezone": "Europe/London",
+    "targetType": "HOST_ALIAS",
+    "targetSelector": { "hostAliasUuids": ["<alias-uuid>"] },
+    "days": [{
+      "dayOfWeek": 1,
+      "windows": [{
+        "startTime": "21:00",
+        "endTime": "07:00",
+        "label": "Bedtime block",
+        "actions": [
+          { "operation": "UNASSIGN", "boundaryType": "START", "targetGroupUuid": "<group-uuid>", "sortOrder": 0 }
+        ]
+      }]
+    }],
+    "enabled": true,
+    "priority": 10,
+    "timezone": "Europe/London"
+  }'
 ```
 
-**Success Response**:
+**Success Response** `200 OK`:
 ```json
 {
-  "simulatedAt": "2026-02-14T21:00:00Z",
-  "resolvedTargets": ["192.168.1.50"],
+  "simulatedAt": "2026-03-03T21:00:00.000Z",
+  "resolvedTargets": [],
   "boundariesFiring": [
     {
       "windowLabel": "Bedtime block",
       "boundaryType": "START",
       "actions": [
-        { "operation": "REMOVE", "targetGroupUuid": "opn-uuid-internet" }
+        {
+          "operation": "UNASSIGN",
+          "targetGroupUuid": "<group-uuid>",
+          "targetGroupName": "Internet - Full Access"
+        }
       ]
     }
   ]
 }
 ```
 
+> `resolvedTargets` is populated for `IP_LIST` targets only. `HOST_ALIAS` and `NETWORK_GROUP` targets require live OPNsense queries; full resolution happens at execution time, not during preview.
+
+**Error Cases**:
+- `400 Bad Request` — missing or invalid `at` parameter, or invalid schedule body
+- `404 Not Found` — referenced group UUIDs cannot be resolved (group name lookup only; non-fatal)
+
 ---
 
-## Constants and Schemas
+## Schema Reference
 
-### targetSelector Shape Table
+### Full Request Body
 
-| Type | `targetSelector` Payload Shape | Resolution |
-|------|-------------------------------|------------|
-| `IP_LIST` | `{ "ips": ["192.168.1.100", "192.168.1.101"] }` | Direct execution |
-| `HOST_ALIAS` | `{ "hostAliasUuids": ["uuid-1", "uuid-2"] }` | Resolves target alias IPs from OPNsense |
-| `NETWORK_GROUP` | `{ "networkGroupUuid": "uuid" }` | Uses current active IP members within group |
+```jsonc
+{
+  // ── Common fields ────────────────────────────────────────────────────────────
+  "name": "Kids Bedtime",            // required; max 100 chars
+  "description": "...",              // optional; max 500 chars
+  "enabled": true,
+  "priority": 10,                    // integer 0–100; higher priority fires first when concurrent
+  "scheduleType": "COMPLEX_WEEKLY",  // "COMPLEX_WEEKLY" | "ONCE" | "RECURRING"
+  "timezone": "Europe/London",       // any IANA timezone identifier
 
-### Supported Action Operations
+  // ── Targeting ────────────────────────────────────────────────────────────────
+  "targetType": "HOST_ALIAS",        // "HOST_ALIAS" | "IP_LIST" | "NETWORK_GROUP"
+  "targetSelector": {
+    // HOST_ALIAS  → { "hostAliasUuids": ["<uuid>", ...] }
+    // IP_LIST     → { "ips": ["192.168.1.100", ...] }
+    // NETWORK_GROUP → { "networkGroupUuid": "<uuid>" }
+    "hostAliasUuids": ["<alias-uuid>"]
+  },
 
-| Operation | Constraints | Description |
-|-----------|-------------|-------------|
-| `ASSIGN` | requires `targetGroupUuid` | Assign resolved IPs to group |
-| `REMOVE` | requires `targetGroupUuid` | Remove resolved IPs from group |
-| `MOVE` | requires `targetGroupUuid` AND `fromGroupUuid` | Removes IPs from source, appends to target |
-| `CLEAR_ALL`| -- | Removes IPs from all documented OPNsense groups |
+  // ── COMPLEX_WEEKLY fields ─────────────────────────────────────────────────────
+  "days": [
+    {
+      "dayOfWeek": 1,                // 0 = Sunday … 6 = Saturday
+      "windows": [
+        {
+          "startTime": "21:00",      // HH:MM 24-hour; startTime must be before endTime
+          "endTime": "07:00",
+          "label": "Bedtime block",  // optional display label
+          "actions": [
+            {
+              "operation": "UNASSIGN",  // "ASSIGN" | "UNASSIGN" | "CLEAR_ALL"
+              "boundaryType": "START",  // "START" | "END"
+              "targetGroupUuid": "<group-uuid>",  // required for ASSIGN and UNASSIGN
+              "sortOrder": 0            // execution order within this boundary
+            }
+          ]
+        }
+      ]
+    }
+  ],
 
-### Audit Log Tracking
-Using the `AuditLog` structure, actions generate these respective tracking actions:
-- `SCHEDULE_CREATED`
-- `SCHEDULE_UPDATED`
-- `SCHEDULE_DELETED`
-- `SCHEDULE_ENABLED`
-- `SCHEDULE_DISABLED`
+  // ── ONCE fields ───────────────────────────────────────────────────────────────
+  "executeAt": "2026-06-01T09:00:00Z",  // ISO 8601 datetime
+  "onceActions": [
+    {
+      "operation": "ASSIGN",
+      "targetGroupUuid": "<group-uuid>",
+      "sortOrder": 0
+      // no "boundaryType" — once/recurring actions always fire as a single event
+    }
+  ],
+
+  // ── RECURRING fields ──────────────────────────────────────────────────────────
+  "cronExpression": "0 17 * * 5",    // standard 5-field cron expression
+  "recurringActions": [
+    { "operation": "ASSIGN", "targetGroupUuid": "<group-uuid>", "sortOrder": 0 }
+  ]
+}
+```
+
+---
+
+### Supported Operations
+
+| Operation | `targetGroupUuid` | Description |
+|-----------|:-----------------:|-------------|
+| `ASSIGN` | Required | Add the host alias to the specified group. Behaviour is group-type-aware — see below. |
+| `UNASSIGN` | Required | Remove the host alias from the specified group. Silently skipped if the alias is not currently a member. |
+| `CLEAR_ALL` | — | Remove the host alias from every OPNsense network group it currently belongs to. |
+
+#### ASSIGN — Group-Type-Aware Behaviour
+
+The ASSIGN operation mirrors the logic used in the self-service and device management pages:
+
+| `enableGroupTypes` setting | Target group type | Behaviour |
+|---------------------------|-------------------|-----------|
+| Disabled (default) | Any | Evicts from **all** current groups, then assigns to target (move semantics). |
+| Enabled | SingleSelect | Evicts from other SingleSelect groups (preserves MultiSelect memberships), then assigns. |
+| Enabled | MultiSelect | Purely additive. If the alias is already a member of the target group, the action is silently skipped as a success no-op. |
+
+---
+
+### Target Selector Shapes
+
+| `targetType` | `targetSelector` shape | Resolution at execution time | UI support |
+|-------------|------------------------|------------------------------|------------|
+| `HOST_ALIAS` | `{ "hostAliasUuids": ["<uuid>", ...] }` | Resolves current IPs from OPNsense | ✅ Only available option in UI |
+| `IP_LIST` | `{ "ips": ["192.168.1.x", ...] }` | Used directly (static) | API only |
+| `NETWORK_GROUP` | `{ "networkGroupUuid": "<uuid>" }` | Resolves current members of the group | API only |
+
+---
+
+### Execution Statuses
+
+| Status | Meaning |
+|--------|---------|
+| `SUCCESS` | All actions on all resolved IPs completed without error. |
+| `PARTIAL` | At least one action or IP succeeded; at least one failed. |
+| `FAILED` | All actions failed, or OPNsense was unreachable after maximum retries. |
+| `SKIPPED` | Execution was bypassed (e.g. schedule was disabled between the trigger check and execution). |
+
+---
+
+### Audit Log Events
+
+Schedule operations generate the following audit log entries:
+
+| Event | Trigger |
+|-------|---------|
+| `SCHEDULE_CREATED` | Successful `POST /api/admin/schedules` |
+| `SCHEDULE_UPDATED` | Successful `PUT /api/admin/schedules/:id` |
+| `SCHEDULE_DELETED` | Successful `DELETE /api/admin/schedules/:id` |
+| `SCHEDULE_ENABLED` | Toggle sets `enabled: true` |
+| `SCHEDULE_DISABLED` | Toggle sets `enabled: false` |
+
+---
+
+**Last Updated:** 2026-03-03 | **Category:** API Documentation
