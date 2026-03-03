@@ -13,6 +13,7 @@ import { PaginationControls } from '@/components/ui/pagination-controls';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatDistanceToNow } from 'date-fns';
 import { AlertCircle, ChevronDown, ChevronRight } from 'lucide-react';
+import { useOpnsenseNetworkGroups } from '@/hooks/use-opnsense-network-groups';
 
 interface ScheduleExecution {
   id: string;
@@ -59,7 +60,14 @@ function formatTargetIps(targetIps: string[] | unknown): string {
   return `${targetIps.slice(0, 3).join(', ')} +${targetIps.length - 3} more`;
 }
 
+function formatGroupUuid(uuid: string, groups: { uuid: string; name: string; description?: string }[]): string {
+  const group = groups.find(g => g.uuid === uuid);
+  if (!group) return uuid;
+  return group.description || group.name || uuid;
+}
+
 export function ExecutionHistory({ scheduleId }: ExecutionHistoryProps) {
+  const { groups } = useOpnsenseNetworkGroups();
   const [executions, setExecutions] = useState<ScheduleExecution[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
@@ -207,9 +215,47 @@ export function ExecutionHistory({ scheduleId }: ExecutionHistoryProps) {
                               )}
                               <div>
                                 <p className="font-medium text-foreground mb-1">Actions Run:</p>
-                                <pre className="bg-muted p-3 rounded-md overflow-auto text-xs leading-relaxed">
-                                  {JSON.stringify(exec.actionsRun, null, 2)}
-                                </pre>
+                                <div className="space-y-1 mt-2">
+                                  {Array.isArray(exec.actionsRun) ? exec.actionsRun.map((action: any, i: number) => (
+                                    <div key={i} className="flex flex-col sm:flex-row sm:items-center gap-2 bg-muted p-2 rounded-md font-mono text-xs">
+                                      <div className="flex items-center gap-2 min-w-40">
+                                        <Badge variant={action.success ? 'default' : 'destructive'} className="text-[10px] px-1.5 py-0 h-4">
+                                          {action.success ? 'SUCCESS' : 'FAILED'}
+                                        </Badge>
+                                        <span className="font-semibold">{action.operation}</span>
+                                      </div>
+
+                                      <div className="flex-1 text-muted-foreground break-all">
+                                        {action.targetGroupUuid && (
+                                          <span>
+                                            <span className="text-foreground/50">Target:</span> {formatGroupUuid(action.targetGroupUuid, groups)}
+                                          </span>
+                                        )}
+                                        {action.fromGroupUuid && (
+                                          <span className="ml-2">
+                                            <span className="text-foreground/50">From:</span> {formatGroupUuid(action.fromGroupUuid, groups)}
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      {action.ip && (
+                                        <div className="text-right whitespace-nowrap">
+                                          <span className="text-foreground/50">IP:</span> {action.ip}
+                                        </div>
+                                      )}
+
+                                      {action.error && (
+                                        <div className="text-destructive sm:ml-2">
+                                          <span className="text-foreground/50">Error:</span> {action.error}
+                                        </div>
+                                      )}
+                                    </div>
+                                  )) : (
+                                    <pre className="bg-muted p-3 rounded-md overflow-auto text-xs leading-relaxed">
+                                      {JSON.stringify(exec.actionsRun, null, 2)}
+                                    </pre>
+                                  )}
+                                </div>
                               </div>
                             </div>
                           </td>
