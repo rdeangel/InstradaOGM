@@ -54,7 +54,7 @@ function checkWindowOverlaps(windows: Array<{ startTime: string; endTime: string
   }
   for (let i = 0; i < windows.length; i++) {
     for (let j = i + 1; j < windows.length; j++) {
-        // eslint-disable-next-line security/detect-object-injection -- i and j are controlled loop variables, not user input
+      // eslint-disable-next-line security/detect-object-injection -- i and j are controlled loop variables, not user input
       const wi = windows[i];
       // eslint-disable-next-line security/detect-object-injection -- i and j are controlled loop variables, not user input
       const wj = windows[j];
@@ -244,8 +244,8 @@ export function ScheduleForm({
   // Compute overlap warnings for COMPLEX_WEEKLY
   const overlapWarnings = values.scheduleType === 'COMPLEX_WEEKLY'
     ? days
-        .filter(d => checkWindowOverlaps(d.windows.map(w => ({ startTime: w.startTime, endTime: w.endTime }))).hasOverlap)
-        .map(d => `Day ${d.dayOfWeek}`)
+      .filter(d => checkWindowOverlaps(d.windows.map(w => ({ startTime: w.startTime, endTime: w.endTime }))).hasOverlap)
+      .map(d => `Day ${d.dayOfWeek}`)
     : [];
 
   // Cron human-readable preview
@@ -363,6 +363,12 @@ export function ScheduleForm({
       if (!values.cronExpression.trim()) errs.cronExpression = 'Cron expression is required';
       try { CronExpressionParser.parse(values.cronExpression); } catch { errs.cronExpression = 'Invalid cron expression'; }
       if (values.recurringActions.length === 0) errs.recurringActions = 'At least one action is required';
+    }
+    if (values.scheduleType === 'COMPLEX_WEEKLY') {
+      const hasAnyWindows = days.some(d => d.windows.length > 0);
+      if (!hasAnyWindows) {
+        errs.scheduleType = 'At least one time window must be defined across the weekly schedule.';
+      }
     }
     if (values.hostAliasUuids.length === 0) errs.targetSelector = 'Select at least one host alias';
 
@@ -559,23 +565,23 @@ export function ScheduleForm({
             <div className="flex flex-wrap gap-1.5">
               {hostAliasOptionsLoading
                 ? values.hostAliasUuids.map((_, i) => (
-                    <Skeleton key={i} className="h-6 w-20 rounded-full" />
-                  ))
+                  <Skeleton key={i} className="h-6 w-20 rounded-full" />
+                ))
                 : values.hostAliasUuids.map(uuid => {
-                    const opt = hostAliasOptions.find(o => o.value === uuid);
-                    return (
-                      <Badge key={uuid} variant="secondary" className="gap-1 pr-1">
-                        {opt?.label ?? uuid}
-                        <button
-                          type="button"
-                          className="ml-1 text-muted-foreground hover:text-foreground leading-none"
-                          onClick={() => set('hostAliasUuids', values.hostAliasUuids.filter(id => id !== uuid))}
-                        >
-                          ×
-                        </button>
-                      </Badge>
-                    );
-                  })}
+                  const opt = hostAliasOptions.find(o => o.value === uuid);
+                  return (
+                    <Badge key={uuid} variant="secondary" className="gap-1 pr-1">
+                      {opt?.label ?? uuid}
+                      <button
+                        type="button"
+                        className="ml-1 text-muted-foreground hover:text-foreground leading-none"
+                        onClick={() => set('hostAliasUuids', values.hostAliasUuids.filter(id => id !== uuid))}
+                      >
+                        ×
+                      </button>
+                    </Badge>
+                  );
+                })}
             </div>
           )}
 
@@ -674,9 +680,16 @@ export function ScheduleForm({
             <Alert variant="default" className="border-blue-300 bg-blue-50 dark:bg-blue-950/20">
               <Info className="h-4 w-4 text-blue-600" />
               <AlertDescription className="text-blue-700 dark:text-blue-400">
-                <strong>How to add actions:</strong> Click and drag on any day row to create a time window. Then click the coloured block to open the action editor — where you define which network group operations (Assign, Unassign, Clear All) fire at the start and end of that window.
+                <strong>How to use the timeline:</strong> Click and drag on a day to create a time window. Click (or right-click &rarr; Edit) a block to configure its actions. You can drag blocks to move them across days, <kbd>Ctrl</kbd> + Drag (or <kbd>Cmd</kbd> + Drag) to copy them, and drag their edges to resize.
               </AlertDescription>
             </Alert>
+
+            {errors.scheduleType && (
+              <Alert variant="destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription>{errors.scheduleType}</AlertDescription>
+              </Alert>
+            )}
 
             {/* Overlap warning */}
             {overlapWarnings.length > 0 && (

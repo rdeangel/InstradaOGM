@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { Role } from '@/types/opnsense';
@@ -142,6 +142,7 @@ export default function EditSchedulePage() {
   const [isLoadingSchedule, setIsLoadingSchedule] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const hasFetched = useRef(false);
 
   const fetchSchedule = useCallback(async () => {
     if (!scheduleId) return;
@@ -164,9 +165,11 @@ export default function EditSchedulePage() {
 
   useEffect(() => {
     if (
+      !hasFetched.current &&
       authStatus === 'authenticated' &&
       (session?.user?.role === Role.ADMIN || session?.user?.role === Role.SUPER_ADMIN)
     ) {
+      hasFetched.current = true;
       fetchSchedule();
     }
   }, [authStatus, session, fetchSchedule]);

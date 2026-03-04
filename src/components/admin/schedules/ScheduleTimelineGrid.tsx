@@ -12,7 +12,7 @@ import {
   DropdownMenuSubContent,
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Link2, Unlink2, Copy, Plus, Trash2 } from 'lucide-react';
+import { Link2, Unlink2, Copy, Plus, Trash2, Pencil, Undo2 } from 'lucide-react';
 import { BoundaryActionEditor, type TimeWindowFormData } from './BoundaryActionEditor';
 
 // Inline pure helper — avoids importing server-only schedule-validation module
@@ -96,6 +96,7 @@ type DragState =
   | { type: 'create'; dayIndex: number; startMinutes: number; currentMinutes: number }
   | { type: 'resize-left'; dayIndex: number; windowIndex: number; currentMinutes: number }
   | { type: 'resize-right'; dayIndex: number; windowIndex: number; currentMinutes: number }
+  | { type: 'move'; sourceDayIndex: number; targetDayIndex: number; windowIndex: number; startMinutes: number; initialStart: number; initialEnd: number; currentMinutes: number; isCopy: boolean }
   | null;
 
 type EditState = {
@@ -112,6 +113,7 @@ export function ScheduleTimelineGrid({
   onMirrorChange,
 }: ScheduleTimelineGridProps) {
   const rowRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const dragDidMoveRef = useRef<boolean>(false);
   const [dragState, setDragState] = useState<DragState>(null);
   const [hoverState, setHoverState] = useState<{ dayIndex: number; minutes: number } | null>(null);
   const [editState, setEditState] = useState<EditState>(null);
@@ -121,6 +123,13 @@ export function ScheduleTimelineGrid({
     dayIndex: number;
     windowIndex: number;
   } | null>(null);
+
+  const [undoDays, setUndoDays] = useState<ScheduleDayFormData[] | null>(null);
+
+  function handleStateChange(newDays: ScheduleDayFormData[]) {
+    if (undoDays) setUndoDays(null);
+    onChange(newDays);
+  }
 
   const getMinutesFromPointerX = useCallback((dayIndex: number, clientX: number): number => {
     // eslint-disable-next-line security/detect-object-injection -- dayIndex is 0-6 integer from props, not user input
@@ -147,7 +156,7 @@ export function ScheduleTimelineGrid({
     const updated = days.map(d =>
       d.dayOfWeek === dayIndex ? { ...d, windows: updater(d.windows) } : d,
     );
-    onChange(dayIndex === templateDay ? applyMirror(updated, dayIndex) : updated);
+    handleStateChange(dayIndex === templateDay ? applyMirror(updated, dayIndex) : updated);
   }
 
   function openEditDialog(dayIndex: number, windowIndex: number) {
@@ -221,6 +230,7 @@ export function ScheduleTimelineGrid({
     // Only trigger on the background (not on window blocks)
     if ((e.target as HTMLElement).closest('[data-window-block]')) return;
     e.currentTarget.setPointerCapture(e.pointerId);
+    dragDidMoveRef.current = false;
     const minutes = getMinutesFromPointerX(dayIndex, e.clientX);
     setDragState({ type: 'create', dayIndex, startMinutes: minutes, currentMinutes: minutes });
   }
@@ -229,10 +239,31 @@ export function ScheduleTimelineGrid({
     e: React.PointerEvent<HTMLDivElement>,
     dayIndex: number,
   ) {
-    const minutes = getMinutesFromPointerX(dayIndex, e.clientX);
-    setHoverState({ dayIndex, minutes });
+    let activeDayIndex = dayIndex;
+    if (dragState?.type === 'move') {
+      const overIndex = Array.from(rowRefs.current).findIndex((ref) => {
+        if (!ref) return false;
+        const rect = ref.getBoundingClientRect();
+        return e.clientY >= rect.top && e.clientY <= rect.bottom;
+      });
+      if (overIndex !== -1) {
+        activeDayIndex = overIndex;
+      } else {
+        activeDayIndex = dragState.targetDayIndex;
+      }
+    }
 
-    if (!dragState || dragState.dayIndex !== dayIndex) return;
+    const minutes = getMinutesFromPointerX(activeDayIndex, e.clientX);
+    setHoverState({ dayIndex: activeDayIndex, minutes });
+
+    if (!dragState) return;
+
+    // Detect actual drag payload movement for preventing accidental clicks
+    if (dragState.type === 'move' && minutes !== dragState.startMinutes) {
+      dragDidMoveRef.current = true;
+    } else if (dragState.type !== 'move' && minutes !== dragState.currentMinutes) {
+      dragDidMoveRef.current = true;
+    }
 
     if (dragState.type === 'create') {
       setDragState({ ...dragState, currentMinutes: minutes });
@@ -240,6 +271,8 @@ export function ScheduleTimelineGrid({
       setDragState({ ...dragState, currentMinutes: minutes });
     } else if (dragState.type === 'resize-right') {
       setDragState({ ...dragState, currentMinutes: minutes });
+    } else if (dragState.type === 'move') {
+      setDragState({ ...dragState, targetDayIndex: activeDayIndex, currentMinutes: minutes });
     }
   }
 
@@ -247,9 +280,9 @@ export function ScheduleTimelineGrid({
     e: React.PointerEvent<HTMLDivElement>,
     dayIndex: number,
   ) {
-    if (!dragState || dragState.dayIndex !== dayIndex) return;
+    if (!dragState) return;
 
-    if (dragState.type === 'create') {
+    if (dragState.type === 'create' && dragState.dayIndex === dayIndex) {
       const start = Math.min(dragState.startMinutes, dragState.currentMinutes);
       const end = Math.max(dragState.startMinutes, dragState.currentMinutes);
       if (end - start >= 15) {
@@ -265,7 +298,7 @@ export function ScheduleTimelineGrid({
           return { ...w, startTime: minutesToTime(newStart) };
         }),
       );
-    } else if (dragState.type === 'resize-right') {
+    } else if (dragState.type === 'resize-right' && dragState.dayIndex === dayIndex) {
       const { windowIndex, currentMinutes } = dragState;
       updateDayWindows(dayIndex, windows =>
         windows.map((w, i) => {
@@ -275,8 +308,71 @@ export function ScheduleTimelineGrid({
           return { ...w, endTime: minutesToTime(newEnd) };
         }),
       );
+    } else if (dragState.type === 'move' && dragState.sourceDayIndex === dayIndex) {
+      const { windowIndex, currentMinutes, startMinutes, initialStart, initialEnd } = dragState;
+      const delta = currentMinutes - startMinutes;
+      const duration = initialEnd - initialStart;
+      let newStart = initialStart + delta;
+      let newEnd = newStart + duration;
+
+      if (newStart < 0) {
+        newStart = 0;
+        newEnd = duration;
+      } else if (newEnd > TOTAL_MINUTES) {
+        newEnd = TOTAL_MINUTES;
+        newStart = TOTAL_MINUTES - duration;
+      }
+
+      if (dragState.sourceDayIndex === dragState.targetDayIndex) {
+        updateDayWindows(dragState.sourceDayIndex, windows => {
+          if (dragState.isCopy) {
+            const originalWindow = windows[windowIndex];
+            const copiedWindow = {
+              ...originalWindow,
+              startTime: minutesToTime(newStart),
+              endTime: minutesToTime(newEnd),
+              actions: originalWindow.actions.map(a => ({ ...a }))
+            };
+            return [...windows, copiedWindow];
+          }
+          return windows.map((w, i) => {
+            if (i !== windowIndex) return w;
+            return { ...w, startTime: minutesToTime(newStart), endTime: minutesToTime(newEnd) };
+          });
+        });
+      } else {
+        const sourceDayData = days.find(d => d.dayOfWeek === dragState.sourceDayIndex);
+        const movedWindow = sourceDayData?.windows[windowIndex];
+        if (movedWindow) {
+          const updatedWindow = {
+            ...movedWindow,
+            startTime: minutesToTime(newStart),
+            endTime: minutesToTime(newEnd),
+            actions: dragState.isCopy ? movedWindow.actions.map(a => ({ ...a })) : movedWindow.actions
+          };
+          let nextDays = [...days];
+
+          nextDays = nextDays.map(d => {
+            if (d.dayOfWeek === dragState.sourceDayIndex && !dragState.isCopy) {
+              return { ...d, windows: d.windows.filter((_, i) => i !== windowIndex) };
+            }
+            if (d.dayOfWeek === dragState.targetDayIndex) {
+              return { ...d, windows: [...d.windows, updatedWindow] };
+            }
+            return d;
+          });
+
+          if (mirroredDays.size) {
+            nextDays = applyMirror(nextDays, dragState.sourceDayIndex);
+            nextDays = applyMirror(nextDays, dragState.targetDayIndex);
+          }
+          handleStateChange(nextDays);
+        }
+      }
     }
 
+    // Defer clearing dragDidMove so onClick can check it, but clear state to let rendering catch up immediately.
+    setTimeout(() => { dragDidMoveRef.current = false; }, 0);
     setDragState(null);
   }
 
@@ -307,6 +403,33 @@ export function ScheduleTimelineGrid({
     }
   }
 
+  function handleMovePointerDown(
+    e: React.PointerEvent<HTMLDivElement>,
+    dayIndex: number,
+    windowIndex: number,
+  ) {
+    e.stopPropagation();
+    // eslint-disable-next-line security/detect-object-injection -- dayIndex is 0-6 integer from props, not user input
+    const row = rowRefs.current[dayIndex];
+    if (row) row.setPointerCapture(e.pointerId);
+    dragDidMoveRef.current = false;
+    const minutes = getMinutesFromPointerX(dayIndex, e.clientX);
+    // eslint-disable-next-line security/detect-object-injection -- dayIndex is safe
+    const w = days.find(d => d.dayOfWeek === dayIndex)?.windows[windowIndex];
+    if (!w) return;
+    setDragState({
+      type: 'move',
+      sourceDayIndex: dayIndex,
+      targetDayIndex: dayIndex,
+      windowIndex,
+      currentMinutes: minutes,
+      startMinutes: minutes,
+      initialStart: parseTimeToMinutes(w.startTime),
+      initialEnd: parseTimeToMinutes(w.endTime),
+      isCopy: e.ctrlKey || e.metaKey
+    });
+  }
+
   function toggleMirror(dayIndex: number) {
     if (dayIndex === templateDay) return;
     const newMirrored = new Set(mirroredDays);
@@ -320,7 +443,7 @@ export function ScheduleTimelineGrid({
         const updated = days.map(d =>
           d.dayOfWeek === dayIndex ? { ...d, windows: [...templateDayData.windows] } : d,
         );
-        onChange(updated);
+        handleStateChange(updated);
       }
     }
     onMirrorChange(newMirrored, templateDay);
@@ -335,7 +458,7 @@ export function ScheduleTimelineGrid({
     const updated = days.map(d =>
       weekdays.includes(d.dayOfWeek) ? { ...d, windows: [...templateDayData.windows] } : d,
     );
-    onChange(updated);
+    handleStateChange(updated);
     onMirrorChange(newMirrored, templateDay);
   }
 
@@ -348,8 +471,21 @@ export function ScheduleTimelineGrid({
     const updated = days.map(d =>
       others.includes(d.dayOfWeek) ? { ...d, windows: [...templateDayData.windows] } : d,
     );
-    onChange(updated);
+    handleStateChange(updated);
     onMirrorChange(newMirrored, templateDay);
+  }
+
+  function clearAllDays() {
+    setUndoDays(days);
+    const updated = days.map(d => ({ ...d, windows: [] }));
+    onChange(updated); // Do NOT use handleStateChange here to keep undo active
+  }
+
+  function handleUndoClear() {
+    if (undoDays) {
+      onChange(undoDays);
+      setUndoDays(null);
+    }
   }
 
   return (
@@ -372,10 +508,21 @@ export function ScheduleTimelineGrid({
         </div>
 
         {/* Copy controls */}
-        <div className="flex justify-end mb-2">
+        <div className="flex justify-end mb-2 gap-2 h-9">
+          {undoDays ? (
+            <Button type="button" variant="outline" size="sm" onClick={handleUndoClear} className="text-primary hover:bg-primary/10 transition-colors animate-in fade-in slide-in-from-right-2 duration-300">
+              <Undo2 className="h-4 w-4 mr-2" />
+              Undo clear
+            </Button>
+          ) : (
+            <Button type="button" variant="outline" size="sm" onClick={clearAllDays} className="text-destructive hover:bg-destructive hover:text-destructive-foreground transition-all duration-300">
+              <Trash2 className="h-4 w-4 mr-2" />
+              Clear all
+            </Button>
+          )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm">
+              <Button type="button" variant="outline" size="sm">
                 <Copy className="h-3 w-3 mr-2" />
                 {/* eslint-disable-next-line security/detect-object-injection -- templateDay is 0-6 integer from state, not user input */}
                 Copy {DAY_NAMES[templateDay]} to…
@@ -495,6 +642,45 @@ export function ScheduleTimelineGrid({
                   />
                 ))}
 
+                {/* Cross-day drag preview or same-day copy drag preview visible only on the target day row */}
+                {dragState?.type === 'move' &&
+                  dragState.targetDayIndex === dayIndex &&
+                  (dragState.sourceDayIndex !== dayIndex || dragState.isCopy) &&
+                  (() => {
+                    const win = days.find(d => d.dayOfWeek === dragState.sourceDayIndex)?.windows[dragState.windowIndex];
+                    if (!win) return null;
+
+                    const delta = dragState.currentMinutes - dragState.startMinutes;
+                    const duration = dragState.initialEnd - dragState.initialStart;
+                    let newStart = dragState.initialStart + delta;
+                    let newEnd = newStart + duration;
+
+                    if (newStart < 0) {
+                      newStart = 0;
+                      newEnd = duration;
+                    } else if (newEnd > TOTAL_MINUTES) {
+                      newEnd = TOTAL_MINUTES;
+                      newStart = TOTAL_MINUTES - duration;
+                    }
+
+                    const leftPercent = minutesToPercent(newStart);
+                    const widthPercent = minutesToPercent(duration);
+                    const colorClass = getWindowColor(win);
+
+                    return (
+                      <div
+                        className={`absolute top-1 bottom-1 rounded ${colorClass} opacity-100 ring-2 ring-primary z-20 shadow-md scale-[1.02] flex items-center pointer-events-none`}
+                        style={{ left: `${leftPercent}%`, width: `${widthPercent}%`, minWidth: '4px' }}
+                      >
+                        {widthPercent > 5 && (
+                          <span className="px-1 text-[10px] sm:text-xs text-white truncate w-full text-center">
+                            {win.label || `${minutesToTime(newStart)} - ${minutesToTime(newEnd)}`}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
+
                 {/* Window blocks */}
                 {windows.map((win, wi) => {
                   const startMin = parseTimeToMinutes(win.startTime);
@@ -517,6 +703,24 @@ export function ScheduleTimelineGrid({
                     const newEnd = clamp(dragState.currentMinutes, startMin + 15, TOTAL_MINUTES);
                     widthPercent = minutesToPercent(newEnd - startMin);
                     displayEnd = minutesToTime(newEnd);
+                  } else if (dragState?.type === 'move' && dragState.sourceDayIndex === dayIndex && dragState.windowIndex === wi) {
+                    if (!dragState.isCopy) {
+                      const delta = dragState.currentMinutes - dragState.startMinutes;
+                      const duration = endMin - startMin;
+                      let newStart = startMin + delta;
+                      let newEnd = newStart + duration;
+                      if (newStart < 0) {
+                        newStart = 0;
+                        newEnd = duration;
+                      } else if (newEnd > TOTAL_MINUTES) {
+                        newEnd = TOTAL_MINUTES;
+                        newStart = TOTAL_MINUTES - duration;
+                      }
+                      leftPercent = minutesToPercent(newStart);
+                      widthPercent = minutesToPercent(duration);
+                      displayStart = minutesToTime(newStart);
+                      displayEnd = minutesToTime(newEnd);
+                    }
                   }
 
                   const colorClass = getWindowColor(win);
@@ -525,11 +729,17 @@ export function ScheduleTimelineGrid({
                     <div
                       key={wi}
                       data-window-block
-                      className={`absolute top-1 bottom-1 rounded ${colorClass} opacity-80 hover:opacity-100 cursor-pointer flex items-center ${isOverlapping ? 'ring-2 ring-red-500' : ''
+                      className={`absolute top-1 bottom-1 rounded ${colorClass} opacity-80 hover:opacity-100 cursor-move flex items-center transition-opacity duration-150 ${(dragState?.type === 'move' && dragState.sourceDayIndex === dayIndex && dragState.windowIndex === wi && dragState.targetDayIndex !== dayIndex && !dragState.isCopy) ? 'opacity-20 hidden sm:flex pointer-events-none' : ''} ${isOverlapping ? 'ring-2 ring-red-500' : ''
                         }`}
                       style={{ left: `${leftPercent}%`, width: `${widthPercent}%`, minWidth: '4px' }}
+                      onPointerDown={e => {
+                        // Left click only (button 0)
+                        if (e.button === 0) handleMovePointerDown(e, dayIndex, wi);
+                      }}
                       onClick={e => {
                         e.stopPropagation();
+                        // Prevent opening edit dialog if we just dragged
+                        if (dragState && 'startMinutes' in dragState && dragState.startMinutes !== dragState.currentMinutes) return;
                         if (!dragState) openEditDialog(dayIndex, wi);
                       }}
                       onContextMenu={e => {
@@ -546,13 +756,15 @@ export function ScheduleTimelineGrid({
                       {/* Resize left handle */}
                       <div
                         data-window-block
-                        className="absolute left-0 top-0 bottom-0 w-1 cursor-ew-resize hover:bg-white/30 rounded-l"
-                        onPointerDown={e => handleResizePointerDown(e, dayIndex, wi, 'left')}
+                        className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-white/30 rounded-l"
+                        onPointerDown={e => {
+                          if (e.button === 0) handleResizePointerDown(e, dayIndex, wi, 'left')
+                        }}
                       />
 
                       {/* Label */}
                       {widthPercent > 5 && (
-                        <span className="px-1 text-[10px] sm:text-xs text-white truncate pointer-events-none">
+                        <span className="px-1 text-[10px] sm:text-xs text-white truncate pointer-events-none w-full text-center">
                           {win.label || `${displayStart} - ${displayEnd}`}
                         </span>
                       )}
@@ -575,8 +787,10 @@ export function ScheduleTimelineGrid({
                       {/* Resize right handle */}
                       <div
                         data-window-block
-                        className="absolute right-0 top-0 bottom-0 w-1 cursor-ew-resize hover:bg-white/30 rounded-r"
-                        onPointerDown={e => handleResizePointerDown(e, dayIndex, wi, 'right')}
+                        className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-white/30 rounded-r"
+                        onPointerDown={e => {
+                          if (e.button === 0) handleResizePointerDown(e, dayIndex, wi, 'right')
+                        }}
                       />
 
                       {/* Overlap warning tooltip */}
@@ -647,6 +861,16 @@ export function ScheduleTimelineGrid({
           }}
         />
         <DropdownMenuContent align="start" sideOffset={5} className="w-48">
+          <DropdownMenuItem
+            className="cursor-pointer"
+            onClick={() => {
+              if (contextMenu) openEditDialog(contextMenu.dayIndex, contextMenu.windowIndex);
+              setContextMenu(null);
+            }}
+          >
+            <Pencil className="mr-2 h-4 w-4" />
+            <span>Edit</span>
+          </DropdownMenuItem>
           <DropdownMenuItem
             className="text-destructive focus:bg-destructive focus:text-destructive-foreground cursor-pointer"
             onClick={() => {
