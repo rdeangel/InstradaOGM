@@ -973,21 +973,45 @@ class ScheduleExecutionService {
           // may still be needed even if the IP is already in the target group.
           const targetIsSingleSelect = !enableGroupTypes || targetGroupType === 'SingleSelect';
 
-          // Partition IPs: pure no-ops (MultiSelect + already in group) vs IPs to process.
+          // Partition IPs into three buckets:
+          //   ipsAlreadyAssigned — true no-ops; skip entirely (no API call needed)
+          //   ipsToAssign        — need actual work (add to target, and/or evict from others)
+          //
+          // An IP is a no-op when:
+          //   a) MultiSelect target + IP already in that group  (original logic), OR
+          //   b) SingleSelect target + IP already in that group + no other SingleSelect
+          //      groups to evict from  (new: saves an API round-trip when state is correct)
           const ipsAlreadyAssigned: string[] = [];
           const ipsToAssign: string[] = [];
           for (const ip of targetIps) {
-            const inTarget = (ipRuntimeGroups.get(ip) ?? new Set<string>()).has(action.targetGroupUuid);
+            const currentGroupUuids = ipRuntimeGroups.get(ip) ?? new Set<string>();
+            const inTarget = currentGroupUuids.has(action.targetGroupUuid);
+
             if (!targetIsSingleSelect && inTarget) {
+              // MultiSelect — already a member, nothing to do
               ipsAlreadyAssigned.push(ip);
+            } else if (targetIsSingleSelect && inTarget) {
+              // SingleSelect — already in target; skip only if no evictions are pending
+              const needsEviction = [...currentGroupUuids].some((uuid) => {
+                if (uuid === action.targetGroupUuid) return false;
+                // When enableGroupTypes=false every group is treated as SingleSelect
+                if (!enableGroupTypes) return true;
+                const t = groupTypeMap.get(uuid) ?? 'SingleSelect';
+                return t === 'SingleSelect';
+              });
+              if (needsEviction) {
+                ipsToAssign.push(ip); // state partially wrong — must run full eviction
+              } else {
+                ipsAlreadyAssigned.push(ip); // already correct, no API call needed
+              }
             } else {
               ipsToAssign.push(ip);
             }
           }
 
-          // Emit success (no-op) results for IPs already in a MultiSelect target group.
+          // Emit success (no-op) results for IPs that require no change.
           for (const ip of ipsAlreadyAssigned) {
-            logger.warn(`Schedule ${schedule.id}: ASSIGN skipped for ${ip} — already in MultiSelect target group ${action.targetGroupUuid}`);
+            logger.debug(`Schedule ${schedule.id}: ASSIGN skipped for ${ip} — already correctly assigned to group ${action.targetGroupUuid}, no evictions needed`);
             await logAuditEvent({
               action: 'OPNSENSE_GROUP_IP_ASSIGN_SUCCESS',
               details: {
@@ -1129,11 +1153,11 @@ class ScheduleExecutionService {
             results.push({ operation: action.operation, targetGroupUuid: action.targetGroupUuid, fromGroupUuid: action.fromGroupUuid, ip, success: actionSuccess, error: batchErrorMsg });
           }
 
-        // ── UNASSIGN ──────────────────────────────────────────────────────────
-        // Also handles legacy REMOVE operations (renamed to UNASSIGN).
-        // If an IP is not in the target group, the operation is skipped gracefully —
-        // it is treated as a success no-op rather than an error, because a schedule is
-        // pre-determined and may run when the IP is in a different state than expected.
+          // ── UNASSIGN ──────────────────────────────────────────────────────────
+          // Also handles legacy REMOVE operations (renamed to UNASSIGN).
+          // If an IP is not in the target group, the operation is skipped gracefully —
+          // it is treated as a success no-op rather than an error, because a schedule is
+          // pre-determined and may run when the IP is in a different state than expected.
         } else if (action.operation === 'UNASSIGN' || action.operation === 'REMOVE') {
           if (!action.targetGroupUuid) throw new Error('targetGroupUuid is required for UNASSIGN');
           if (action.operation === 'REMOVE') {
@@ -1155,7 +1179,7 @@ class ScheduleExecutionService {
 
           // Emit success (no-op) results for IPs not in the target group.
           for (const ip of ipsNotInGroup) {
-            logger.warn(`Schedule ${schedule.id}: UNASSIGN skipped for ${ip} — not in group ${action.targetGroupUuid}`);
+            logger.debug(`Schedule ${schedule.id}: UNASSIGN skipped for ${ip} — not in group ${action.targetGroupUuid}`);
             await logAuditEvent({
               action: 'OPNSENSE_GROUP_IP_UNASSIGN_SUCCESS',
               details: {
@@ -1237,7 +1261,7 @@ class ScheduleExecutionService {
             results.push({ operation: action.operation, targetGroupUuid: action.targetGroupUuid, fromGroupUuid: action.fromGroupUuid, ip, success: actionSuccess, error: batchErrorMsg });
           }
 
-        // ── CLEAR_ALL ─────────────────────────────────────────────────────────
+          // ── CLEAR_ALL ─────────────────────────────────────────────────────────
         } else if (action.operation === 'CLEAR_ALL') {
           // For each (ip, group) pair where the IP is represented in the group content,
           // collect the item to remove, emit ATTEMPT events, then execute a single batch.
@@ -1291,6 +1315,26 @@ class ScheduleExecutionService {
           const batchErrorMsg = actionSuccess ? undefined : 'Batch operation failed';
 
           for (const ip of targetIps) {
+            const ipWasRemoved = [...allGroups].some((g) => groupItemsToRemove.get(g.uuid)?.has(ip));
+
+            if (!ipWasRemoved) {
+              // IP wasn't a member of any managed group — true no-op, skip silently
+              logger.debug(`Schedule ${schedule.id}: CLEAR_ALL skipped for ${ip} — not a member of any managed group`);
+              await logAuditEvent({
+                action: 'OPNSENSE_GROUP_IP_UNASSIGN_SUCCESS',
+                details: {
+                  ipAddress: ip,
+                  hostAliasName: ipToAliasName.get(ip) ?? null,
+                  operationType: 'clear_all',
+                  skipped: true,
+                  skipReason: 'not_in_any_group',
+                  ...scheduleCtx,
+                },
+              });
+              results.push({ operation: action.operation, targetGroupUuid: action.targetGroupUuid, fromGroupUuid: action.fromGroupUuid, ip, success: true });
+              continue;
+            }
+
             for (const group of allGroups) {
               if (groupItemsToRemove.get(group.uuid)?.has(ip)) {
                 if (actionSuccess) trackRemove(ip, group.uuid);
@@ -1318,7 +1362,7 @@ class ScheduleExecutionService {
             results.push({ operation: action.operation, targetGroupUuid: action.targetGroupUuid, fromGroupUuid: action.fromGroupUuid, ip, success: actionSuccess, error: batchErrorMsg });
           }
 
-        // ── Unknown ───────────────────────────────────────────────────────────
+          // ── Unknown ───────────────────────────────────────────────────────────
         } else {
           for (const ip of targetIps) {
             results.push({ operation: action.operation, targetGroupUuid: action.targetGroupUuid, fromGroupUuid: action.fromGroupUuid, ip, success: false, error: `Unknown operation: ${action.operation}` });
@@ -1363,8 +1407,8 @@ class ScheduleExecutionService {
     const errorMessage =
       failedResults.length > 0
         ? failedResults
-            .map((r) => `${r.operation}(${r.ip}): ${r.error}`)
-            .join('; ')
+          .map((r) => `${r.operation}(${r.ip}): ${r.error}`)
+          .join('; ')
         : undefined;
 
     return {

@@ -27,6 +27,16 @@ interface ScheduleExecution {
   errorMessage: string | null;
 }
 
+interface ActionRunDetail {
+  success?: boolean;
+  operation?: string;
+  targetGroupUuid?: string;
+  fromGroupUuid?: string;
+  ip?: string;
+  error?: string;
+}
+
+
 interface ExecutionHistoryResponse {
   executions: ScheduleExecution[];
   pagination: {
@@ -216,7 +226,7 @@ export function ExecutionHistory({ scheduleId }: ExecutionHistoryProps) {
                               <div>
                                 <p className="font-medium text-foreground mb-1">Actions Run:</p>
                                 <div className="space-y-1 mt-2">
-                                  {Array.isArray(exec.actionsRun) ? exec.actionsRun.map((action: any, i: number) => (
+                                  {Array.isArray(exec.actionsRun) ? exec.actionsRun.map((action: ActionRunDetail, i: number) => (
                                     <div key={i} className="flex flex-col sm:flex-row sm:items-center gap-2 bg-muted p-2 rounded-md font-mono text-xs">
                                       <div className="flex items-center gap-2 min-w-40">
                                         <Badge variant={action.success ? 'default' : 'destructive'} className="text-[10px] px-1.5 py-0 h-4">

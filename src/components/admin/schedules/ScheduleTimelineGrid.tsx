@@ -6,14 +6,16 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
   DropdownMenuSub,
   DropdownMenuSubTrigger,
   DropdownMenuSubContent,
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Link2, Unlink2, Copy, Plus, Trash2, Pencil, Undo2 } from 'lucide-react';
+import { Link2, Unlink2, Copy, Plus, Trash2, Pencil, Undo2, Info } from 'lucide-react';
 import { BoundaryActionEditor, type TimeWindowFormData } from './BoundaryActionEditor';
+import { TimeWindowInfoModal } from './TimeWindowInfoModal';
 
 // Inline pure helper — avoids importing server-only schedule-validation module
 function checkWindowOverlaps(windows: Array<{ startTime: string; endTime: string }>): {
@@ -115,8 +117,9 @@ export function ScheduleTimelineGrid({
   const rowRefs = useRef<(HTMLDivElement | null)[]>([]);
   const dragDidMoveRef = useRef<boolean>(false);
   const [dragState, setDragState] = useState<DragState>(null);
-  const [hoverState, setHoverState] = useState<{ dayIndex: number; minutes: number } | null>(null);
+  const [hoverState, setHoverState] = useState<{ dayIndex: number; minutes: number; windowIndex?: number } | null>(null);
   const [editState, setEditState] = useState<EditState>(null);
+  const [infoState, setInfoState] = useState<{ dayIndex: number; windowIndex: number; window: TimeWindowFormData } | null>(null);
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -175,6 +178,14 @@ export function ScheduleTimelineGrid({
     setEditState({ dayIndex, windowIndex, window: { ...win, actions: win.actions.map(a => ({ ...a })) } });
   }
 
+  function openInfoDialog(dayIndex: number, windowIndex: number) {
+    const day = days.find(d => d.dayOfWeek === dayIndex);
+    // eslint-disable-next-line security/detect-object-injection
+    const win = day?.windows[windowIndex];
+    if (!win) return;
+    setInfoState({ dayIndex, windowIndex, window: win });
+  }
+
   function openCreateDialog(dayIndex: number, startMinutes: number, endMinutes: number) {
     if (mirroredDays.has(dayIndex)) {
       const newMirrored = new Set(mirroredDays);
@@ -210,6 +221,7 @@ export function ScheduleTimelineGrid({
 
   function handleCopyToDay(sourceDayIndex: number, windowIndex: number, targetDayIndex: number) {
     const sourceDay = days.find(d => d.dayOfWeek === sourceDayIndex);
+    // eslint-disable-next-line security/detect-object-injection -- windowIndex is integer from state
     const winToCopy = sourceDay?.windows[windowIndex];
     if (!winToCopy) return;
 
@@ -254,7 +266,7 @@ export function ScheduleTimelineGrid({
     }
 
     const minutes = getMinutesFromPointerX(activeDayIndex, e.clientX);
-    setHoverState({ dayIndex: activeDayIndex, minutes });
+    setHoverState(prev => ({ dayIndex: activeDayIndex, minutes, windowIndex: prev?.windowIndex }));
 
     if (!dragState) return;
 
@@ -326,6 +338,7 @@ export function ScheduleTimelineGrid({
       if (dragState.sourceDayIndex === dragState.targetDayIndex) {
         updateDayWindows(dragState.sourceDayIndex, windows => {
           if (dragState.isCopy) {
+            // eslint-disable-next-line security/detect-object-injection -- windowIndex is integer from state
             const originalWindow = windows[windowIndex];
             const copiedWindow = {
               ...originalWindow,
@@ -342,6 +355,7 @@ export function ScheduleTimelineGrid({
         });
       } else {
         const sourceDayData = days.find(d => d.dayOfWeek === dragState.sourceDayIndex);
+        // eslint-disable-next-line security/detect-object-injection -- windowIndex is integer from state
         const movedWindow = sourceDayData?.windows[windowIndex];
         if (movedWindow) {
           const updatedWindow = {
@@ -738,9 +752,7 @@ export function ScheduleTimelineGrid({
                       }}
                       onClick={e => {
                         e.stopPropagation();
-                        // Prevent opening edit dialog if we just dragged
-                        if (dragState && 'startMinutes' in dragState && dragState.startMinutes !== dragState.currentMinutes) return;
-                        if (!dragState) openEditDialog(dayIndex, wi);
+                        // Left click intentionally does nothing — use right-click menu
                       }}
                       onContextMenu={e => {
                         e.preventDefault();
@@ -753,6 +765,14 @@ export function ScheduleTimelineGrid({
                         });
                       }}
                     >
+                      {/* Track which window the pointer is hovering */}
+                      {/* Invisible overlay to capture hover events over the whole window block */}
+                      <div
+                        className="absolute inset-0 pointer-events-none"
+                        onPointerEnter={() => setHoverState(prev => prev ? { ...prev, windowIndex: wi } : null)}
+                        onPointerLeave={() => setHoverState(prev => prev ? { ...prev, windowIndex: undefined } : null)}
+                      />
+
                       {/* Resize left handle */}
                       <div
                         data-window-block
@@ -777,7 +797,7 @@ export function ScheduleTimelineGrid({
                         style={{ fontSize: '10px' }}
                         onClick={e => {
                           e.stopPropagation();
-                          handleDeleteWindow(dayIndex, wi);
+                          if (!dragDidMoveRef.current) handleDeleteWindow(dayIndex, wi);
                         }}
                         title="Delete window"
                       >
@@ -820,29 +840,93 @@ export function ScheduleTimelineGrid({
                 )}
 
                 {/* Hover / Drag Tooltip */}
-                {hoverState?.dayIndex === dayIndex && (
-                  <div
-                    className="absolute -top-8 pointer-events-none z-50 transform -translate-x-1/2 flex flex-col items-center"
-                    style={{ left: `${minutesToPercent(hoverState.minutes)}%` }}
-                  >
-                    <div className="bg-popover text-popover-foreground text-xs font-medium py-1 px-2 rounded shadow-md border whitespace-nowrap">
-                      {dragState?.type === 'create' && dragState.dayIndex === dayIndex
-                        ? `${minutesToTime(Math.min(dragState.startMinutes, dragState.currentMinutes))} - ${minutesToTime(Math.max(dragState.startMinutes, dragState.currentMinutes))}`
-                        : minutesToTime(hoverState.minutes)}
+                {hoverState?.dayIndex === dayIndex && (() => {
+                  // Determine what to show in the tooltip
+                  let tooltipLabel: string;
+
+                  const isDraggingThisWindow =
+                    dragState?.type === 'move' &&
+                    dragState.sourceDayIndex === dayIndex &&
+                    dragState.windowIndex === hoverState.windowIndex;
+
+                  const isResizingThisWindow =
+                    (dragState?.type === 'resize-left' || dragState?.type === 'resize-right') &&
+                    dragState.dayIndex === dayIndex &&
+                    dragState.windowIndex === hoverState.windowIndex;
+
+                  if (dragState?.type === 'create' && dragState.dayIndex === dayIndex) {
+                    // Creating a new window — show the preview range
+                    tooltipLabel = `${minutesToTime(Math.min(dragState.startMinutes, dragState.currentMinutes))} – ${minutesToTime(Math.max(dragState.startMinutes, dragState.currentMinutes))}`;
+                  } else if (hoverState.windowIndex !== undefined || isDraggingThisWindow || isResizingThisWindow) {
+                    // Hovering or dragging a window — show its start/end (live during drag)
+                    const hoveredWin = days.find(d => d.dayOfWeek === dayIndex)?.windows[hoverState.windowIndex!];
+                    if (hoveredWin) {
+                      let liveStart = hoveredWin.startTime;
+                      let liveEnd = hoveredWin.endTime;
+
+                      if (isDraggingThisWindow) {
+                        const delta = dragState.currentMinutes - dragState.startMinutes;
+                        const duration = dragState.initialEnd - dragState.initialStart;
+                        let ns = dragState.initialStart + delta;
+                        let ne = ns + duration;
+                        if (ns < 0) { ns = 0; ne = duration; }
+                        if (ne > TOTAL_MINUTES) { ne = TOTAL_MINUTES; ns = TOTAL_MINUTES - duration; }
+                        liveStart = minutesToTime(ns);
+                        liveEnd = minutesToTime(ne);
+                      } else if (dragState?.type === 'resize-left' && isResizingThisWindow) {
+                        const endMin = parseTimeToMinutes(hoveredWin.endTime);
+                        liveStart = minutesToTime(clamp(dragState.currentMinutes, 0, endMin - 15));
+                      } else if (dragState?.type === 'resize-right' && isResizingThisWindow) {
+                        const startMin = parseTimeToMinutes(hoveredWin.startTime);
+                        liveEnd = minutesToTime(clamp(dragState.currentMinutes, startMin + 15, TOTAL_MINUTES));
+                      }
+
+                      tooltipLabel = `${liveStart} – ${liveEnd}`;
+                    } else {
+                      tooltipLabel = minutesToTime(hoverState.minutes);
+                    }
+                  } else {
+                    // Plain timeline hover — show cursor time
+                    tooltipLabel = minutesToTime(hoverState.minutes);
+                  }
+
+                  return (
+                    <div
+                      className="absolute -top-8 pointer-events-none z-50 transform -translate-x-1/2 flex flex-col items-center"
+                      style={{ left: `${minutesToPercent(hoverState.minutes)}%` }}
+                    >
+                      <div className="bg-popover text-popover-foreground text-xs font-medium py-1 px-2 rounded shadow-md border whitespace-nowrap">
+                        {tooltipLabel}
+                      </div>
+                      <div className="w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-t-[5px] border-popover drop-shadow-sm -mt-px" />
                     </div>
-                    <div className="w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-t-[5px] border-popover drop-shadow-sm -mt-px" />
-                  </div>
-                )}
+                  );
+                })()}
               </div>
             </div>
           );
         })}
       </div>
 
-      {/* Edit dialog */}
+      {/* Info Modal */}
+      {infoState && (
+        <TimeWindowInfoModal
+          open={!!infoState}
+          dayName={DAY_NAMES[infoState.dayIndex]}
+          window={infoState.window}
+          onClose={() => setInfoState(null)}
+          onEdit={() => {
+            const { dayIndex, windowIndex } = infoState;
+            setInfoState(null);
+            openEditDialog(dayIndex, windowIndex);
+          }}
+        />
+      )}
+
+      {/* Edit Form */}
       {editState && (
         <BoundaryActionEditor
-          open
+          open={!!editState}
           window={editState.window}
           onSave={handleSave}
           onClose={() => setEditState(null)}
@@ -864,22 +948,23 @@ export function ScheduleTimelineGrid({
           <DropdownMenuItem
             className="cursor-pointer"
             onClick={() => {
+              if (contextMenu) openInfoDialog(contextMenu.dayIndex, contextMenu.windowIndex);
+              setContextMenu(null);
+            }}
+          >
+            <Info className="mr-2 h-4 w-4" />
+            <span>View info</span>
+          </DropdownMenuItem>
+
+          <DropdownMenuItem
+            className="cursor-pointer"
+            onClick={() => {
               if (contextMenu) openEditDialog(contextMenu.dayIndex, contextMenu.windowIndex);
               setContextMenu(null);
             }}
           >
             <Pencil className="mr-2 h-4 w-4" />
             <span>Edit</span>
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            className="text-destructive focus:bg-destructive focus:text-destructive-foreground cursor-pointer"
-            onClick={() => {
-              if (contextMenu) handleDeleteWindow(contextMenu.dayIndex, contextMenu.windowIndex);
-              setContextMenu(null);
-            }}
-          >
-            <Trash2 className="mr-2 h-4 w-4" />
-            <span>Delete</span>
           </DropdownMenuItem>
 
           <DropdownMenuSub>
@@ -903,6 +988,18 @@ export function ScheduleTimelineGrid({
               ))}
             </DropdownMenuSubContent>
           </DropdownMenuSub>
+
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            className="text-destructive focus:bg-destructive focus:text-destructive-foreground cursor-pointer"
+            onClick={() => {
+              if (contextMenu) handleDeleteWindow(contextMenu.dayIndex, contextMenu.windowIndex);
+              setContextMenu(null);
+            }}
+          >
+            <Trash2 className="mr-2 h-4 w-4" />
+            <span>Delete</span>
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
     </TooltipProvider>
