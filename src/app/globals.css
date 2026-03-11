@@ -261,11 +261,12 @@ samp {
   /* Reusable custom scrollbar styling for any element */
   .custom-scrollbar {
     scrollbar-width: thin;
-    scrollbar-color: hsl(var(--muted-foreground)) transparent;
+    scrollbar-color: hsl(var(--border)) transparent;
   }
 
   .custom-scrollbar::-webkit-scrollbar {
     width: 6px;
+    height: 6px;
   }
 
   .custom-scrollbar::-webkit-scrollbar-track {
@@ -273,7 +274,7 @@ samp {
   }
 
   .custom-scrollbar::-webkit-scrollbar-thumb {
-    background-color: hsl(var(--muted-foreground));
+    background-color: hsl(var(--border));
     border-radius: 3px;
   }
 

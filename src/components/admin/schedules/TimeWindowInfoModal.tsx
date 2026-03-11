@@ -71,7 +71,7 @@ export function TimeWindowInfoModal({
                     </DialogTitle>
                 </DialogHeader>
 
-                <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+                <div className="flex-1 overflow-y-auto custom-scrollbar space-y-4 pr-1">
                     {isLoading ? (
                         <div className="flex justify-center items-center py-8">
                             <Loader2 className="h-6 w-6 animate-spin text-primary" />

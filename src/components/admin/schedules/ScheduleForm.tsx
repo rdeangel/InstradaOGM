@@ -701,7 +701,7 @@ export function ScheduleForm({
               </Alert>
             )}
 
-            <div className="border rounded-lg p-3 bg-card overflow-x-auto">
+            <div className="border rounded-lg p-3 bg-card overflow-x-auto custom-scrollbar">
               <ScheduleTimelineGrid
                 days={days}
                 onChange={setDays}
@@ -774,7 +774,7 @@ export function ScheduleForm({
 
       {/* ── Dry run sheet ── */}
       <Sheet open={previewOpen} onOpenChange={setPreviewOpen}>
-        <SheetContent side="right" className="w-full sm:max-w-md overflow-y-auto">
+        <SheetContent side="right" className="w-full sm:max-w-md overflow-y-auto custom-scrollbar">
           <SheetHeader>
             <SheetTitle>Schedule Preview (Dry Run)</SheetTitle>
             <SheetDescription>

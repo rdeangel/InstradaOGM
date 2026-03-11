@@ -294,7 +294,7 @@ export default function EditSchedulePage() {
             </div>
           </CardHeader>
 
-          <CardContent className="flex-1 overflow-auto p-4 pt-0">
+          <CardContent className="flex-1 overflow-auto custom-scrollbar p-4 pt-0">
             {/* Loading skeleton */}
             {isLoadingSchedule && (
               <div className="space-y-2 mt-2">
@@ -336,7 +336,7 @@ export default function EditSchedulePage() {
               Past executions for <strong>{schedule?.name}</strong>.
             </SheetDescription>
           </SheetHeader>
-          <div className="flex-1 overflow-auto px-6 py-4">
+          <div className="flex-1 overflow-auto custom-scrollbar px-6 py-4">
             {historyOpen && <ExecutionHistory scheduleId={scheduleId} />}
           </div>
         </SheetContent>

@@ -125,7 +125,7 @@ export default function NewSchedulePage() {
               </div>
             </div>
           </CardHeader>
-          <CardContent className="flex-1 overflow-auto p-4 pt-0">
+          <CardContent className="flex-1 overflow-auto custom-scrollbar p-4 pt-0">
             <ScheduleForm onSubmit={handleSubmit} submitLabel="Create Schedule" />
           </CardContent>
         </Card>

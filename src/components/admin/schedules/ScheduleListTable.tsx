@@ -175,168 +175,168 @@ export function ScheduleListTable({ schedules, onRefresh, onEnabledFilterChange 
       {/* Mobile card view */}
       {isMobile ? (
         <ScrollArea className="flex-1 pr-4 -mr-4">
-        <div className="space-y-3">
-          {filtered.length === 0 && (
-            <p className="text-center text-muted-foreground py-8">{emptyMessage}</p>
-          )}
-          {filtered.map(schedule => (
-            <Card key={schedule.id}>
-              <CardHeader className="pb-2 pt-4 px-4">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0 flex-1">
-                    <CardTitle className="text-base leading-tight">{schedule.name}</CardTitle>
-                    {schedule.description && (
-                      <CardDescription className="mt-0.5 text-xs">{schedule.description}</CardDescription>
-                    )}
-                  </div>
-                  <Badge variant={typeVariant(schedule.scheduleType)} className="text-xs shrink-0 mt-0.5">
-                    {typeLabel(schedule.scheduleType)}
-                  </Badge>
-                </div>
-              </CardHeader>
-              <CardContent className="px-4 pb-4 pt-0 space-y-3">
-                {/* Info grid */}
-                <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm items-center">
-                  <span className="text-muted-foreground">Target</span>
-                  <span className="text-right">{formatTargetSummary(schedule)}</span>
-
-                  <span className="text-muted-foreground">Executions</span>
-                  <span className="flex justify-end">
-                    <Badge variant="outline" className="text-xs">{schedule._count.executions}</Badge>
-                  </span>
-
-                  <span className="text-muted-foreground">Last Executed</span>
-                  <span className="text-xs text-muted-foreground text-right">
-                    {schedule.lastExecutedAt
-                      ? formatDistanceToNow(new Date(schedule.lastExecutedAt), { addSuffix: true })
-                      : '—'}
-                  </span>
-
-                  <span className="text-muted-foreground">Enabled</span>
-                  <div className="flex justify-end">
-                    <Switch
-                      checked={schedule.enabled}
-                      disabled={togglingId === schedule.id}
-                      onCheckedChange={checked => handleToggle(schedule, checked)}
-                    />
-                  </div>
-                </div>
-
-                {/* Action buttons */}
-                <div className="flex items-center gap-2 pt-1">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="flex-1"
-                    onClick={() => router.push(`/admin/schedules/${schedule.id}/edit`)}
-                  >
-                    <Edit className="h-4 w-4 mr-2" />
-                    Edit
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    className="flex-1"
-                    disabled={deletingId === schedule.id}
-                    onClick={() => setDeleteTarget(schedule)}
-                  >
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Delete
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-        </ScrollArea>
-      ) : (
-        /* Desktop table view */
-        <ScrollArea className="flex-1 pr-4 -mr-4">
-        <div className="border rounded-lg overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-muted/50">
-                <tr>
-                  <th className="text-left p-3 font-medium">Name</th>
-                  <th className="text-left p-3 font-medium">Type</th>
-                  <th className="text-left p-3 font-medium">Priority</th>
-                  <th className="text-left p-3 font-medium">Target</th>
-                  <th className="text-left p-3 font-medium">Executions</th>
-                  <th className="text-left p-3 font-medium">Last Executed</th>
-                  <th className="text-left p-3 font-medium">Enabled</th>
-                  <th className="text-right p-3 font-medium">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {filtered.length === 0 && (
-                  <tr>
-                    <td colSpan={8} className="p-6 text-center text-muted-foreground">
-                      {emptyMessage}
-                    </td>
-                  </tr>
-                )}
-                {filtered.map(schedule => (
-                  <tr key={schedule.id} className="hover:bg-muted/30 transition-colors">
-                    <td className="p-3">
-                      <p className="font-medium">{schedule.name}</p>
+          <div className="space-y-3">
+            {filtered.length === 0 && (
+              <p className="text-center text-muted-foreground py-8">{emptyMessage}</p>
+            )}
+            {filtered.map(schedule => (
+              <Card key={schedule.id}>
+                <CardHeader className="pb-2 pt-4 px-4">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <CardTitle className="text-base leading-tight">{schedule.name}</CardTitle>
                       {schedule.description && (
-                        <p className="text-xs text-muted-foreground truncate max-w-xs">{schedule.description}</p>
+                        <CardDescription className="mt-0.5 text-xs">{schedule.description}</CardDescription>
                       )}
-                    </td>
-                    <td className="p-3">
-                      <Badge variant={typeVariant(schedule.scheduleType)} className="text-xs">
-                        {typeLabel(schedule.scheduleType)}
-                      </Badge>
-                    </td>
-                    <td className="p-3 text-muted-foreground">{schedule.priority}</td>
-                    <td className="p-3">
-                      <p className="text-xs text-muted-foreground">{schedule.targetType}</p>
-                      <p className="text-sm">{formatTargetSummary(schedule)}</p>
-                    </td>
-                    <td className="p-3">
+                    </div>
+                    <Badge variant={typeVariant(schedule.scheduleType)} className="text-xs shrink-0 mt-0.5">
+                      {typeLabel(schedule.scheduleType)}
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="px-4 pb-4 pt-0 space-y-3">
+                  {/* Info grid */}
+                  <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm items-center">
+                    <span className="text-muted-foreground">Target</span>
+                    <span className="text-right">{formatTargetSummary(schedule)}</span>
+
+                    <span className="text-muted-foreground">Executions</span>
+                    <span className="flex justify-end">
                       <Badge variant="outline" className="text-xs">{schedule._count.executions}</Badge>
-                    </td>
-                    <td className="p-3 text-xs text-muted-foreground">
+                    </span>
+
+                    <span className="text-muted-foreground">Last Executed</span>
+                    <span className="text-xs text-muted-foreground text-right">
                       {schedule.lastExecutedAt
                         ? formatDistanceToNow(new Date(schedule.lastExecutedAt), { addSuffix: true })
                         : '—'}
-                    </td>
-                    <td className="p-3">
+                    </span>
+
+                    <span className="text-muted-foreground">Enabled</span>
+                    <div className="flex justify-end">
                       <Switch
                         checked={schedule.enabled}
                         disabled={togglingId === schedule.id}
                         onCheckedChange={checked => handleToggle(schedule, checked)}
                       />
-                    </td>
-                    <td className="p-3">
-                      <div className="flex items-center justify-end gap-1">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8"
-                          onClick={() => router.push(`/admin/schedules/${schedule.id}/edit`)}
-                          title="Edit"
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-destructive hover:text-destructive"
-                          disabled={deletingId === schedule.id}
-                          onClick={() => setDeleteTarget(schedule)}
-                          title="Delete"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    </div>
+                  </div>
+
+                  {/* Action buttons */}
+                  <div className="flex items-center gap-2 pt-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1"
+                      onClick={() => router.push(`/admin/schedules/${schedule.id}/edit`)}
+                    >
+                      <Edit className="h-4 w-4 mr-2" />
+                      Edit
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      className="flex-1"
+                      disabled={deletingId === schedule.id}
+                      onClick={() => setDeleteTarget(schedule)}
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Delete
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
           </div>
-        </div>
+        </ScrollArea>
+      ) : (
+        /* Desktop table view */
+        <ScrollArea className="flex-1 pr-4 -mr-4">
+          <div className="border rounded-lg overflow-hidden">
+            <div className="overflow-x-auto custom-scrollbar">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/50">
+                  <tr>
+                    <th className="text-left p-3 font-medium">Name</th>
+                    <th className="text-left p-3 font-medium">Type</th>
+                    <th className="text-left p-3 font-medium">Priority</th>
+                    <th className="text-left p-3 font-medium">Target</th>
+                    <th className="text-left p-3 font-medium">Executions</th>
+                    <th className="text-left p-3 font-medium">Last Executed</th>
+                    <th className="text-left p-3 font-medium">Enabled</th>
+                    <th className="text-right p-3 font-medium">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {filtered.length === 0 && (
+                    <tr>
+                      <td colSpan={8} className="p-6 text-center text-muted-foreground">
+                        {emptyMessage}
+                      </td>
+                    </tr>
+                  )}
+                  {filtered.map(schedule => (
+                    <tr key={schedule.id} className="hover:bg-muted/30 transition-colors">
+                      <td className="p-3">
+                        <p className="font-medium">{schedule.name}</p>
+                        {schedule.description && (
+                          <p className="text-xs text-muted-foreground truncate max-w-xs">{schedule.description}</p>
+                        )}
+                      </td>
+                      <td className="p-3">
+                        <Badge variant={typeVariant(schedule.scheduleType)} className="text-xs">
+                          {typeLabel(schedule.scheduleType)}
+                        </Badge>
+                      </td>
+                      <td className="p-3 text-muted-foreground">{schedule.priority}</td>
+                      <td className="p-3">
+                        <p className="text-xs text-muted-foreground">{schedule.targetType}</p>
+                        <p className="text-sm">{formatTargetSummary(schedule)}</p>
+                      </td>
+                      <td className="p-3">
+                        <Badge variant="outline" className="text-xs">{schedule._count.executions}</Badge>
+                      </td>
+                      <td className="p-3 text-xs text-muted-foreground">
+                        {schedule.lastExecutedAt
+                          ? formatDistanceToNow(new Date(schedule.lastExecutedAt), { addSuffix: true })
+                          : '—'}
+                      </td>
+                      <td className="p-3">
+                        <Switch
+                          checked={schedule.enabled}
+                          disabled={togglingId === schedule.id}
+                          onCheckedChange={checked => handleToggle(schedule, checked)}
+                        />
+                      </td>
+                      <td className="p-3">
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => router.push(`/admin/schedules/${schedule.id}/edit`)}
+                            title="Edit"
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-destructive hover:text-destructive"
+                            disabled={deletingId === schedule.id}
+                            onClick={() => setDeleteTarget(schedule)}
+                            title="Delete"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </ScrollArea>
       )}
 

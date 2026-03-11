@@ -120,7 +120,7 @@ export function SchedulingTab({ isActive = true }: SchedulingTabProps) {
 
         {/* List — stays visible after first load; dims slightly while refreshing */}
         {hasLoaded && (
-          <div className={isLoading ? 'opacity-50 pointer-events-none transition-opacity' : 'transition-opacity'}>
+          <div className={`flex flex-col flex-1 min-h-0 ${isLoading ? 'opacity-50 pointer-events-none transition-opacity' : 'transition-opacity'}`}>
             <ScheduleListTable
               schedules={schedules}
               onRefresh={() => fetchSchedules(enabledFilter)}

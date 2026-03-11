@@ -270,7 +270,7 @@ export function BoundaryActionEditor({
 
   return (
     <Dialog open={open} onOpenChange={open => !open && onClose()}>
-      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto custom-scrollbar">
         <DialogHeader>
           <DialogTitle>Edit Time Window</DialogTitle>
         </DialogHeader>

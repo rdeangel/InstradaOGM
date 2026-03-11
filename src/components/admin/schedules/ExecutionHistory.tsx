@@ -261,7 +261,7 @@ export function ExecutionHistory({ scheduleId }: ExecutionHistoryProps) {
                                       )}
                                     </div>
                                   )) : (
-                                    <pre className="bg-muted p-3 rounded-md overflow-auto text-xs leading-relaxed">
+                                    <pre className="bg-muted p-3 rounded-md overflow-auto custom-scrollbar text-xs leading-relaxed">
                                       {JSON.stringify(exec.actionsRun, null, 2)}
                                     </pre>
                                   )}
