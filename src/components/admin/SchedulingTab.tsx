@@ -12,7 +12,8 @@ import {
 } from '@/components/admin/schedules/ScheduleListTable';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
-import { AlertCircle, CalendarClock, Plus, RefreshCw } from 'lucide-react';
+import { AlertCircle, CalendarClock, CalendarSearch, Plus, RefreshCw } from 'lucide-react';
+import { ScheduleEvaluatorDialog } from '@/components/admin/schedules/ScheduleEvaluatorDialog';
 
 interface SchedulingTabProps {
   isActive?: boolean;
@@ -28,6 +29,7 @@ export function SchedulingTab({ isActive = true }: SchedulingTabProps) {
   const [enabledFilter, setEnabledFilter] = useState<boolean | null>(null);
   const [hasFetched, setHasFetched] = useState(false);
   const [hasLoaded, setHasLoaded] = useState(false);
+  const [evaluatorOpen, setEvaluatorOpen] = useState(false);
 
   const fetchSchedules = useCallback(async (enabled: boolean | null = enabledFilter) => {
     setIsLoading(true);
@@ -83,6 +85,16 @@ export function SchedulingTab({ isActive = true }: SchedulingTabProps) {
               {!isMobile && 'Refresh'}
             </Button>
             <Button
+              variant="outline"
+              className={cn(isMobile && 'size-9 p-0')}
+              onClick={() => setEvaluatorOpen(true)}
+            >
+              <ClientOnly>
+                <CalendarSearch className={cn('h-4 w-4', !isMobile && 'mr-2')} />
+              </ClientOnly>
+              {!isMobile && 'Evaluate Date'}
+            </Button>
+            <Button
               className={cn(isMobile && 'size-9 p-0')}
               onClick={() => router.push('/admin/schedules/new')}
             >
@@ -132,6 +144,8 @@ export function SchedulingTab({ isActive = true }: SchedulingTabProps) {
           </div>
         )}
       </CardContent>
+
+      <ScheduleEvaluatorDialog open={evaluatorOpen} onOpenChange={setEvaluatorOpen} />
     </Card>
   );
 }

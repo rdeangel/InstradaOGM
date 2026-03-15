@@ -841,54 +841,55 @@ export function ScheduleTimelineGrid({
 
                 {/* Hover / Drag Tooltip */}
                 {hoverState?.dayIndex === dayIndex && (() => {
-                  // Determine what to show in the tooltip
-                  let tooltipLabel: string;
-
-                  const isDraggingThisWindow =
-                    dragState?.type === 'move' &&
-                    dragState.sourceDayIndex === dayIndex &&
-                    dragState.windowIndex === hoverState.windowIndex;
-
-                  const isResizingThisWindow =
-                    (dragState?.type === 'resize-left' || dragState?.type === 'resize-right') &&
-                    dragState.dayIndex === dayIndex &&
-                    dragState.windowIndex === hoverState.windowIndex;
+                  let tooltipLabel: string | null = null;
 
                   if (dragState?.type === 'create' && dragState.dayIndex === dayIndex) {
-                    // Creating a new window — show the preview range
-                    tooltipLabel = `${minutesToTime(Math.min(dragState.startMinutes, dragState.currentMinutes))} – ${minutesToTime(Math.max(dragState.startMinutes, dragState.currentMinutes))}`;
-                  } else if (hoverState.windowIndex !== undefined || isDraggingThisWindow || isResizingThisWindow) {
-                    // Hovering or dragging a window — show its start/end (live during drag)
-                    const hoveredWin = days.find(d => d.dayOfWeek === dayIndex)?.windows[hoverState.windowIndex!];
-                    if (hoveredWin) {
-                      let liveStart = hoveredWin.startTime;
-                      let liveEnd = hoveredWin.endTime;
+                    // Creating — show the live preview range
+                    const start = Math.min(dragState.startMinutes, dragState.currentMinutes);
+                    const end   = Math.max(dragState.startMinutes, dragState.currentMinutes);
+                    if (end > start) tooltipLabel = `${minutesToTime(start)} – ${minutesToTime(end)}`;
 
-                      if (isDraggingThisWindow) {
-                        const delta = dragState.currentMinutes - dragState.startMinutes;
-                        const duration = dragState.initialEnd - dragState.initialStart;
-                        let ns = dragState.initialStart + delta;
-                        let ne = ns + duration;
-                        if (ns < 0) { ns = 0; ne = duration; }
-                        if (ne > TOTAL_MINUTES) { ne = TOTAL_MINUTES; ns = TOTAL_MINUTES - duration; }
-                        liveStart = minutesToTime(ns);
-                        liveEnd = minutesToTime(ne);
-                      } else if (dragState?.type === 'resize-left' && isResizingThisWindow) {
-                        const endMin = parseTimeToMinutes(hoveredWin.endTime);
-                        liveStart = minutesToTime(clamp(dragState.currentMinutes, 0, endMin - 15));
-                      } else if (dragState?.type === 'resize-right' && isResizingThisWindow) {
-                        const startMin = parseTimeToMinutes(hoveredWin.startTime);
-                        liveEnd = minutesToTime(clamp(dragState.currentMinutes, startMin + 15, TOTAL_MINUTES));
-                      }
+                  } else if (dragState?.type === 'move' &&
+                             (dragState.sourceDayIndex === dayIndex || dragState.targetDayIndex === dayIndex)) {
+                    // Moving a window — always show the window's live range, not cursor position
+                    const delta    = dragState.currentMinutes - dragState.startMinutes;
+                    const duration = dragState.initialEnd - dragState.initialStart;
+                    let ns = dragState.initialStart + delta;
+                    let ne = ns + duration;
+                    if (ns < 0) { ns = 0; ne = duration; }
+                    if (ne > TOTAL_MINUTES) { ne = TOTAL_MINUTES; ns = TOTAL_MINUTES - duration; }
+                    tooltipLabel = `${minutesToTime(ns)} – ${minutesToTime(ne)}`;
 
-                      tooltipLabel = `${liveStart} – ${liveEnd}`;
-                    } else {
-                      tooltipLabel = minutesToTime(hoverState.minutes);
+                  } else if (dragState?.type === 'resize-left' && dragState.dayIndex === dayIndex) {
+                    // Resizing left edge — show live start + fixed end
+                    const win = days.find(d => d.dayOfWeek === dayIndex)?.windows[dragState.windowIndex];
+                    if (win) {
+                      const endMin  = parseTimeToMinutes(win.endTime);
+                      const newStart = minutesToTime(clamp(dragState.currentMinutes, 0, endMin - 15));
+                      tooltipLabel = `${newStart} – ${win.endTime}`;
                     }
+
+                  } else if (dragState?.type === 'resize-right' && dragState.dayIndex === dayIndex) {
+                    // Resizing right edge — show fixed start + live end
+                    const win = days.find(d => d.dayOfWeek === dayIndex)?.windows[dragState.windowIndex];
+                    if (win) {
+                      const startMin = parseTimeToMinutes(win.startTime);
+                      const newEnd   = minutesToTime(clamp(dragState.currentMinutes, startMin + 15, TOTAL_MINUTES));
+                      tooltipLabel = `${win.startTime} – ${newEnd}`;
+                    }
+
+                  } else if (hoverState.windowIndex !== undefined) {
+                    // Hovering over a window (no active drag) — show the window's fixed range
+                    // eslint-disable-next-line security/detect-object-injection
+                    const hoveredWin = days.find(d => d.dayOfWeek === dayIndex)?.windows[hoverState.windowIndex];
+                    if (hoveredWin) tooltipLabel = `${hoveredWin.startTime} – ${hoveredWin.endTime}`;
+
                   } else {
-                    // Plain timeline hover — show cursor time
+                    // Plain empty-timeline hover — show cursor position
                     tooltipLabel = minutesToTime(hoverState.minutes);
                   }
+
+                  if (!tooltipLabel) return null;
 
                   return (
                     <div

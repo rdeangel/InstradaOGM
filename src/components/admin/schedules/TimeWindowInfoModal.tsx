@@ -40,7 +40,7 @@ export function TimeWindowInfoModal({
     function getGroupName(uuid?: string) {
         if (!uuid) return 'Unknown Group';
         const group = groups.find(g => g.uuid === uuid);
-        return group ? group.name : 'Unknown Group';
+        return group ? (group.friendlyName ?? group.name) : 'Unknown Group';
     }
 
     function renderActionIcon(operation: string) {

@@ -305,6 +305,79 @@ curl -X GET "{{SERVER_URL}}/api/admin/schedules/cuid-schedule-1/executions?statu
 
 ---
 
+### POST /api/admin/schedules/evaluate
+
+**Description**: Dry-run evaluation of all **enabled** schedules at an arbitrary point in time. Determines which schedules would be active or would fire at the given moment, resolves target alias names and group friendly names via OPNsense, and returns annotated results. No execution records are written and no state is mutated.
+
+**Role Access**: ADMIN, SUPER_ADMIN
+
+#### Request Body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `dateTime` | string | Yes | ISO 8601 UTC datetime to evaluate (e.g. `2026-03-11T21:00:00.000Z`) |
+
+```bash
+curl -X POST "{{SERVER_URL}}/api/admin/schedules/evaluate" \
+  -H "Authorization: Bearer {{API_KEY}}" \
+  -H "Content-Type: application/json" \
+  -d '{ "dateTime": "2026-03-11T21:00:00.000Z" }'
+```
+
+**Success Response** `200 OK`:
+```json
+{
+  "evaluatedAt": "2026-03-11T21:00:00.000Z",
+  "matches": [
+    {
+      "scheduleId": "cuid-schedule-1",
+      "scheduleName": "Kids Bedtime",
+      "scheduleType": "COMPLEX_WEEKLY",
+      "timezone": "Europe/London",
+      "matchStatus": "START boundary",
+      "matchedWindowLabel": "Bedtime block",
+      "windowStartTime": "21:00",
+      "windowEndTime": "07:00",
+      "targetType": "HOST_ALIAS",
+      "targetSelector": { "hostAliasUuids": ["<alias-uuid>"] },
+      "targetSummary": "kids_laptop, kids_tablet",
+      "targetNames": ["kids_laptop", "kids_tablet"],
+      "actions": [
+        {
+          "operation": "UNASSIGN",
+          "boundaryType": "START",
+          "targetGroupUuid": "<group-uuid>",
+          "targetGroupName": "Internet - Full Access",
+          "fromGroupUuid": null,
+          "sortOrder": 0
+        }
+      ]
+    }
+  ]
+}
+```
+
+#### `matchStatus` Values
+
+| Value | Meaning |
+|-------|---------|
+| `START boundary` | The evaluated time falls within the ±1-minute tolerance of the window's `startTime`. Start actions would fire. |
+| `END boundary` | The evaluated time falls within the ±1-minute tolerance of the window's `endTime`. End actions would fire. |
+| `Active window (mid-run)` | The evaluated time is inside the window but not at either boundary. The schedule is currently active. The response includes the END actions (the pending stop operations). |
+| `Fires at this time` | Used for `ONCE` and `RECURRING` schedules when the trigger time matches within the ±1-minute tolerance. |
+
+#### Name Resolution
+
+- **`targetNames`** — For `HOST_ALIAS` targets, each UUID in `targetSelector.hostAliasUuids` is resolved to its OPNsense alias name. Falls back to the raw UUID if resolution fails.
+- **`targetGroupName`** on each action — The group UUID is resolved to its user-defined friendly name (from `opnsenseGroupDisplay`), falling back to the raw OPNsense alias name if no friendly name has been configured, then to the UUID itself.
+- OPNsense alias and group data is fetched once per request (two concurrent calls) and reused across all matches.
+
+**Error Cases**:
+- `400 Bad Request` — `dateTime` is missing or is not a valid ISO 8601 datetime string
+- `401 Unauthorized` / `403 Forbidden` — missing or insufficient permissions
+
+---
+
 ### POST /api/admin/schedules/preview
 
 **Description**: Dry-run simulation. Validates which boundaries and actions would fire at a given date/time without writing to the database or calling OPNsense.
@@ -495,4 +568,4 @@ Schedule operations generate the following audit log entries:
 
 ---
 
-**Last Updated:** 2026-03-03 | **Category:** API Documentation
+**Last Updated:** 2026-03-11 | **Category:** API Documentation

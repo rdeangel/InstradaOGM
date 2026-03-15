@@ -136,6 +136,17 @@ Before saving, click **Dry Run** to simulate what boundaries would fire at any g
 
 The preview validates the schedule against the saved data without touching OPNsense.
 
+### Evaluate Date / Time
+From the schedule list header, click **Evaluate Date** to open the Schedule Evaluator dialog. This tool evaluates all **enabled** schedules against any UTC date and time you choose — without triggering any actual execution.
+
+Enter a UTC date and time, then click **Evaluate**. The results show every enabled schedule that matches, with:
+- **Schedule name, type badge, and match status badge** — indicating whether the moment falls on a `START boundary`, `END boundary`, inside an `Active window (mid-run)`, or fires as a `ONCE`/`RECURRING` trigger.
+- **Timezone and window times** (Complex Weekly schedules) — shows the window start and end times and optional label.
+- **Target** — `HOST_ALIAS` targets are rendered as individual cyan alias-name badges. Other target types show a plain summary.
+- **Actions table** — lists each action that would execute (operation, boundary, and resolved group friendly name).
+
+This is useful for auditing schedule coverage, debugging unexpected behaviour, or verifying a new schedule before enabling it.
+
 ### Execution History
 Each schedule shows a paginated log of past executions filterable by status. Each record includes:
 - Execution timestamp and duration.
@@ -188,4 +199,4 @@ For full endpoint documentation including request/response schemas, query parame
 
 ---
 
-**Last Updated:** 2026-03-03 | **Category:** Automation
+**Last Updated:** 2026-03-11 | **Category:** Automation
