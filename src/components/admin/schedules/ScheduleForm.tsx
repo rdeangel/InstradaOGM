@@ -43,6 +43,7 @@ import { GroupCombobox } from './GroupCombobox';
 import { useOpnsenseNetworkGroups } from '@/hooks/use-opnsense-network-groups';
 import type { NetworkGroup } from '@/types/opnsense';
 import { CronExpressionParser } from 'cron-parser';
+import cronstrue from 'cronstrue';
 
 // Inline pure helper — avoids importing server-only schedule-validation module
 function checkWindowOverlaps(windows: Array<{ startTime: string; endTime: string }>): {
@@ -250,10 +251,12 @@ export function ScheduleForm({
 
   // Cron human-readable preview
   let cronPreview = '';
+  let cronValid = false;
   if (values.scheduleType === 'RECURRING' && values.cronExpression) {
     try {
       CronExpressionParser.parse(values.cronExpression);
-      cronPreview = 'Valid cron expression';
+      cronPreview = cronstrue.toString(values.cronExpression);
+      cronValid = true;
     } catch {
       cronPreview = 'Invalid cron expression';
     }
@@ -732,7 +735,7 @@ export function ScheduleForm({
                 className="font-mono"
               />
               {cronPreview && (
-                <p className={`text-xs ${cronPreview.startsWith('Invalid') ? 'text-destructive' : 'text-muted-foreground'}`}>
+                <p className={`text-xs ${cronValid ? 'text-muted-foreground' : 'text-destructive'}`}>
                   {cronPreview}
                 </p>
               )}

@@ -781,6 +781,14 @@ class ScheduleExecutionService {
       prisma.opnsenseGroupDisplay.findMany(),
       prisma.globalSettings.findFirst({ orderBy: { id: 'asc' } }),
     ]);
+    // Enrich allGroups with friendly names from groupDisplays
+    allGroups.forEach((g) => {
+      const display = groupDisplays.find((d) => d.opnsenseUuid === g.uuid);
+      if (display) {
+        g.friendlyName = display.friendlyName;
+      }
+    });
+
     const groupMap = new Map(allGroups.map((g) => [g.uuid, g]));
     const allAliases = aliasesResponse?.aliases?.alias ?? {};
 
@@ -927,13 +935,8 @@ class ScheduleExecutionService {
     for (const action of sortedActions) {
       try {
         // ── ASSIGN ────────────────────────────────────────────────────────────
-        // Also handles legacy MOVE operations (MOVE is removed; ASSIGN's SingleSelect eviction
-        // logic automatically handles the "move" behaviour when group types are applicable).
-        if (action.operation === 'ASSIGN' || action.operation === 'MOVE') {
+        if (action.operation === 'ASSIGN') {
           if (!action.targetGroupUuid) throw new Error('targetGroupUuid is required for ASSIGN');
-          if (action.operation === 'MOVE') {
-            logger.warn(`Schedule ${schedule.id}: legacy MOVE operation encountered — executing as ASSIGN (SingleSelect eviction handles the move automatically)`);
-          }
           const targetGroup = groupMap.get(action.targetGroupUuid);
           const targetGroupType = groupTypeMap.get(action.targetGroupUuid) ?? 'SingleSelect';
 
@@ -1154,15 +1157,8 @@ class ScheduleExecutionService {
           }
 
           // ── UNASSIGN ──────────────────────────────────────────────────────────
-          // Also handles legacy REMOVE operations (renamed to UNASSIGN).
-          // If an IP is not in the target group, the operation is skipped gracefully —
-          // it is treated as a success no-op rather than an error, because a schedule is
-          // pre-determined and may run when the IP is in a different state than expected.
-        } else if (action.operation === 'UNASSIGN' || action.operation === 'REMOVE') {
+        } else if (action.operation === 'UNASSIGN') {
           if (!action.targetGroupUuid) throw new Error('targetGroupUuid is required for UNASSIGN');
-          if (action.operation === 'REMOVE') {
-            logger.warn(`Schedule ${schedule.id}: legacy REMOVE operation encountered — executing as UNASSIGN`);
-          }
           const group = groupMap.get(action.targetGroupUuid);
 
           // Partition IPs: those actually in the group vs those that are not (no-op).

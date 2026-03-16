@@ -880,7 +880,6 @@ export function ScheduleTimelineGrid({
 
                   } else if (hoverState.windowIndex !== undefined) {
                     // Hovering over a window (no active drag) — show the window's fixed range
-                    // eslint-disable-next-line security/detect-object-injection
                     const hoveredWin = days.find(d => d.dayOfWeek === dayIndex)?.windows[hoverState.windowIndex];
                     if (hoveredWin) tooltipLabel = `${hoveredWin.startTime} – ${hoveredWin.endTime}`;
 
