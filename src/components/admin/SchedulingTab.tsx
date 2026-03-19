@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -15,6 +15,10 @@ import { cn } from '@/lib/utils';
 import { AlertCircle, CalendarClock, CalendarSearch, Plus, RefreshCw } from 'lucide-react';
 import { ScheduleEvaluatorDialog } from '@/components/admin/schedules/ScheduleEvaluatorDialog';
 
+// Module-level cache — survives tab switches and back-navigation from edit/new pages
+let _cachedSchedules: ScheduleListItem[] = [];
+let _hasCachedData = false;
+
 interface SchedulingTabProps {
   isActive?: boolean;
 }
@@ -23,13 +27,14 @@ export function SchedulingTab({ isActive = true }: SchedulingTabProps) {
   const router = useRouter();
   const isMobile = useIsMobile();
 
-  const [schedules, setSchedules] = useState<ScheduleListItem[]>([]);
+  // Initialise from cache so there's no skeleton flash on remount
+  const [schedules, setSchedules] = useState<ScheduleListItem[]>(_cachedSchedules);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [enabledFilter, setEnabledFilter] = useState<boolean | null>(null);
-  const [hasFetched, setHasFetched] = useState(false);
-  const [hasLoaded, setHasLoaded] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(_hasCachedData);
   const [evaluatorOpen, setEvaluatorOpen] = useState(false);
+  const didInitialFetch = useRef(false);
 
   const fetchSchedules = useCallback(async (enabled: boolean | null = enabledFilter) => {
     setIsLoading(true);
@@ -41,7 +46,10 @@ export function SchedulingTab({ isActive = true }: SchedulingTabProps) {
       const res = await fetch(`/api/admin/schedules${query}`);
       if (!res.ok) throw new Error('Failed to fetch schedules');
       const data = await res.json();
-      setSchedules(Array.isArray(data) ? data : []);
+      const list = Array.isArray(data) ? data : [];
+      _cachedSchedules = list;
+      _hasCachedData = true;
+      setSchedules(list);
       setHasLoaded(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load schedules');
@@ -51,11 +59,11 @@ export function SchedulingTab({ isActive = true }: SchedulingTabProps) {
   }, [enabledFilter]);
 
   useEffect(() => {
-    if (isActive && !hasFetched) {
-      setHasFetched(true);
+    if (isActive && !didInitialFetch.current) {
+      didInitialFetch.current = true;
       fetchSchedules();
     }
-  }, [isActive, hasFetched, fetchSchedules]);
+  }, [isActive, fetchSchedules]);
 
   return (
     <Card className="flex flex-col flex-grow min-h-0">

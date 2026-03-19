@@ -23,6 +23,9 @@ import type { ScheduleDayFormData } from '@/components/admin/schedules/ScheduleT
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, LogIn, Ban, AlertCircle, ChevronLeft, CalendarClock, History } from 'lucide-react';
 
+// Module-level cache — keyed by schedule ID, survives back-navigation
+const _detailCache: Record<string, ScheduleDetail> = {};
+
 // Shape returned by GET /api/admin/schedules/[id]
 interface ScheduleDetail {
   id: string;
@@ -138,8 +141,10 @@ export default function EditSchedulePage() {
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
 
-  const [schedule, setSchedule] = useState<ScheduleDetail | null>(null);
-  const [isLoadingSchedule, setIsLoadingSchedule] = useState(true);
+  // eslint-disable-next-line security/detect-object-injection -- scheduleId comes from Next.js route params, not user input
+  const cached = scheduleId ? (_detailCache[scheduleId] ?? null) : null;
+  const [schedule, setSchedule] = useState<ScheduleDetail | null>(cached);
+  const [isLoadingSchedule, setIsLoadingSchedule] = useState(cached === null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const hasFetched = useRef(false);
@@ -155,6 +160,8 @@ export default function EditSchedulePage() {
         throw new Error(err.message ?? 'Schedule not found');
       }
       const data = await res.json();
+      // eslint-disable-next-line security/detect-object-injection -- scheduleId comes from Next.js route params, not user input
+      _detailCache[scheduleId] = data;
       setSchedule(data);
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : 'Failed to load schedule');
@@ -295,8 +302,8 @@ export default function EditSchedulePage() {
           </CardHeader>
 
           <CardContent className="flex-1 overflow-auto custom-scrollbar p-4 pt-0">
-            {/* Loading skeleton */}
-            {isLoadingSchedule && (
+            {/* Skeleton only when no cached data at all */}
+            {isLoadingSchedule && !schedule && (
               <div className="space-y-2 mt-2">
                 <Skeleton className="h-10 w-full" />
                 <Skeleton className="h-10 w-full" />
@@ -305,8 +312,8 @@ export default function EditSchedulePage() {
               </div>
             )}
 
-            {/* Error */}
-            {!isLoadingSchedule && loadError && (
+            {/* Error — only when no data to show */}
+            {!isLoadingSchedule && loadError && !schedule && (
               <div className="flex flex-col items-center gap-4 py-12">
                 <ClientOnly><AlertCircle className="h-12 w-12 text-destructive" /></ClientOnly>
                 <p className="text-muted-foreground">{loadError}</p>
@@ -314,8 +321,8 @@ export default function EditSchedulePage() {
               </div>
             )}
 
-            {/* Form */}
-            {!isLoadingSchedule && schedule && (
+            {/* Form — show immediately from cache, stays visible during background refresh */}
+            {schedule && (
               <ScheduleForm
                 initialValues={mapToFormValues(schedule)}
                 initialDays={schedule.scheduleType === 'COMPLEX_WEEKLY' ? mapToDays(schedule) : undefined}

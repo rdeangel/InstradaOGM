@@ -128,13 +128,18 @@ function WindowBlock({
         )}
       </div>
       <div className="space-y-0.5 pl-1">
-        {win.actions.map((action, i) => (
-          <ActionRow
-            key={i}
-            action={action}
-            groupName={action.targetGroupUuid ? groupMap.get(action.targetGroupUuid) : undefined}
-          />
-        ))}
+        {[...win.actions]
+          .sort((a, b) => {
+            if (a.boundaryType === b.boundaryType) return a.sortOrder - b.sortOrder;
+            return a.boundaryType === 'START' ? -1 : 1;
+          })
+          .map((action, i) => (
+            <ActionRow
+              key={i}
+              action={action}
+              groupName={action.targetGroupUuid ? groupMap.get(action.targetGroupUuid) : undefined}
+            />
+          ))}
       </div>
     </div>
   );
