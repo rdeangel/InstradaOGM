@@ -563,6 +563,25 @@ export async function POST(request: Request) {
       description: body!.alias.description || ''
     }, request);
 
+    // Reject creation if another host alias with the same IP already exists
+    if (body!.alias.type === 'host') {
+      const newIp = String(body!.alias.content).trim();
+      const existingAliases = await getHostAliases();
+      const conflict = existingAliases.find(a => a.type === 'host' && a.content.trim() === newIp);
+      if (conflict) {
+        await logApiAccess(auth, 'HOST_ALIAS_CREATE_FAILURE', {
+          aliasName: body!.alias.name,
+          aliasType: body!.alias.type,
+          reason: 'Duplicate IP address',
+          conflictingAlias: conflict.name,
+          ip: newIp
+        }, request, `Duplicate IP: ${newIp} already used by host alias "${conflict.name}"`);
+        return NextResponse.json({
+          message: `A host alias named "${conflict.name}" already exists with IP ${newIp}. If a rename is needed, edit the existing host alias instead.`
+        }, { status: 409 });
+      }
+    }
+
     // Prepare the payload for addAliasItem
     // The body already contains the 'alias' object in the expected structure.
     // We just need to ensure content is a string and handle 'enabled'.

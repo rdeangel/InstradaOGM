@@ -45,6 +45,9 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const debugQueryParam = searchParams.get('debug');
     const includeDisabledParam = searchParams.get('includeDisabled');
+    const includeAllParam = searchParams.get('includeAll');
+    const isAdmin = auth.user?.role === 'ADMIN' || auth.user?.role === 'SUPER_ADMIN';
+    const bypassAllFilters = includeAllParam === 'true' && isAdmin;
 
     const [exportedAliasesResponse, aliasSizesResponse, opnsenseGroupDisplays, globallyDisabledGroups, globalSettings] = await Promise.all([
       exportAliases(),
@@ -130,10 +133,10 @@ export async function GET(request: Request) {
 
     networkGroups = await filterNetworkGroups(
       networkGroups,
-      globalFilters,
-      includeDisabledParam === 'true' ? [] : globallyDisabledGroups, // Pass empty array if includeDisabled is true
-      auth.user as User, // Cast to User type instead of any
-      userSpecificFilters
+      bypassAllFilters ? [] : globalFilters,
+      (bypassAllFilters || includeDisabledParam === 'true') ? [] : globallyDisabledGroups,
+      auth.user as User,
+      bypassAllFilters ? null : userSpecificFilters
     );
 
     // Ensure networkGroups is always an array

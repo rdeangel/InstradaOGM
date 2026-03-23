@@ -13,7 +13,7 @@ import { useToast } from '@/hooks/use-toast';
 import { ClientOnly } from '@/components/util/ClientOnly';
 import { logger } from '@/lib/logger';
 import { checkMacRandomization } from '@/lib/mac-utils';
-import { Loader2, AlertCircle, Edit, Trash2, PlusCircle, Laptop, XCircle, CheckCircle, AlertTriangle, RefreshCcw, Info } from 'lucide-react';
+import { Loader2, AlertCircle, Edit, Trash2, PlusCircle, Laptop, XCircle, CheckCircle, AlertTriangle, RefreshCcw, Info, ScanSearch } from 'lucide-react';
 import { useIsMobile, useIsPhone } from '@/hooks/use-mobile';
 
 import { sortIpAddresses, isValidIpAddress } from '@/lib/network-utils';
@@ -34,7 +34,8 @@ import { hasAnyGroupError, getGroupErrorType, getGroupErrorMessage } from '@/uti
 import { AddHostAliasDialog } from './host-alias-manager/AddHostAliasDialog';
 import { EditHostAliasDialog } from './host-alias-manager/EditHostAliasDialog';
 import { DeleteHostAliasDialog } from './host-alias-manager/DeleteHostAliasDialog';
-import type { HostAliasFormState } from './host-alias-manager/types';
+import { DuplicateAliasesModal } from './host-alias-manager/DuplicateAliasesModal';
+import type { HostAliasFormState, DuplicateResult } from './host-alias-manager/types';
 import { Input } from '@/components/ui/input';
 
 import { PaginationControls } from '@/components/ui/pagination-controls';
@@ -55,6 +56,7 @@ interface EnrichedHostAlias {
   enabled?: string | null;
   hasIpConflict?: boolean;
   hasMacConflict?: boolean;
+  hasHiddenGroupMemberships?: boolean;
   vpnUuid?: string | null;
   vpnType?: string | null;
   vpnStatus?: 'connected' | 'disconnected' | 'disabled' | null; // Updated to include 'disabled'
@@ -146,6 +148,8 @@ export function HostAliasesTab({
   });
   const [restartingVpnUuid, setRestartingVpnUuid] = useState<string | null>(null);
   const [isBulkVpnRestarting, setIsBulkVpnRestarting] = useState<boolean>(false);
+  const [isDuplicateModalOpen, setIsDuplicateModalOpen] = useState(false);
+  const [duplicateResults, setDuplicateResults] = useState<DuplicateResult[]>([]);
 
   // State for sorting
   // const [sortBy, setSortBy] = useState<string | undefined>("name"); // Default sort by name
@@ -275,6 +279,96 @@ export function HostAliasesTab({
       setIsBulkVpnRestarting(false);
     }
   }, [handleVpnRestart]);
+
+  const handleCheckDuplicates = useCallback(() => {
+    const ipMap = new Map<string, typeof hostAliases>();
+    const nameMap = new Map<string, typeof hostAliases>();
+
+    for (const alias of hostAliases) {
+      const nameLower = alias.name.toLowerCase();
+      if (!nameMap.has(nameLower)) nameMap.set(nameLower, []);
+      nameMap.get(nameLower)!.push(alias);
+
+      const ips = alias.content.split('\n').map(ip => ip.trim()).filter(Boolean);
+      for (const ip of ips) {
+        if (!ipMap.has(ip)) ipMap.set(ip, []);
+        ipMap.get(ip)!.push(alias);
+      }
+    }
+
+    const toEntry = (a: EnrichedHostAlias) => ({
+      uuid: a.uuid,
+      name: a.name,
+      content: a.content,
+      description: a.description,
+      enabled: a.enabled,
+      memberOfGroups: (a.memberOfGroups ?? []).map(g => ({ uuid: g.uuid, name: g.name, friendlyName: g.friendlyName })),
+      hasHiddenGroups: a.hasHiddenGroupMemberships ?? false,
+    });
+
+    const results: DuplicateResult[] = [];
+
+    for (const [nameLower, aliases] of nameMap) {
+      if (aliases.length > 1) {
+        results.push({ type: 'name', value: nameLower, aliases: aliases.map(toEntry) });
+      }
+    }
+
+    for (const [ip, aliases] of ipMap) {
+      if (aliases.length > 1) {
+        results.push({ type: 'ip', value: ip, aliases: aliases.map(toEntry) });
+      }
+    }
+
+    setDuplicateResults(results);
+    setIsDuplicateModalOpen(true);
+  }, [hostAliases]);
+
+  const handleRemoveAlias = useCallback(async (
+    uuid: string,
+    name: string,
+    memberOfGroups: { uuid: string; name: string }[],
+    deleteAfterUnassign: boolean,
+  ) => {
+    // Step 1: unassign from all managed groups
+    if (memberOfGroups.length > 0) {
+      const unassignResponse = await fetch('/api/opnsense/host-group-management', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          operation: 'batch',
+          operationType: 'unassign',
+          hostAliases: [{ hostAliasName: name }],
+          groups: memberOfGroups.map(g => ({ groupId: g.uuid })),
+        }),
+      });
+      if (!unassignResponse.ok) {
+        const err = await unassignResponse.json().catch(() => ({}));
+        throw new Error(err.message || 'Failed to unassign alias from groups');
+      }
+    }
+
+    // Step 2: only delete if the alias has no hidden group memberships outside InstradaOGM's control
+    if (deleteAfterUnassign) {
+      const deleteResponse = await fetch(`/api/opnsense/host-alias-management?uuid=${uuid}`, {
+        method: 'DELETE',
+      });
+      const deleteResult = await deleteResponse.json().catch(() => ({}));
+      if (!deleteResponse.ok || !deleteResult.success) {
+        throw new Error(deleteResult.message || 'Failed to delete alias');
+      }
+
+      // Remove from local state only when deleted
+      const updated = latestAllHostAliases.current.filter(a => a.uuid !== uuid);
+      latestAllHostAliases.current = updated;
+      setAllHostAliases(updated);
+      setDisplayableHostAliases(updated);
+    } else {
+      // Alias was only unassigned — it still exists in OPNsense (assigned to unmanaged groups)
+      // Refresh the alias list so the UI reflects the new state
+      await onRefreshHostAliases();
+    }
+  }, [onRefreshHostAliases]);
 
   // Memoize columns definition to prevent unnecessary re-renders of SortableTable
   const columns = useMemo(() => [
@@ -1297,6 +1391,18 @@ export function HostAliasesTab({
       toast({ variant: "destructive", title: "Validation Error", description: "Host Alias Name cannot contain spaces or hyphens." });
       return;
     }
+
+    const newIp = newAliasForm.content.trim();
+    const conflictingAlias = hostAliases.find(a => a.content.trim() === newIp);
+    if (conflictingAlias) {
+      toast({
+        variant: "destructive",
+        title: "Duplicate IP Address",
+        description: `A host alias named "${conflictingAlias.name}" already exists with IP ${newIp}. If a rename is needed, edit the existing host alias instead.`,
+      });
+      return;
+    }
+
     setIsProcessingAction(true);
     try {
       const payload = {
@@ -1558,28 +1664,41 @@ export function HostAliasesTab({
             </CardTitle>
             {!isMobile && <CardDescription>View, create, edit, and delete OPNsense host aliases.</CardDescription>}
           </div>
-          <div className="flex w-full justify-end md:w-auto">
+          <div className="flex w-full items-center justify-between md:w-auto md:gap-4">
             <Button
-              onClick={handleRefresh}
+              onClick={handleCheckDuplicates}
               variant="outline"
-              className={cn("mr-2", isMobile && "size-9 p-0")}
-              disabled={isLoadingInitialData || isRefreshing}
+              className={cn(isMobile && "size-9 p-0")}
+              disabled={isLoadingInitialData || hostAliases.length === 0}
             >
               <ClientOnly>
-                {isRefreshing ? (
-                  <Loader2 className={cn("h-4 w-4 animate-spin", !isMobile && "mr-2")} />
-                ) : (
-                  <RefreshCcw className={cn("h-4 w-4", !isMobile && "mr-2")} />
-                )}
+                <ScanSearch className={cn("h-4 w-4", !isMobile && "mr-2")} />
               </ClientOnly>
-              {!isMobile && "Refresh"}
+              {!isMobile && "Check Duplicates"}
             </Button>
-            <Button onClick={handleAdd} className={cn(isMobile && "size-9 p-0")}>
-              <ClientOnly>
-                <PlusCircle className={cn("h-4 w-4", !isMobile && "mr-2")} />
-              </ClientOnly>
-              {!isMobile && "Add Host Alias"}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={handleRefresh}
+                variant="outline"
+                className={cn(isMobile && "size-9 p-0")}
+                disabled={isLoadingInitialData || isRefreshing}
+              >
+                <ClientOnly>
+                  {isRefreshing ? (
+                    <Loader2 className={cn("h-4 w-4 animate-spin", !isMobile && "mr-2")} />
+                  ) : (
+                    <RefreshCcw className={cn("h-4 w-4", !isMobile && "mr-2")} />
+                  )}
+                </ClientOnly>
+                {!isMobile && "Refresh"}
+              </Button>
+              <Button onClick={handleAdd} className={cn(isMobile && "size-9 p-0")}>
+                <ClientOnly>
+                  <PlusCircle className={cn("h-4 w-4", !isMobile && "mr-2")} />
+                </ClientOnly>
+                {!isMobile && "Add Host Alias"}
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-4 p-4 md:p-6 relative flex-1 overflow-hidden flex flex-col">
@@ -2186,7 +2305,6 @@ export function HostAliasesTab({
         onFormChange={handleNewAliasFormChange}
         onCreateAlias={handleCreateNewAlias}
         isProcessingAction={isProcessingAction}
-        isMobile={isMobile}
       />
 
       <EditHostAliasDialog
@@ -2210,6 +2328,13 @@ export function HostAliasesTab({
           setIsDeleteDialogOpen(false);
           setAliasToDelete(null);
         }}
+      />
+
+      <DuplicateAliasesModal
+        isOpen={isDuplicateModalOpen}
+        onOpenChange={setIsDuplicateModalOpen}
+        results={duplicateResults}
+        onRemoveAlias={handleRemoveAlias}
       />
     </>
   );

@@ -14,8 +14,6 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Loader2, Save } from 'lucide-react';
 import type { HostAliasFormState } from './types';
-import { cn } from '@/lib/utils';
-
 interface AddHostAliasDialogProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
@@ -23,7 +21,6 @@ interface AddHostAliasDialogProps {
   onFormChange: (e: React.ChangeEvent<HTMLInputElement> | boolean, name?: string) => void;
   onCreateAlias: () => Promise<void>;
   isProcessingAction: boolean;
-  isMobile: boolean;
 }
 
 export function AddHostAliasDialog({
@@ -33,7 +30,6 @@ export function AddHostAliasDialog({
   onFormChange,
   onCreateAlias,
   isProcessingAction,
-  isMobile,
 }: AddHostAliasDialogProps) {
   const isValid = () => {
     return (
@@ -98,13 +94,13 @@ export function AddHostAliasDialog({
           <DialogClose asChild>
             <Button type="button" variant="outline">Cancel</Button>
           </DialogClose>
-          <Button onClick={onCreateAlias} disabled={isProcessingAction || !isValid()} className={cn(isMobile && "size-9 p-0")}>
+          <Button onClick={onCreateAlias} disabled={isProcessingAction || !isValid()}>
             {isProcessingAction ? (
-              <Loader2 className={cn("h-4 w-4 animate-spin", !isMobile && "mr-2")} />
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
             ) : (
-              <Save className={cn("h-4 w-4", !isMobile && "mr-2")} />
+              <Save className="h-4 w-4 mr-2" />
             )}
-            {!isMobile && "Create Alias"}
+            Create Alias
           </Button>
         </DialogFooter>
       </DialogContent>

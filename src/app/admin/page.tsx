@@ -138,12 +138,31 @@ export default function AdminPage() {
       const allAliasesData = await allAliasesResponse.json();
       const allAliases = Array.isArray(allAliasesData.hostAliases) ? allAliasesData.hostAliases : [];
 
-      // Fetch network groups for enrichment
-      const networkGroupsResponse = await fetch('/api/opnsense/network-groups');
+      // Fetch network groups for enrichment (visible/managed groups only)
+      const [networkGroupsResponse, allNetworkGroupsResponse] = await Promise.all([
+        fetch('/api/opnsense/network-groups'),
+        fetch('/api/opnsense/network-groups?includeAll=true'),
+      ]);
       let networkGroups: NetworkGroup[] = [];
       if (networkGroupsResponse.ok) {
         const networkGroupsData = await networkGroupsResponse.json();
         networkGroups = Array.isArray(networkGroupsData.networkGroups) ? networkGroupsData.networkGroups : [];
+      }
+      // All groups (including hidden/disabled/filter-excluded) — used to detect hidden memberships
+      let allNetworkGroups: NetworkGroup[] = [];
+      if (allNetworkGroupsResponse.ok) {
+        const allNetworkGroupsData = await allNetworkGroupsResponse.json();
+        allNetworkGroups = Array.isArray(allNetworkGroupsData.networkGroups) ? allNetworkGroupsData.networkGroups : [];
+      }
+
+      // Build a map: alias name → set of ALL group UUIDs (unfiltered) the alias belongs to
+      const aliasNameToAllGroupUuids = new Map<string, Set<string>>();
+      for (const group of allNetworkGroups) {
+        const members = (group.rawContent || '').split('\n').map((m: string) => m.trim()).filter(Boolean);
+        for (const member of members) {
+          if (!aliasNameToAllGroupUuids.has(member)) aliasNameToAllGroupUuids.set(member, new Set());
+          aliasNameToAllGroupUuids.get(member)!.add(group.uuid);
+        }
       }
 
       // Convert network groups to the same format as host aliases for enrichment
@@ -173,32 +192,20 @@ export default function AdminPage() {
 
       // Enrich host aliases with group and VPN info
       const enrichedHostAliases = (fetchedHostAliases as EnrichedHostAlias[]).map((alias) => {
-        // Create a map of host alias names to their IP addresses
-        const hostNameToIpMap = new Map<string, string>();
-        (allAliases as EnrichedHostAlias[]).forEach((a) => {
-          if (a.type === 'host' && a.name && a.content) {
-            hostNameToIpMap.set(a.name, a.content);
-          }
-        });
+        // Map: alias name → groups (keyed by alias name as OPNsense stores them in group content).
+        // Using alias name as the key (not resolved IP) ensures aliases sharing the same IP
+        // do not inherit each other's group memberships.
+        const aliasNameToManagedGroupsMap = new Map<string, { uuid: string; name: string; friendlyName?: string; iconIdentifier?: string | null; groupType?: 'SingleSelect' | 'MultiSelect' }[]>();
 
-        // Create a map of IP addresses to their groups
-        const ipToGroupsMap = new Map<string, { uuid: string; name: string; friendlyName?: string; iconIdentifier?: string | null; groupType?: 'SingleSelect' | 'MultiSelect' }[]>();
-
-        // Process network groups to build the ipToGroupsMap
         combinedAliases.forEach((a) => {
           if (a.type === 'networkgroup' && a.content && a.uuid) {
             const displayMapping = opnsenseGroupDisplays.find(d => d.opnsenseUuid === a.uuid);
 
-            // Parse the content of the network group (contains hostnames or IPs)
             const members = a.content.split('\n').filter((member) => member.trim() !== '');
 
             members.forEach((memberName) => {
-              // If the member is a host alias name, get its IP address
-              const ipAddress = hostNameToIpMap.get(memberName) || memberName;
-
-              // Add this group to the IP's groups list
-              const currentGroups = ipToGroupsMap.get(ipAddress) || [];
-              ipToGroupsMap.set(ipAddress, [...currentGroups, {
+              const currentGroups = aliasNameToManagedGroupsMap.get(memberName) || [];
+              aliasNameToManagedGroupsMap.set(memberName, [...currentGroups, {
                 uuid: a.uuid,
                 name: a.name,
                 friendlyName: displayMapping?.friendlyName || a.name,
@@ -209,19 +216,8 @@ export default function AdminPage() {
           }
         });
 
-        // Get groups that this alias's IP address belongs to
-        const groupsForAlias = ipToGroupsMap.get(alias.content) || [];
-
-        // Also check if the alias name is directly referenced in any network group
-        const groupsByName = ipToGroupsMap.get(alias.name) || [];
-
-        // Combine both sets of groups (by IP and by name)
-        const allGroupsForAlias = [...groupsForAlias];
-        groupsByName.forEach((group) => {
-          if (!allGroupsForAlias.some(g => g.uuid === group.uuid)) {
-            allGroupsForAlias.push(group);
-          }
-        });
+        // Groups this alias is directly assigned to (by name, as OPNsense stores them)
+        const allGroupsForAlias = aliasNameToManagedGroupsMap.get(alias.name) || [];
 
         // Find VPN info for the alias
         let vpnStatus: 'connected' | 'disconnected' | 'disabled' | null = null;
@@ -257,9 +253,15 @@ export default function AdminPage() {
           }
         }
 
+        // Detect if this alias belongs to any group that InstradaOGM can't manage
+        const managedGroupUuids = new Set(allGroupsForAlias.map(g => g.uuid));
+        const allGroupUuidsForAlias = aliasNameToAllGroupUuids.get(alias.name) ?? new Set<string>();
+        const hasHiddenGroupMemberships = [...allGroupUuidsForAlias].some(uuid => !managedGroupUuids.has(uuid));
+
         return {
           ...alias,
           memberOfGroups: allGroupsForAlias,
+          hasHiddenGroupMemberships,
           vpnStatus: vpnStatus,
           vpnName: vpnName,
           vpnUuid: vpnUuid,
