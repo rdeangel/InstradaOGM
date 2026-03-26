@@ -86,70 +86,15 @@ _Podcast generated using the [Gemini Podcast Studio](https://github.com/rdeangel
 
 ---
 
-## 📱 Install as Android/iOS PWA (Progressive Web App)
+## 📱 Install as PWA
 
-InstradaOGM can be installed on your Android device as a home screen app, providing a full-screen experience without browser UI clutter.
+InstradaOGM is a Progressive Web App — it can be installed directly from your browser for a full-screen, native-like experience.
 
-### ✨ **Benefits of Installing as Home Screen App**
-- **🚀 Quick Access**: Launch directly from your home screen like a native app
-- **🎯 Full-Screen Experience**: No browser address bar or navigation buttons
-- **📱 Native Feel**: Appears in your app drawer and multitasking view
-- **🔒 Dedicated Window**: Runs in its own window separate from your browser
+- **Android (Chrome)**: Tap the menu (⋮) → "Add to Home screen" → Install
+- **iOS (Safari)**: Tap Share → "Add to Home Screen" → Add
+- **Desktop (Chrome/Edge)**: Click the install icon (⊕) in the address bar → Install
 
-### 📲 **Installation Steps (Chrome for Android)**
-
-1. **Open Chrome** on your Android device and navigate to your InstradaOGM URL
-   - Example: `https://instrada-ogm.example.com`
-
-2. **Tap the menu icon** (three vertical dots ⋮) in the top-right corner
-
-3. **Select "Add to Home screen"** from the menu
-
-4. **Tap "Install"** in the "Install app?" dialog window
-   - You can customize the app name before installing (default: "InstradaOGM")
-
-5. **Wait for confirmation** - Chrome will display "App installed" notification
-
-6. **Find the app** in your app drawer
-   - Open your app drawer and search for "InstradaOGM"
-
-7. **Add to Home screen** (optional)
-   - Long-press the InstradaOGM icon in your app drawer
-   - Select "Add to Home" to place it on your home screen for even faster access
-
-### 🎯 **Using the Installed App**
-
-Once installed:
-- **Launch**: Tap the InstradaOGM icon from your home screen or app drawer
-- **Full Screen**: App runs without browser UI for maximum screen space
-- **App Switcher**: Appears as a separate app in your recent apps view
-- **Independent**: Runs separately from your Chrome browser tabs
-
-### 🔧 **Troubleshooting**
-
-**Don't see "Add to Home screen" option?**
-- ✅ Ensure you're using **Chrome** browser (not Firefox, Samsung Internet, or other browsers)
-- ✅ Make sure you're accessing via **HTTPS** (required for installation)
-- ✅ Check that you're **not in Incognito/Private mode**
-- ✅ Try **refreshing the page** (pull down to refresh)
-
-**Want to uninstall?**
-1. Long-press the InstradaOGM icon on your home screen or in app drawer
-2. Select "App info" or "Uninstall"
-3. Tap "Uninstall" to remove the app
-
-### 📱 **Other Platforms**
-
-**iOS/Safari:**
-1. Open Safari and navigate to InstradaOGM
-2. Tap the Share button (square with arrow pointing up)
-3. Scroll down and tap "Add to Home Screen"
-4. Tap "Add" to confirm
-
-**Desktop (Chrome/Edge):**
-1. Look for the install icon (⊕ or computer icon) in the address bar
-2. Click it and select "Install"
-3. App will open in its own dedicated window
+Requires HTTPS access. Once installed, the app runs in its own window, separate from your browser.
 
 ---
 
@@ -241,28 +186,6 @@ Flexible configuration options for different deployment scenarios.
 - **💾 Backup & Restore**: Encrypted backup system with restore capabilities
 - **🔑 API Key Management**: Generate and manage API keys with rate limiting and usage analytics
 
-### 🏷️ **Application Subtitle**
-Customize your InstradaOGM instance with a personalized subtitle for easy identification.
-
-**Key Features:**
-- **🎯 Instance Identification**: Add custom text below the main "InstradaOGM" title
-- **🏢 Multi-Environment Support**: Perfect for distinguishing between production, staging, or different site locations
-- **⚡ Real-Time Updates**: Changes appear instantly without requiring page refresh or application restart
-- **📱 Responsive Design**: Optimized display across desktop, tablet, and mobile devices
-- **🔧 Simple Configuration**: Easy toggle and text input in Global Settings
-
-**Use Cases:**
-- **🏢 Organization Units**: "IT Department - Building A" or "Finance Division - Floor 3"
-- **🌍 Geographic Locations**: "New York Office" or "London Data Center"
-- **🔄 Environment Identification**: "Production Environment" or "Testing Lab"
-- **🏗️ Project Instances**: "Customer Portal" or "Internal Network"
-
-**Configuration:**
-1. Navigate to **Settings** → **Global** tab
-2. Enable **"Application Subtitle"** toggle
-3. Enter your custom subtitle text
-4. Changes appear immediately in the header
-
 ### 📊 **Monitoring & Status**
 Real-time monitoring and status information across your network.
 
@@ -277,6 +200,28 @@ Real-time monitoring and status information across your network.
   - **Real-Time Updates**: Graphs automatically refresh after group assignment operations
   - **Self-Service Integration**: Available on both Device Management and Self-Service pages
   - **Audit Trail Visualization**: Graphical representation of audit log data for easy pattern recognition
+
+### ⏰ **Scheduled Assignments**
+Automate network group changes on a time-based schedule — without manual intervention.
+
+**Key Capabilities:**
+- **📅 Three Scheduling Modes**: Complex Weekly (visual 7-day grid with per-day time windows), Once (fire-and-forget), and Recurring (cron expression)
+- **⚡ Automated Actions**: ASSIGN, UNASSIGN, and CLEAR_ALL operations with group-type-aware logic
+- **🕐 Timezone Support**: Full IANA timezone support with correct DST handling
+- **🎯 Flexible Targeting**: Target OPNsense host aliases (UI), static IP lists, or entire network groups (API)
+- **📊 Execution History**: Paginated log of past executions with per-action, per-IP results and status
+- **🔍 Dry-Run Evaluation**: Preview exactly what would fire at any date/time before enabling a schedule
+
+**Use Cases:**
+- "Block internet access on kids' devices every school night at 9 PM, restore at 7 AM"
+- "Move devices to the weekend VPN group every Friday at 5 PM"
+- "Temporarily block a device during tomorrow's exam, fire-and-forget"
+
+**Related Documentation:**
+- **[📖 Scheduled Assignments Guide](docs/FEATURES/SCHEDULED_ASSIGNMENTS.md)** - Complete feature and UI walkthrough
+- **[🔌 Schedule API Reference](docs/api/api_docs/32_schedule_endpoints.md)** - Full API documentation with examples
+
+---
 
 ### 🔍 **MAC Address Tracking**
 Advanced network device discovery and monitoring through automated ARP table scanning.
@@ -298,43 +243,8 @@ Advanced network device discovery and monitoring through automated ARP table sca
 - **🔍 Advanced Search**: Powerful search with special keywords (dhcp:, privacy:, online:, offline:, interface:, excluded:)
 - **📤 Data Export**: Export tracking data in multiple formats for analysis and reporting
 
-#### 📜 **Full MAC Address History**
-Comprehensive timeline visualization of device network activity and IP associations.
-
-**Timeline Features:**
-- **📅 Chronological Events**: Complete history displayed in chronological order with sequential event numbers (#1, #2, #3, etc.)
-- **🔄 Activation Periods**: Discrete periods showing when a MAC was associated with specific IP addresses
-- **✅ Active/Inactive Status**: Visual distinction between current (active) and historical (inactive) IP associations
-- **📊 History Consolidation**: Intelligent grouping of consecutive scans with identical IP configurations into single range entries
-  - Reduces clutter by showing one entry with date range instead of hundreds of identical entries
-  - Highlights actual IP configuration changes rather than every scan
-  - Makes it easy to see when devices changed IP addresses or network behavior
-- **🏷️ Device Information**: Captures hostname and OPNsense host alias at the time of each activation
-- **🌐 Interface Tracking**: Records network interface (VLAN, LAN, WAN) for each IP association
-- **📈 Event Counting**: History counter shows number of IP configuration changes, not total scans
-
-**History Modal Display:**
-- **Desktop View**: "Full History (x)" button opens modal with complete timeline
-- **Mobile View**: "Full History" button with same functionality, optimized for touch
-- **Event Cards**: Each period displayed as a card with activation/deactivation timestamps
-- **Status Badges**: Clear indicators for active vs inactive periods
-- **Chronological Order**: Events numbered from oldest (#1) to newest
-
-**Use Cases:**
-- **Troubleshooting**: Track when devices changed IP addresses or went offline
-- **Network Analysis**: Understand device connection patterns and behavior
-- **Compliance**: Maintain historical records of network device activity
-- **Capacity Planning**: Analyze device activity patterns over time
-
-**Security & Privacy Features:**
-- **🛡️ Privacy-First Design**: Identifies and flags privacy MAC addresses
-- **🔒 Secure Access Control**: Feature can be completely disabled, with automatic service management
-- **📋 Audit Integration**: All MAC tracking operations are logged in the comprehensive audit system
-- **⚙️ Configurable Intervals**: Adjustable scanning intervals (1-60 minutes) to balance performance and accuracy
-
 **Related Documentation:**
 - **[📖 MAC Address Tracking Guide](docs/FEATURES/MAC_ADDRESS_TRACKING.md)** - Complete feature documentation
-- **[🗄️ Database Schema Reference](docs/CONFIGURATION/DATABASE_SCHEMA_REFERENCE.md)** - Comprehensive database schema documentation
 
 
 ### 🔐 **Security & Authentication**
@@ -400,54 +310,13 @@ InstradaOGM introduces sophisticated group assignment behaviors that give admini
 
 **Important**: Group type functionality is available to **all authenticated users** (USER, ADMIN, SUPER_ADMIN) with device permissions. Only **SUPER_ADMIN** can configure global group type settings.
 
-#### **🎛️ Three Group Type Assignment Deployment Modes:**
+#### **🎛️ Three Deployment Modes**
 
-**Move-Only Mode** (`enableGroupTypes: false`)
-```
-All groups behave as SingleSelect with simple unique replacement logic
-Perfect for: Simple deployments where all you need is simple internet routing membership for devices.
-Considerations: MultiSelect groups are not supported and are ignored even if set as multi-select (they are however re-considered multi-select when you switch the feature back on)
-```
-
-**Device Management Mode** (`enableGroupTypes: true`, `enableSelfServiceMultiSelect: false`)
-```
-Device Management shows full functionality, self-service users see only SingleSelect groups
-Perfect for: Deployments where Self-Service complex multi-select is not needed, but administrators want to use MultiSelect for advanced policies from Device Management
-Considerations: Self-service users will not be able to see or use MultiSelect groups unless they have explicit access to the device from Device Management.
-```
-
-**Full Mode** (`enableGroupTypes: true`, `enableSelfServiceMultiSelect: true`)
-```
-All interfaces support both group types with complete functionality
-Perfect for: Advanced deployments, power users.
-Considerations: Unauthenticated users should not typically be able to define more complex access rules, but of course this depends what the rules you've defined are for.
-```
-
-### 🔒 **Global Self-Service Security Control**
-
-For enhanced security in less secure deployment environments, administrators can completely disable self-service functionality:
-
-#### **🛡️ Self-Service Disable Feature** (`removeSelfServicePage: true`)
-```
-Completely removes all self-service functionality from the application
-Perfect for: High-security environments, internal-only deployments, or when self-service is not needed
-Security Benefits:
-- Disables all self-service features at the application level
-- Removes self-service page from navigation
-- Redirects authenticated users to device management
-- Blocks all unauthenticated and authenticated access to self-service APIs
-- Blocks all self-service operations at the API level
-- Prevents IP detection and group membership queries
-- Does not affect device management or administrative functions
-```
-
-**When Self-Service is Disabled:**
-- ❌ Self-service page becomes inaccessible
-- ❌ Unauthenticated API endpoints return 403 Forbidden
-- ❌ IP detection is disabled on login page
-- ❌ Self-service navigation links are hidden
-- ✅ Device Management remains fully functional for authenticated users
-- ✅ All administrative functions continue to work normally
+| Mode | Settings | Behaviour |
+|------|----------|-----------|
+| **Move-Only** | `enableGroupTypes: false` | All groups act as SingleSelect — assigning always evicts from all other groups. Simple and predictable. |
+| **Device Management** | `enableGroupTypes: true`, `enableSelfServiceMultiSelect: false` | Full SingleSelect/MultiSelect logic in Device Management; self-service users see only SingleSelect groups. |
+| **Full** | `enableGroupTypes: true`, `enableSelfServiceMultiSelect: true` | Both group types available everywhere. Best for power users and advanced deployments. |
 
 ### 🎨 **Visual Indicators & Customization**
 
@@ -509,13 +378,6 @@ When renaming devices, InstadaOGM automatically detects optimal conditions for D
 - **Dynamic IP Warnings**: Warns when renaming offline devices that may get different IPs
 - **Static IP Detection**: Allows renaming when users confirm static IP configuration
 - **Risk Assessment**: Clear explanations of potential name/IP mismatches
-
-### 🎯 **Use Cases & Benefits**
-
-#### **🏠 Home Network Management**
-- **Family Devices**: Rename "iPhone-12" to "Dad-iPhone" with automatic DHCP reservation
-- **IoT Devices**: Rename generic device names to meaningful ones like "Living-Room-Camera"
-- **Guest Devices**: Quickly identify and rename guest devices with proper network assignments
 
 ### 📚 **Related Documentation**
 - **[🛡️ MAC Randomization Guide](docs/FEATURES/MAC_RANDOMIZATION_GUIDE.md)** - Complete guide to understanding and managing MAC address randomization
@@ -897,50 +759,7 @@ NEXT_PUBLIC_APP_VERSION=$(node -p "require('./package.json').version") docker co
 
 ### 🌐 **Multi-Platform Support**
 
-Build for multiple architectures (ARM64, AMD64):
-
-#### **Using NPM Scripts (Recommended)**
-```bash
-# Setup buildx (one-time setup)
-npm run docker:buildx:setup
-
-# Fix buildx driver issues (if needed)
-npm run docker:buildx:fix
-
-# Build multi-platform images with version
-npm run docker:buildx:postgres    # PostgreSQL version (amd64 + arm64)
-npm run docker:buildx:sqlite      # SQLite version (amd64 + arm64)
-npm run docker:buildx:all         # Both versions for all platforms
-
-# Build and push to registry
-npm run docker:buildx:push:postgres  # Build and push PostgreSQL
-npm run docker:buildx:push:sqlite    # Build and push SQLite
-npm run docker:buildx:push:all       # Build and push both
-
-# Build and push "latest" tags
-npm run docker:buildx:push:latest:postgres  # Build and push PostgreSQL latest
-npm run docker:buildx:push:latest:sqlite    # Build and push SQLite latest
-npm run docker:buildx:push:latest:all       # Build and push both latest
-```
-
-#### **Using Docker Buildx Directly**
-```bash
-# Setup buildx
-docker buildx create --use
-
-# Build for multiple platforms
-docker buildx build --platform linux/amd64,linux/arm64 \
-  --tag InstradaOGM:latest \
-  --push .
-```
-
-#### **Supported Architectures**
-- **linux/amd64** - Intel/AMD 64-bit processors
-- **linux/arm64** - ARM 64-bit processors (Apple Silicon, ARM servers)
-
-#### **Architecture Limitations**
-- **PostgreSQL builds**: Only support `linux/amd64` and `linux/arm64` due to Prisma compatibility
-- **SQLite builds**: Only support `linux/amd64` and `linux/arm64` due to Prisma compatibility
+Both SQLite and PostgreSQL images support `linux/amd64` and `linux/arm64` (Apple Silicon, ARM servers). Use `npm run docker:buildx:*` scripts or `docker buildx build --platform linux/amd64,linux/arm64` directly.
 
 ### 📁 **Volume Management**
 
@@ -1142,6 +961,7 @@ curl -X GET "https://your-instrada-ogm.com/api/admin/api-keys/analytics/performa
 - **[Sample Database Queries](docs/CONFIGURATION/SAMPLE_DATABASE_QUERIES.md)** - Example database queries
 
 ### ✨ **Features**
+- **[Scheduled Assignments](docs/FEATURES/SCHEDULED_ASSIGNMENTS.md)** - Automated time-based network group assignments
 - **[MAC Address Tracking](docs/FEATURES/MAC_ADDRESS_TRACKING.md)** - Device MAC address tracking and management
 - **[MAC Randomization Guide](docs/FEATURES/MAC_RANDOMIZATION_GUIDE.md)** - Understanding and managing MAC randomization
 - **[Two-Factor Authentication](docs/FEATURES/TWO_FACTOR_AUTHENTICATION_GUIDE.md)** - 2FA setup and management
@@ -1159,38 +979,7 @@ curl -X GET "https://your-instrada-ogm.com/api/admin/api-keys/analytics/performa
 - **[Self-Service Cache Invalidation](docs/TROUBLESHOOTING/SELF_SERVICE_ACCESS_CONTROL_CACHING.md)** - Cache management
 
 ### 📡 **API Documentation**
-- **[Full API Documentation](docs/api/api_docs/API_Index.md)** - Complete API reference with 100+ endpoints
-- **[1. Public Endpoints](docs/api/api_docs/01_public_endpoints.md)** - Unauthenticated endpoints for public access
-- **[2. Authentication Endpoints](docs/api/api_docs/02_authentication_endpoints.md)** - Authentication, login, logout, and session management
-- **[3. Settings Endpoints](docs/api/api_docs/03_settings_endpoints.md)** - System settings management and global configuration
-- **[4. Admin Endpoints](docs/api/api_docs/04_admin_endpoints.md)** - Administrative operations and user management
-- **[5. Account Endpoints](docs/api/api_docs/05_account_endpoints.md)** - User account management and preferences
-- **[6. User Endpoints](docs/api/api_docs/06_user_endpoints.md)** - User profile and personal settings management
-- **[7. OPNsense Endpoints](docs/api/api_docs/07_opnsense_endpoints.md)** - Direct OPNsense firewall integration and operations
-- **[8. Host Group Management](docs/api/api_docs/08_host_group_management_endpoints.md)** - Network group assignment and management operations
-- **[9. Utility Endpoints](docs/api/api_docs/09_utility_endpoints.md)** - Helper functions and utility operations
-- **[10. VPN Endpoints](docs/api/api_docs/10_vpn_endpoints.md)** - VPN connection monitoring and management
-- **[11. Analytics Endpoints](docs/api/api_docs/11_analytics_endpoints.md)** - System analytics, monitoring, and reporting
-- **[12. Self-Service Group Types](docs/api/api_docs/12_self_service_group_types.md)** - Self-service group configuration and management
-- **[13. MAC Tracking Endpoints](docs/api/api_docs/13_mac_tracking_endpoints.md)** - MAC address tracking, discovery, and management
-- **[14. Unmanaged Groups Endpoints](docs/api/api_docs/14_unmanaged_groups_endpoints.md)** - Unmanaged group operations and configuration
-- **[15. Host Alias Last Operation](docs/api/api_docs/15_host_alias_last_operation_endpoint.md)** - Host alias operation tracking and status
-- **[16. Network Group Host Aliases](docs/api/api_docs/16_network_group_host_aliases_endpoint.md)** - Network group alias management and operations
-- **[17. MAC Exclusion Endpoints](docs/api/api_docs/17_mac_exclusion_endpoints.md)** - MAC address exclusion management and configuration
-- **[18. Two-Factor Authentication Endpoints](docs/api/api_docs/18_2fa_management_endpoints.md)** - Two-factor authentication setup and management
-- **[19. Admin Analytics Endpoints](docs/api/api_docs/19_admin_analytics_endpoints.md)** - Administrative analytics, monitoring, and reporting
-- **[20. Account Analytics Endpoints](docs/api/api_docs/20_account_analytics_endpoints.md)** - User account analytics and usage statistics
-- **[21. MAC Tracking Analytics Endpoints](docs/api/api_docs/21_mac_tracking_analytics_endpoints.md)** - MAC tracking analytics, reporting, and statistics
-- **[22. API Key Analytics Endpoints](docs/api/api_docs/22_api_key_analytics_endpoints.md)** - API key usage analytics and statistics
-- **[23. System Services Endpoints](docs/api/api_docs/23_system_services_endpoints.md)** - System services management and control operations
-- **[24. UI Configuration Endpoints](docs/api/api_docs/24_ui_configuration_endpoints.md)** - User interface configuration and customization
-- **[25. Audit Log Management Endpoints](docs/api/api_docs/25_audit_log_management_endpoints.md)** - Audit log management, retention, and operations
-- **[26. VPN Service Control Endpoints](docs/api/api_docs/26_vpn_service_control_endpoints.md)** - VPN service control and management operations
-- **[27. OPNsense Advanced Endpoints](docs/api/api_docs/27_opnsense_advanced_endpoints.md)** - Advanced OPNsense operations and configuration
-- **[28. MAC Exclusion Management Endpoints](docs/api/api_docs/28_mac_exclusion_management_endpoints.md)** - Advanced MAC exclusion management and operations
-- **[29. Additional Settings Endpoints](docs/api/api_docs/29_additional_settings_endpoints.md)** - Additional system settings and configuration options
-- **[30. Self-Service Additional Endpoints](docs/api/api_docs/30_self_service_additional_endpoints.md)** - Additional self-service features and functionality
-- **[31. Update Endpoints](docs/api/api_docs/31_update_endpoints.md)** - Update system and components
+- **[Full API Documentation](docs/api/api_docs/API_Index.md)** - Complete API reference with 100+ endpoints across all features (authentication, device management, VPN, analytics, schedules, and more)
 
 ---
 
