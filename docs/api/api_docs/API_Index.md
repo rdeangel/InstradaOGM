@@ -355,6 +355,7 @@ API key rate limit exceeded responses include detailed information:
 
 ---
 
-**Last Updated**: 2025-11-06 | **API Version**: 1.0 | **Documentation Version**: 2.0 | **Category**: API Documentation
+**Last Updated**: 2026-03-26 | **API Version**: 1.1 | **Documentation Version**: 2.1 | **Category**: API Documentation
+
 
 For detailed implementation examples, comprehensive error handling, and specific use cases, please refer to the individual API documentation files listed in the Quick Reference Guide section.

@@ -252,6 +252,50 @@ curl -X GET "{{SERVER_URL}}/api/opnsense/aliases" \
     - `enabled`: Whether alias is enabled
     - `uuid`: OPNsense UUID
 
+### POST /api/opnsense/aliases
+
+**Description**: Create a new host alias in OPNsense for administrative purposes.
+
+**Authentication**: Required (session or API key with ADMIN/SUPER_ADMIN role)
+
+**Role Access**:
+- **USER**: ❌ Forbidden
+- **ADMIN**: ✅ Full access
+- **SUPER_ADMIN**: ✅ Full access
+
+**Request Body**:
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | Yes | Unique name for the host alias |
+| `content` | string | Yes | IP address (or comma/newline-separated list of IPs) |
+| `description` | string | No | Optional description for the alias |
+
+**Example Request**:
+```bash
+curl -X POST "{{SERVER_URL}}/api/opnsense/aliases" \
+  -H "Authorization: Bearer {{API_KEY}}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "NEW_SERVER_HOST",
+    "content": "192.168.1.50",
+    "description": "Production database server"
+  }'
+```
+
+**Success Response** `200 OK`:
+```json
+{
+  "result": "saved",
+  "uuid": "45653f16-70b0-4a44-b311-abda1da4c2b5"
+}
+```
+
+**Error Responses**:
+- `400 Bad Request`: Missing required fields in request body
+- `401 Unauthorized`: Authentication required
+- `403 Forbidden`: Insufficient permissions (requires ADMIN role)
+- `500 Internal Server Error`: OPNsense API failure or connection issues
+
 ## Host Aliases
 
 ### GET /api/opnsense/host-alias-management
@@ -410,6 +454,127 @@ curl -X GET "{{SERVER_URL}}/api/opnsense/host-alias-management" \
   - `uuid`: OPNsense UUID
   - `detectedMac`: Detected MAC address
   - `detectedVendor`: Detected vendor information
+
+### POST /api/opnsense/host-alias-management
+
+**Description**: Create a new host alias in OPNsense. This endpoint includes automatic **duplicate IP detection** to prevent creating multiple host aliases for the same device.
+
+**Authentication**: Required (session or API key with ADMIN/SUPER_ADMIN role)
+
+**Role Access**:
+- **USER**: ❌ Forbidden
+- **ADMIN**: ✅ Full access
+- **SUPER_ADMIN**: ✅ Full access
+
+**Request Body**:
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `alias.name` | string | Yes | Unique name for the host alias |
+| `alias.type` | string | Yes | Must be `host` for this endpoint |
+| `alias.content` | string | Yes | IP address for the host |
+| `alias.description` | string | No | Optional description |
+| `alias.enabled` | string | No | "1" (default) or "0" |
+
+**Example Request**:
+```bash
+curl -X POST "{{SERVER_URL}}/api/opnsense/host-alias-management" \
+  -H "Authorization: Bearer {{API_KEY}}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "alias": {
+      "name": "KITCHEN_TV",
+      "type": "host",
+      "content": "192.168.1.75",
+      "description": "Smart TV in kitchen"
+    }
+  }'
+```
+
+**Success Response** `201 Created`:
+```json
+{
+  "message": "Host alias created and OPNsense reconfigured successfully.",
+  "uuid": "new-alias-uuid-here"
+}
+```
+
+**Error Responses**:
+- `400 Bad Request`: Missing required fields (name, type, content)
+- `409 Conflict`: A host alias already exists with the same IP address
+- `500 Internal Server Error`: Failed to create alias or reconfigure OPNsense
+
+### PUT /api/opnsense/host-alias-management
+
+**Description**: Rename an existing host alias. This endpoint validates unmanaged group membership to ensure self-service users do not accidentally rename devices that are under strict administrative control.
+
+**Authentication**: Required
+
+**Query Parameters**:
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `uuid` | string | Yes | The OPNsense UUID of the alias to update |
+
+**Request Body**:
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `alias.name` | string | Yes | The new name for the host alias |
+
+**Example Request**:
+```bash
+curl -X PUT "{{SERVER_URL}}/api/opnsense/host-alias-management?uuid=45653f16-70b0-4a44-b311-abda1da4c2b5" \
+  -H "Authorization: Bearer {{API_KEY}}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "alias": {
+      "name": "OFFICE_DESK_PRIMARY"
+    }
+  }'
+```
+
+**Success Response** `200 OK`:
+```json
+{
+  "message": "Host alias 45653f16-70b0-4a44-b311-abda1da4c2b5 updated and OPNsense reconfigured successfully."
+}
+```
+
+**Error Responses**:
+- `403 Forbidden`: Renaming rejected because the host is a member of one or more **unmanaged groups**.
+- `404 Not Found`: Host alias with provided UUID does not exist.
+
+### DELETE /api/opnsense/host-alias-management
+
+**Description**: Delete a host alias from OPNsense. If deletion is successful, the system automatically performs a **cascading cleanup** of all associated database permissions for that UUID.
+
+**Authentication**: Required
+
+**Query Parameters**:
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `uuid` | string | Yes | The OPNsense UUID of the alias to delete |
+
+**Example Request**:
+```bash
+curl -X DELETE "{{SERVER_URL}}/api/opnsense/host-alias-management?uuid=45653f16-70b0-4a44-b311-abda1da4c2b5" \
+  -H "Authorization: Bearer {{API_KEY}}"
+```
+
+**Success Response** `200 OK`:
+```json
+{
+  "success": true,
+  "message": "Host alias 45653f16-70b0-4a44-b311-abda1da4c2b5 deleted and OPNsense reconfigured successfully."
+}
+```
+
+**Partial Success** `207 Multi-Status`:
+```json
+{
+  "success": true,
+  "message": "Host alias deleted, but an error occurred during reconfiguration.",
+  "reconfigureError": "..."
+}
+```
 
 ### GET /api/opnsense/host-alias-management-admin
 
@@ -1842,4 +2007,4 @@ The `hasArpEntry` field provides real-time connectivity information by checking 
 
 ---
 
-**Last Updated**: 2025-11-06 | **API Version**: v1.0.0 | **Category**: API Documentation
+**Last Updated**: 2026-03-26 | **API Version**: v1.0.0 | **Category**: API Documentation
