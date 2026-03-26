@@ -862,7 +862,7 @@ export function MacTrackingTable({ onRefresh, onOpenServiceControl }: MacTrackin
                                 <Tooltip>
                                   <TooltipTrigger asChild>
                                     <Badge className="bg-orange-500 hover:bg-orange-600 text-white text-xs cursor-help">
-                                      DHCP Conflict
+                                      DHCP
                                     </Badge>
                                   </TooltipTrigger>
                                   <TooltipContent className="max-w-xs">
@@ -1279,14 +1279,14 @@ export function MacTrackingTable({ onRefresh, onOpenServiceControl }: MacTrackin
                           )}
                         </TableCell>
                         <TableCell>
-                          <div className="flex items-center gap-2 flex-wrap">
+                          <div className="flex flex-col items-start gap-0.5">
                             {!(mac.exclusion?.enabled && mac.exclusion?.exclusionMode === 'FULL') && (
                               <TooltipProvider>
                                 <Tooltip>
                                   <TooltipTrigger asChild>
                                     <Badge
                                       variant={mac.isActive ? 'success' : 'destructive'}
-                                      className="cursor-help"
+                                      className="cursor-help text-xs"
                                     >
                                       {mac.isActive ? 'Active' : 'Inactive'}
                                     </Badge>
@@ -1314,7 +1314,7 @@ export function MacTrackingTable({ onRefresh, onOpenServiceControl }: MacTrackin
                                 <Tooltip>
                                   <TooltipTrigger asChild>
                                     <Badge className="bg-orange-500 hover:bg-orange-600 text-white text-xs cursor-help">
-                                      DHCP Conflict
+                                      DHCP
                                     </Badge>
                                   </TooltipTrigger>
                                   <TooltipContent className="max-w-xs">
