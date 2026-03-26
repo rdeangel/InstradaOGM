@@ -29,7 +29,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { Switch } from '@/components/ui/switch';
-import { Loader2, AlertTriangle, Info, ArrowUp, ArrowDown, Trash2, Plus, Play, Search, ChevronsUpDown, Check } from 'lucide-react';
+import { Loader2, AlertTriangle, Info, ArrowUp, ArrowDown, Trash2, Plus, Play, Search, ChevronsUpDown, Check, Wand2 } from 'lucide-react';
 import {
   Sheet,
   SheetContent,
@@ -44,6 +44,7 @@ import { useOpnsenseNetworkGroups } from '@/hooks/use-opnsense-network-groups';
 import type { NetworkGroup } from '@/types/opnsense';
 import { CronExpressionParser } from 'cron-parser';
 import cronstrue from 'cronstrue';
+import { CronBuilderModal } from './CronBuilderModal';
 
 // Inline pure helper — avoids importing server-only schedule-validation module
 function checkWindowOverlaps(windows: Array<{ startTime: string; endTime: string }>): {
@@ -214,6 +215,7 @@ export function ScheduleForm({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [cronBuilderOpen, setCronBuilderOpen] = useState(false);
   const [hostAliasOptions, setHostAliasOptions] = useState<{ value: string; label: string; isDisabled: boolean }[]>([]);
   const [hostAliasOptionsLoading, setHostAliasOptionsLoading] = useState(true);
   const [aliasPopoverOpen, setAliasPopoverOpen] = useState(false);
@@ -727,13 +729,23 @@ export function ScheduleForm({
           <div className="space-y-4">
             <div className="space-y-1">
               <Label htmlFor="cron-expr">Cron Expression</Label>
-              <Input
-                id="cron-expr"
-                value={values.cronExpression}
-                onChange={e => set('cronExpression', e.target.value)}
-                placeholder="e.g. 0 9 * * 1-5"
-                className="font-mono"
-              />
+              <div className="flex items-center gap-2">
+                <Input
+                  id="cron-expr"
+                  value={values.cronExpression}
+                  onChange={e => set('cronExpression', e.target.value)}
+                  placeholder="e.g. 0 9 * * 1-5"
+                  className="font-mono flex-1"
+                />
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  onClick={() => setCronBuilderOpen(true)}
+                >
+                  <Wand2 className="h-4 w-4 mr-2 shrink-0" />
+                  Design Schedule
+                </Button>
+              </div>
               {cronPreview && (
                 <p className={`text-xs ${cronValid ? 'text-muted-foreground' : 'text-destructive'}`}>
                   {cronPreview}
@@ -789,6 +801,12 @@ export function ScheduleForm({
           </div>
         </SheetContent>
       </Sheet>
+      <CronBuilderModal
+        open={cronBuilderOpen}
+        onOpenChange={setCronBuilderOpen}
+        initialValue={values.cronExpression}
+        onSave={(expr) => set('cronExpression', expr)}
+      />
     </TooltipProvider>
   );
 }
