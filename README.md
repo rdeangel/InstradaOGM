@@ -65,25 +65,6 @@ InstradaOGM is a third-party tool and is **not affiliated with, endorsed by, or 
 
 </div>
 
-## 🎧 Podcast
-
-Dive deeper into InstradaOGM with this AI generated podcast — discover the features, use cases, and vision behind the project
-
-[![Play](https://img.shields.io/badge/Play_Audio-10000?style=for-the-badge&logo=youtube&logoColor=white)](https://github.com/user-attachments/files/24063885/Podcast_InstradaOGM.mp3)</br>
-
-_Podcast generated using the [Gemini Podcast Studio](https://github.com/rdeangel/podcast_studio_gemini)_
-
----
-
-<div align="center">
-
-💖 If this software helps you:
-
-<a href="https://buymeacoffee.com/rdeangel" target="_blank" title="Support InstradaOGM Development">
-  <img src="docs/images/buy_me_a_coffee.png" alt="Buy Me a Coffee" width="100">
-</a>
-</div>
-
 ---
 
 ## 📱 Install as PWA
@@ -110,17 +91,12 @@ Requires HTTPS access. Once installed, the app runs in its own window, separate 
 - **Granual Device Access Priviledges**: Give access to your Users and associated named API keys
 - **Monitoring and Auditing of Changes**: Extensive monitoring and analytics for any activity
 
-### 🧪 **Developers & QA Teams**
+### 🧪 **Developers & Technical Users**
 - **Multi-Region Testing**: Test applications from different geographic locations using VPN routing (Especially useful on devices that don't support VPN client apps)
 - **Environment Isolation**: Isolate development, staging, and production device access
 - **CI/CD Integration**: Automate network policy changes in deployment pipelines
 - **API Testing**: Comprehensive REST API for automation and integration
 - **Device Simulation**: Quickly switch device network contexts for testing scenarios
-
-### 🏢 **Small Business & IT Teams**
-- **Employee Device Management**: Control which devices can access company resources
-- **Compliance & Security**: Meet security requirements with detailed audit logging
-- **Incident Response**: Instantly isolate compromised devices by changing group membership
 
 > [!NOTE]
 > **Security Architecture**: This software manages firewall policies mostly through group memberships. Overall network security depends on your underlying network design, hardware capabilities, firewall configuration and security policies. 
