@@ -74,6 +74,7 @@ AGENTS.md
 .agent/*
 .claude/*
 .opencode/*
+.mcp.json
 
 # Traefik runtime files (generated, contains secrets)
 traefik/runtime/
@@ -104,3 +105,4 @@ internal/
 
 # Test results (untracked)
 .test-results/
+
