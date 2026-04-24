@@ -1,7 +1,9 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import type { NetworkGroup, OpnsenseAliasDetailFromExport } from '@/types/opnsense';
+import type { NetworkGroup, OpnsenseAliasDetailFromExport, NetworkAlias } from '@/types/opnsense';
+import { useNetworkAliasesEnabled } from '@/hooks/useNetworkAliasesEnabled';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 // Extend OpnsenseAliasDetailFromExport to include detectedMac and detectedVendor
 interface EnrichedOpnsenseAliasDetailFromExport extends OpnsenseAliasDetailFromExport {
@@ -16,7 +18,7 @@ import { logger } from '@/lib/logger';
 
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, AlertCircle, ChevronRight, ChevronLeft, ChevronDown, ChevronUp } from 'lucide-react';
+import { Loader2, AlertCircle, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Trash2, Waypoints } from 'lucide-react';
 import { BulkOperationProgressModal, useBulkOperationProgressModal } from '@/components/ui/bulk-operation-progress-modal';
 import {
   createInitialBulkProgress,
@@ -99,6 +101,15 @@ export function NetworkGroupMembersManager({
   const [lastSelectedAvailableAnchor, setLastSelectedAvailableAnchor] = useState<string | null>(null);
   const [lastSelectedAssociatedAnchor, setLastSelectedAssociatedAnchor] = useState<string | null>(null);
   const [associatedSearchHelpOpen, setAssociatedSearchHelpOpen] = useState(false);
+
+  // Network alias tab state
+  const { manageNetworkAliasesEnabled } = useNetworkAliasesEnabled();
+  const [activeDialogTab, setActiveDialogTab] = useState('host-aliases');
+  const [allNetworkAliases, setAllNetworkAliases] = useState<NetworkAlias[]>([]);
+  const [associatedNetworkAliasUuids, setAssociatedNetworkAliasUuids] = useState<string[]>([]);
+  const [originalAssociatedNetworkAliasUuids, setOriginalAssociatedNetworkAliasUuids] = useState<string[]>([]);
+  const [networkAliasSearch, setNetworkAliasSearch] = useState('');
+  const [isLoadingNetworkAliases, setIsLoadingNetworkAliases] = useState(false);
 
   // New state for host migration feature
   const [allowHostMigration, setAllowHostMigration] = useState(false);
@@ -323,15 +334,38 @@ export function NetworkGroupMembersManager({
     }
   }, [toast, enableGroupTypes, isMultiSelectGroup, opnsenseGroupDisplays]);
 
+  const fetchNetworkAliasesForDialog = useCallback(async (group: NetworkGroup) => {
+    if (!manageNetworkAliasesEnabled) return;
+    setIsLoadingNetworkAliases(true);
+    try {
+      const resp = await fetch('/api/opnsense/network-aliases', { cache: 'no-store' });
+      if (!resp.ok) throw new Error('Failed to fetch network aliases');
+      const data: NetworkAlias[] = await resp.json();
+      setAllNetworkAliases(data);
+
+      // Determine which are currently members of this group by name match in rawContent
+      const memberNames = new Set((group.rawContent || '').split('\n').map(n => n.trim()).filter(Boolean));
+      const currentAssociated = data.filter(a => memberNames.has(a.name)).map(a => a.uuid);
+      setAssociatedNetworkAliasUuids(currentAssociated);
+      setOriginalAssociatedNetworkAliasUuids(currentAssociated);
+    } catch (err) {
+      logger.error('Error fetching network aliases for dialog:', err);
+    } finally {
+      setIsLoadingNetworkAliases(false);
+    }
+  }, [manageNetworkAliasesEnabled]);
+
   useEffect(() => {
     if (isOpen && editingAlias) {
       // For MultiSelect groups, enable "migration" (additive assignment) by default
       // For SingleSelect groups, reset to false when dialog opens
       const shouldEnableMigration = isMultiSelectGroup;
       setAllowHostMigration(shouldEnableMigration);
+      setActiveDialogTab('host-aliases');
       fetchHostAliasesForDialog(editingAlias, shouldEnableMigration);
+      fetchNetworkAliasesForDialog(editingAlias);
     }
-  }, [isOpen, editingAlias, fetchHostAliasesForDialog, isMultiSelectGroup]);
+  }, [isOpen, editingAlias, fetchHostAliasesForDialog, fetchNetworkAliasesForDialog, isMultiSelectGroup]);
 
   // Helper function for standard batch operations (move-only behavior)
   const handleStandardBatchOperations = async (
@@ -623,6 +657,14 @@ export function NetworkGroupMembersManager({
       }
     }
 
+    // Check if network alias associated set has changed
+    const currentNetUuids = new Set(associatedNetworkAliasUuids);
+    const originalNetUuids = new Set(originalAssociatedNetworkAliasUuids);
+    if (currentNetUuids.size !== originalNetUuids.size) return true;
+    for (const uuid of currentNetUuids) {
+      if (!originalNetUuids.has(uuid)) return true;
+    }
+
     return false;
   };
 
@@ -685,6 +727,29 @@ export function NetworkGroupMembersManager({
       } else {
         // All other cases = standard batch operations without migration
         await handleStandardBatchOperations(hostsToAdd, hostsToRemove, failedOperations, false, allHostAliases);
+      }
+
+      // Save network alias members if changed and feature enabled
+      if (manageNetworkAliasesEnabled && editingAlias) {
+        const originalNetSet = new Set(originalAssociatedNetworkAliasUuids);
+        const currentNetSet = new Set(associatedNetworkAliasUuids);
+        const netAliasesToAdd = associatedNetworkAliasUuids.filter(u => !originalNetSet.has(u));
+        const netAliasesToRemove = originalAssociatedNetworkAliasUuids.filter(u => !currentNetSet.has(u));
+        if (netAliasesToAdd.length > 0 || netAliasesToRemove.length > 0) {
+          try {
+            const netResp = await fetch(`/api/opnsense/network-groups/${editingAlias.uuid}/network-alias-members`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ add: netAliasesToAdd, remove: netAliasesToRemove }),
+            });
+            if (!netResp.ok) {
+              const netErr = await netResp.json().catch(() => ({}));
+              failedOperations.push(`Network Ranges: ${netErr.message || 'Failed to update'}`);
+            }
+          } catch (netErr) {
+            failedOperations.push(`Network Ranges: ${netErr instanceof Error ? netErr.message : 'Unknown error'}`);
+          }
+        }
       }
 
       allOperationsSuccessful = failedOperations.length === 0;
@@ -872,6 +937,18 @@ export function NetworkGroupMembersManager({
               </span>
             </DialogDescription>
           </DialogHeader>
+          <Tabs value={activeDialogTab} onValueChange={setActiveDialogTab} className="w-full">
+            <TabsList className="mb-4">
+              <TabsTrigger value="host-aliases">Host Aliases (Devices)</TabsTrigger>
+              {manageNetworkAliasesEnabled && (
+                <TabsTrigger value="network-ranges">
+                  <Waypoints className="h-3.5 w-3.5 mr-1.5" />
+                  Network Ranges
+                </TabsTrigger>
+              )}
+            </TabsList>
+
+            <TabsContent value="host-aliases">
           <div className="flex items-center space-x-2 mb-4">
             <Switch
               id="allow-host-migration"
@@ -1080,6 +1157,103 @@ export function NetworkGroupMembersManager({
               </div>
             </div>
           )}
+            </TabsContent>
+
+            {manageNetworkAliasesEnabled && (
+              <TabsContent value="network-ranges">
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <Waypoints className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm font-medium">Associated Network Ranges</span>
+                    <span className="text-xs text-muted-foreground">(CIDR aliases in this group)</span>
+                  </div>
+
+                  {/* Add dropdown */}
+                  {isLoadingNetworkAliases ? (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" /> Loading network aliases...
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="flex gap-2">
+                        <Input
+                          placeholder="Search and add a network alias..."
+                          value={networkAliasSearch}
+                          onChange={e => setNetworkAliasSearch(e.target.value)}
+                          className="flex-1"
+                        />
+                      </div>
+                      {/* Dropdown suggestions */}
+                      {networkAliasSearch.trim() && (
+                        <div className="border rounded-md max-h-40 overflow-y-auto bg-background shadow-sm">
+                          {allNetworkAliases
+                            .filter(a =>
+                              !associatedNetworkAliasUuids.includes(a.uuid) &&
+                              (a.name.toLowerCase().includes(networkAliasSearch.toLowerCase()) ||
+                               a.content.toLowerCase().includes(networkAliasSearch.toLowerCase()) ||
+                               (a.description && a.description.toLowerCase().includes(networkAliasSearch.toLowerCase())))
+                            )
+                            .map(a => (
+                              <div
+                                key={a.uuid}
+                                className="px-3 py-2 cursor-pointer hover:bg-muted text-sm flex justify-between items-center"
+                                onClick={() => {
+                                  setAssociatedNetworkAliasUuids(prev => [...prev, a.uuid]);
+                                  setNetworkAliasSearch('');
+                                }}
+                              >
+                                <span className="font-medium">{a.name}</span>
+                                <span className="text-muted-foreground font-mono text-xs">{a.content}</span>
+                              </div>
+                            ))}
+                          {allNetworkAliases.filter(a =>
+                            !associatedNetworkAliasUuids.includes(a.uuid) &&
+                            (a.name.toLowerCase().includes(networkAliasSearch.toLowerCase()) ||
+                             a.content.toLowerCase().includes(networkAliasSearch.toLowerCase()))
+                          ).length === 0 && (
+                            <p className="px-3 py-2 text-sm text-muted-foreground">No network aliases match.</p>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Associated list */}
+                      <ScrollArea className={`border rounded-md p-2 ${isMobile ? 'h-[200px]' : 'h-[300px]'}`}>
+                        {associatedNetworkAliasUuids.length === 0 ? (
+                          <p className="text-sm text-muted-foreground text-center py-8">No network ranges assigned to this group.</p>
+                        ) : (
+                          <ul className="space-y-1">
+                            {associatedNetworkAliasUuids.map(uuid => {
+                              const alias = allNetworkAliases.find(a => a.uuid === uuid);
+                              return (
+                                <li key={uuid} className="flex items-center justify-between py-1 px-2 rounded-sm hover:bg-muted/50 text-sm">
+                                  <div>
+                                    <span className="font-medium">{alias?.name ?? uuid}</span>
+                                    <span className="ml-2 text-muted-foreground font-mono text-xs">{alias?.content}</span>
+                                    {alias?.description && (
+                                      <div className="text-xs text-muted-foreground mt-0.5">{alias.description}</div>
+                                    )}
+                                  </div>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                                    onClick={() => setAssociatedNetworkAliasUuids(prev => prev.filter(u => u !== uuid))}
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </Button>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        )}
+                      </ScrollArea>
+                    </div>
+                  )}
+                </div>
+              </TabsContent>
+            )}
+          </Tabs>
+
           <DialogFooter>
             <DialogClose asChild>
               <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>

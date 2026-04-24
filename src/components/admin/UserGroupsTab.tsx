@@ -27,7 +27,7 @@ interface GroupWithCount extends Group {
   _count?: {
     users?: number;
     hostAliasPermissions?: number;
-    networkFilters?: number; // Add network filters count
+    networkFilters?: number;
   };
 }
 
@@ -55,7 +55,7 @@ import { Button } from '@/components/ui/button';
 import UserGroupMembersDialogOriginal from '@/components/admin/UserGroupMembersDialog';
 import SsoGroupMembersDialog from '@/components/admin/SsoGroupMembersDialog'; // Corrected import path
 import GroupHostAliasPermissionsDialogOriginal from '@/components/admin/GroupHostAliasPermissionsDialog';
-import { GroupNetworkFiltersManager, GroupNetworkFiltersManagerRef } from '@/components/admin/GroupNetworkFiltersManager'; // Import the new component and its ref type
+import { GroupNetworkFiltersManager, GroupNetworkFiltersManagerRef } from '@/components/admin/GroupNetworkFiltersManager';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -73,7 +73,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'; // Import Tooltip components
-import { Users as UsersIcon, PlusCircle, Edit, Trash2, Loader2, ShieldAlert, AlertCircle as AlertCircleIcon, RefreshCcw, XCircle } from 'lucide-react';
+import { Users as UsersIcon, PlusCircle, Edit, Trash2, Loader2, ShieldAlert, Shield, AlertCircle as AlertCircleIcon, RefreshCcw, XCircle } from 'lucide-react';
 import { ClientOnly } from '@/components/util/ClientOnly';
 // Removed unused import Badge
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';

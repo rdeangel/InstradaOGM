@@ -39,6 +39,7 @@ const iconMap: Record<IconName, LucideIcon> = {
 
 interface NetworkGroupsCardProps {
   userRole: Role | undefined;
+  mode?: 'host' | 'networkAlias';
   groups: NetworkGroup[];
   isLoadingGroups: boolean;
   selectedGroupId: string | null;

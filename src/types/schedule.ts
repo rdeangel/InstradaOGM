@@ -41,6 +41,7 @@ export const scheduleDaySchema = z.object({
 const ipListSelector = z.object({ ips: z.array(z.string().ip()).min(1) });
 const hostAliasSelector = z.object({ hostAliasUuids: z.array(z.string()).min(1) });
 const networkGroupSelector = z.object({ networkGroupUuid: z.string() });
+const networkAliasSelector = z.object({ networkAliasUuids: z.array(z.string().uuid()).min(1) });
 
 export const createScheduleSchema = z.object({
   name: z.string().min(1).max(100),
@@ -69,14 +70,15 @@ export const createScheduleSchema = z.object({
   days: z.array(scheduleDaySchema).optional(),
 
   // Targeting
-  targetType: z.enum(['IP_LIST', 'HOST_ALIAS', 'NETWORK_GROUP']),
-  targetSelector: z.union([ipListSelector, hostAliasSelector, networkGroupSelector]),
+  targetType: z.enum(['IP_LIST', 'HOST_ALIAS', 'NETWORK_GROUP', 'NETWORK_ALIAS']),
+  targetSelector: z.union([ipListSelector, hostAliasSelector, networkGroupSelector, networkAliasSelector]),
 })
 // Cross-validate targetSelector shape matches targetType
 .refine(data => {
   if (data.targetType === 'IP_LIST') return 'ips' in data.targetSelector;
   if (data.targetType === 'HOST_ALIAS') return 'hostAliasUuids' in data.targetSelector;
   if (data.targetType === 'NETWORK_GROUP') return 'networkGroupUuid' in data.targetSelector;
+  if (data.targetType === 'NETWORK_ALIAS') return 'networkAliasUuids' in data.targetSelector;
   return false;
 }, { message: 'targetSelector shape must match targetType' })
 // Cross-validate schedule type has required fields

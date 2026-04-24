@@ -42,6 +42,8 @@ interface GlobalSettingsUpdateData {
   enableApplicationSubtitle?: boolean;
   subtitleText?: string;
   enableLoginPageSubtitle?: boolean;
+  // Network Aliases Settings
+  manageNetworkAliasesEnabled?: boolean;
   // Cache Invalidation Support
   lastModified?: Date; // Explicitly include lastModified for cache invalidation
 }
@@ -110,6 +112,8 @@ export async function POST(request: Request) {
         enableApplicationSubtitle,
         subtitleText,
         enableLoginPageSubtitle,
+        // Network Aliases Settings
+        manageNetworkAliasesEnabled,
       }: Partial<GlobalSettings> = body;
 
       // Convert CustomLucideIcon objects to serializable format for database storage
@@ -518,6 +522,19 @@ export async function POST(request: Request) {
           userId,
           action: enableLoginPageSubtitle ? 'enableLoginPageSubtitle' : 'disableLoginPageSubtitle',
           details: { old_value: transformedCurrentSettings.enableLoginPageSubtitle, new_value: enableLoginPageSubtitle },
+          ipAddress,
+          userAgent,
+        });
+      }
+
+      // Handle manageNetworkAliasesEnabled
+      if (manageNetworkAliasesEnabled !== undefined && manageNetworkAliasesEnabled !== transformedCurrentSettings.manageNetworkAliasesEnabled) {
+        updateData.manageNetworkAliasesEnabled = manageNetworkAliasesEnabled;
+        auditDetails.manageNetworkAliasesEnabled = { old_value: transformedCurrentSettings.manageNetworkAliasesEnabled, new_value: manageNetworkAliasesEnabled };
+        await logAuditEvent({
+          userId,
+          action: manageNetworkAliasesEnabled ? 'enableNetworkAliasesManagement' : 'disableNetworkAliasesManagement',
+          details: { old_value: transformedCurrentSettings.manageNetworkAliasesEnabled, new_value: manageNetworkAliasesEnabled },
           ipAddress,
           userAgent,
         });

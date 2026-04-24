@@ -68,9 +68,9 @@ export async function GET(req: Request) {
         },
         _count: {
           select: {
-            users: true, // Local users count
-            hostAliasPermissions: true, // This will be overridden for wildcard groups
-            groupSpecificFilters: true, // Include network filters count
+            users: true,
+            hostAliasPermissions: true,
+            groupSpecificFilters: true,
           },
         },
       },

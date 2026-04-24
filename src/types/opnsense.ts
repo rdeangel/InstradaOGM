@@ -91,6 +91,15 @@ export interface OpnsenseAliasDetailFromExport {
   // Add other fields if present in the actual API response
 }
 
+export interface NetworkAlias {
+  uuid: string;
+  name: string;
+  type: 'network';
+  content: string; // CIDR, e.g. "192.168.1.0/24"
+  description: string;
+  enabled: '0' | '1'; // OPNsense returns strings, not booleans (review S6)
+  memberOfGroups?: { uuid: string; name: string }[];
+}
 
 export interface OpnsenseArpEntry {
   ip: string; // Corrected to match OPNsense API response

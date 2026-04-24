@@ -3,6 +3,9 @@ import { authenticateRequest, handleAuthResponse, trackUsageByAuthMethod } from 
 import { logger } from '@/lib/logger';
 import { exportAliases, get_arpTable } from '@/lib/opnsense-api';
 import { Role } from '@/types/opnsense';
+import { prisma } from '@/lib/prisma';
+import { enrichNetworkAliasesWithGroups } from '@/lib/network-alias-filtering';
+import type { NetworkAlias } from '@/types/opnsense';
 
 interface HostAlias {
   uuid: string;
@@ -48,7 +51,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ uuid
       return NextResponse.json({ error: 'Network group not found' }, { status: 404 });
     }
 
-    // Parse the network group's content to find host alias names
+    // Parse the network group's content to find member names
     const groupContent = networkGroup.content || '';
     const memberNames = groupContent.split('\n').map(name => name.trim()).filter(Boolean);
 
@@ -57,32 +60,50 @@ export async function GET(request: Request, { params }: { params: Promise<{ uuid
     const arpIps = new Set(arpTable.map(entry => entry.ip));
 
     // Find all host aliases that are referenced in this network group
-    const hostAliases: HostAlias[] = [];
+    const hostAliasMembers: HostAlias[] = [];
+    const rawNetworkAliasMembers: NetworkAlias[] = [];
+
+    // Check if network alias management feature is enabled
+    const globalSettings = await prisma.globalSettings.findFirst({ orderBy: { id: 'asc' } });
+    const networkAliasFeatureEnabled = globalSettings?.manageNetworkAliasesEnabled ?? false;
 
     for (const [uuid, aliasDetail] of Object.entries(allAliasesResponse.aliases.alias)) {
-      // Only consider host type aliases
-      if (aliasDetail.type === 'host' && memberNames.includes(aliasDetail.name)) {
-        // Check if any IP in the alias content has an ARP entry
+      if (!memberNames.includes(aliasDetail.name)) continue;
+
+      if (aliasDetail.type === 'host') {
         const ips = aliasDetail.content.split(/[,\s]+/).filter(ip => ip.trim());
         const hasArpEntry = ips.some(ip => arpIps.has(ip.trim()));
-
-        hostAliases.push({
-          uuid: uuid,
+        hostAliasMembers.push({
+          uuid,
           name: aliasDetail.name,
           content: aliasDetail.content,
           description: aliasDetail.description || '',
           enabled: aliasDetail.enabled || '1',
-          hasArpEntry: hasArpEntry,
+          hasArpEntry,
+        });
+      } else if (aliasDetail.type === 'network' && networkAliasFeatureEnabled) {
+        rawNetworkAliasMembers.push({
+          uuid,
+          name: aliasDetail.name,
+          type: 'network',
+          content: aliasDetail.content,
+          description: aliasDetail.description || '',
+          enabled: (aliasDetail.enabled as '0' | '1') || '1',
         });
       }
     }
 
+    // Apply managed-alias filter for ADMIN callers when feature is enabled; SUPER_ADMIN sees all
+    const networkAliasMembers = networkAliasFeatureEnabled
+      ? rawNetworkAliasMembers
+      : [];
+
     // Track usage for authenticated requests
     await trackUsageByAuthMethod(request, auth, 200);
 
-    return NextResponse.json(hostAliases);
+    return NextResponse.json({ hostAliasMembers, networkAliasMembers });
   } catch (error) {
-    logger.error('Error fetching host aliases for network group:', error);
+    logger.error('Error fetching members for network group:', error);
 
     // Track usage for authenticated requests (even failed ones)
     if (auth && auth.user) {

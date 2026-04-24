@@ -229,6 +229,8 @@ model GlobalSettings {
   // MAC Exclusion Settings
   enableMacExclusions    Boolean @default(true)  // Enable/disable exclusion functionality
   macExclusionRetentionDays Int    @default(365)    // Retention period for IP history (1-365 days)
+  // Network Alias Management Settings
+  manageNetworkAliasesEnabled Boolean @default(false) // Enable/disable network alias management feature
 }
 
 model GloballyDisabledGroup {
@@ -605,6 +607,7 @@ model ScheduleExecution {
   executedAt    DateTime @default(now())
   status        ScheduleExecutionStatus
   targetIps     Json
+  targetAliasNames Json?  // Populated only for NETWORK_ALIAS executions; stores alias names/CIDRs
   actionsRun    Json
   durationMs    Int?
   errorMessage  String?
@@ -625,6 +628,7 @@ enum ScheduleTargetType {
   IP_LIST
   HOST_ALIAS
   NETWORK_GROUP
+  NETWORK_ALIAS
 }
 
 enum ScheduleOpType {

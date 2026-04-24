@@ -664,6 +664,7 @@ export async function userHasDeviceIpAccess(userId: string, ipAddress: string): 
   }
 }
 
+
 // Optional: Add a middleware or modify the page component to use this function
 // Example usage in a page component (client-side check after server-side redirect/render):
 /*

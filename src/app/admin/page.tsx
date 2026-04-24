@@ -10,11 +10,13 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ClientOnly } from '@/components/util/ClientOnly';
 import HostAliasesTab from '@/components/admin/HostAliasesTab';
 import { NetworkGroupsTab } from '@/components/admin/NetworkGroupsTab'; // Import the new component
+import { NetworkAliasesTab } from '@/components/admin/NetworkAliasesTab';
 import { ManageDhcpCard } from '@/components/admin/ManageDhcpCard'; // Import the new card component
 import { SchedulingTab } from '@/components/admin/SchedulingTab';
 import { AppFooter } from '@/components/layout/AppFooter';
 import { AppHeader } from '@/components/layout/AppHeader';
-import { Loader2, Ban, LogIn, Network as NetworkIconLucide, Laptop, AlertCircle, Server, ChevronDown, ChevronUp, CalendarClock } from 'lucide-react';
+import { Loader2, Ban, LogIn, Network as NetworkIconLucide, Laptop, AlertCircle, Server, ChevronDown, ChevronUp, CalendarClock, Waypoints } from 'lucide-react';
+import { useNetworkAliasesEnabled } from '@/hooks/useNetworkAliasesEnabled';
 import { useToast } from '@/hooks/use-toast';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useLocalStorage } from '@/hooks/use-local-storage';
@@ -92,6 +94,8 @@ export default function AdminPage() {
   // State to track if data has been loaded for each tab
   const [hasLoadedNetworkGroups, setHasLoadedNetworkGroups] = useState(false);
   const [hasLoadedHostAliases, setHasLoadedHostAliases] = useState(false);
+  const [hasLoadedNetworkAliases, setHasLoadedNetworkAliases] = useState(false);
+  const { manageNetworkAliasesEnabled } = useNetworkAliasesEnabled();
 
   // Use useOpnsenseData to fetch groups and mappings (must be before fetchHostAliases)
   const {
@@ -329,9 +333,13 @@ export default function AdminPage() {
   // Handle ?tab= query param to allow direct linking to a tab
   useEffect(() => {
     const tabParam = searchParams?.get('tab');
-    const validTabs = ['network-groups', 'host-aliases', 'manage-dhcp', 'scheduling'];
+    const validTabs = ['network-groups', 'network-aliases', 'host-aliases', 'manage-dhcp', 'scheduling'];
     if (tabParam && validTabs.includes(tabParam)) {
-      setActiveTab(tabParam);
+      if (tabParam === 'network-aliases' && !manageNetworkAliasesEnabled) {
+        setActiveTab('network-groups');
+      } else {
+        setActiveTab(tabParam);
+      }
     }
   }, [searchParams, setActiveTab]);
 
@@ -379,6 +387,10 @@ export default function AdminPage() {
         setHasLoadedNetworkGroups(true);
       } else {
         handleNetworkGroupsRefresh(); // in-place spinner
+      }
+    } else if (value === 'network-aliases') {
+      if (!hasLoadedNetworkAliases) {
+        setHasLoadedNetworkAliases(true);
       }
     } else if (value === 'host-aliases') {
       if (!hasLoadedHostAliases) {
@@ -440,6 +452,7 @@ export default function AdminPage() {
   // Tab configuration for mobile dropdown
   const tabConfig = [
     { value: 'network-groups', label: 'Network Groups', icon: <NetworkIconLucide className="h-4 w-4" /> },
+    ...(manageNetworkAliasesEnabled ? [{ value: 'network-aliases', label: 'Network Aliases', icon: <Waypoints className="h-4 w-4" /> }] : []),
     { value: 'host-aliases', label: 'Host Aliases (Devices)', icon: <Laptop className="h-4 w-4" /> },
     { value: 'manage-dhcp', label: 'DHCP Reservations', icon: <Server className="h-4 w-4" /> },
     { value: 'scheduling', label: 'Scheduling', icon: <CalendarClock className="h-4 w-4" /> },
@@ -476,7 +489,7 @@ export default function AdminPage() {
           className="w-full flex flex-col flex-grow min-h-0"
         >
           {/* Hidden TabsList for mobile - needed for Tabs component to work */}
-          <TabsList className={`${isMobile ? 'sr-only' : 'grid w-full grid-cols-2 sm:grid-cols-2 md:grid-cols-4 h-auto'}`}>
+          <TabsList className={`${isMobile ? 'sr-only' : `grid w-full grid-cols-2 sm:grid-cols-2 ${manageNetworkAliasesEnabled ? 'md:grid-cols-5' : 'md:grid-cols-4'} h-auto`}`}>
             {tabConfig.map((tab) => (
               <TabsTrigger key={tab.value} value={tab.value}>
                 <ClientOnly><span className="mr-2">{tab.icon}</span></ClientOnly> {tab.label}
@@ -557,6 +570,12 @@ export default function AdminPage() {
                 onSearchTermChange={setNetworkGroupsSearchTerm}
                 allEmojiValues={allEmojiValues}
                 allFlagValues={allFlagValues}
+              />
+            )}
+
+            {activeTab === 'network-aliases' && manageNetworkAliasesEnabled && (
+              <NetworkAliasesTab
+                onConnectionError={() => setShowConnectionErrorModal(true)}
               />
             )}
 

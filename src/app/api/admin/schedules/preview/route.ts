@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { withAdminApiTracking } from '@/lib/api-route-wrapper';
 import { logger } from '@/lib/logger';
 import { createScheduleSchema } from '@/types/schedule';
-import { getNetworkGroups } from '@/lib/opnsense-api';
+import { getNetworkGroups, exportAliases } from '@/lib/opnsense-api';
 
 // POST /api/admin/schedules/preview - Dry-run preview
 // Uses POST (not GET) because the schedule definition in the body can be large
@@ -41,8 +41,24 @@ export const POST = withAdminApiTracking(async (request: NextRequest) => {
 
     // Resolve target IPs (simplified — full resolution is in the execution engine)
     let resolvedTargets: string[] = [];
+    const skippedAliasUuids: string[] = [];
+
     if (schedule.targetType === 'IP_LIST' && 'ips' in schedule.targetSelector) {
       resolvedTargets = schedule.targetSelector.ips;
+    } else if (schedule.targetType === 'NETWORK_ALIAS' && 'networkAliasUuids' in schedule.targetSelector) {
+      const uuids = schedule.targetSelector.networkAliasUuids as string[];
+      const aliasesResponse = await exportAliases().catch(() => null);
+      const aliases = aliasesResponse?.aliases?.alias ?? {};
+
+      for (const uuid of uuids) {
+        // eslint-disable-next-line security/detect-object-injection
+        const alias = aliases[uuid];
+        if (!alias || alias.type !== 'network') {
+          skippedAliasUuids.push(uuid);
+          continue;
+        }
+        resolvedTargets.push(alias.name);
+      }
     }
     // For HOST_ALIAS and NETWORK_GROUP, the full resolution requires OPNsense queries.
     // The preview endpoint shows what it can resolve; the execution engine does full resolution.
@@ -123,6 +139,7 @@ export const POST = withAdminApiTracking(async (request: NextRequest) => {
       simulatedAt: simulatedAt.toISOString(),
       scheduleDisabled: !schedule.enabled,
       resolvedTargets,
+      skippedAliasUuids,
       boundariesFiring,
     });
   } catch (error) {

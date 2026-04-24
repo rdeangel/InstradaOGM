@@ -78,4 +78,6 @@ export interface GlobalSettings {
   enableApplicationSubtitle?: boolean; // Enable/disable application subtitle feature
   subtitleText?: string; // Custom subtitle text to display under the main title
   enableLoginPageSubtitle?: boolean; // Enable/disable subtitle display on login page
+  // Network Aliases Management
+  manageNetworkAliasesEnabled?: boolean; // Enable/disable network alias management feature
 }

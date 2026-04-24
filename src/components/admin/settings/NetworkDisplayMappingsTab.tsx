@@ -628,19 +628,18 @@ export function NetworkDisplayMappingsTab({
           )}
           <div className="flex w-full justify-end md:w-auto gap-2">
             <Button variant="outline" onClick={async () => {
-              setIsButtonRefreshing(true); // Use local state for button
+              setIsButtonRefreshing(true);
               try {
-                // Refresh both display mappings and OPNsense group data in-place
                 await Promise.all([
                   fetchNetworkDisplayMappings(false),
                   onRefreshOpnsenseGroups(false)
                 ]);
               } finally {
-                setIsButtonRefreshing(false); // Use local state for button
+                setIsButtonRefreshing(false);
               }
             }} disabled={isLoadingOpnsenseGroups || isLoadingOpnsenseGroupDisplays || isSavingOpnsenseGroupDisplays || isButtonRefreshing || isRefreshing} size={isMobile ? "icon" : "default"}>
               <ClientOnly>
-                {(isButtonRefreshing || isRefreshing) ? ( // Show spinner if button is refreshing OR parent is refreshing
+                {(isButtonRefreshing || isRefreshing) ? (
                   <Loader2 className={cn("h-4 w-4 animate-spin", !isMobile && "mr-2")} />
                 ) : (
                   <RefreshCcw className={cn("h-4 w-4", !isMobile && "mr-2")} />
@@ -655,7 +654,7 @@ export function NetworkDisplayMappingsTab({
               variant={hasUnsavedChanges ? "default" : "outline"}
               className={cn(
                 hasUnsavedChanges ? "bg-orange-600 hover:bg-orange-700" : "",
-                !isMobile && "min-w-[120px]" // Fixed width to prevent layout shifts
+                !isMobile && "min-w-[120px]"
               )}
             >
               {isSavingOpnsenseGroupDisplays ? <Loader2 className={cn("h-4 w-4 animate-spin", !isMobile && "mr-2")} /> : <Save className={cn("h-4 w-4", !isMobile && "mr-2")} />}
@@ -908,8 +907,8 @@ export function NetworkDisplayMappingsTab({
                 />
               </>
             )}
-          </>
-        )}
+           </>
+         )}
       </CardContent>
 
       {/* Validation Modal */}

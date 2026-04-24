@@ -40,9 +40,19 @@ interface ActionResult {
   error?: string;
 }
 
+interface NetworkAliasActionResult {
+  operation: string;
+  targetGroupUuid?: string | null;
+  fromGroupUuid?: string | null;
+  aliasName: string;
+  success: boolean;
+  error?: string;
+}
+
 interface ExecutionSummary {
   targetIps: string[];
-  actionsRun: ActionResult[];
+  targetAliasNames?: string[];
+  actionsRun: ActionResult[] | NetworkAliasActionResult[];
   status: 'SUCCESS' | 'PARTIAL' | 'FAILED' | 'SKIPPED';
   durationMs: number;
   errorMessage?: string;
@@ -542,60 +552,99 @@ class ScheduleExecutionService {
       actions = schedule.recurringActions;
     }
 
-    // Resolve target IPs
-    let targetIps: string[] = [];
-    let resolveError: string | undefined;
-
-    try {
-      targetIps = await this.resolveTargets(schedule);
-    } catch (err) {
-      resolveError = err instanceof Error ? err.message : String(err);
-      logger.error(`Failed to resolve targets for schedule ${schedule.id}:`, err);
-    }
-
     let summary: ExecutionSummary;
 
-    if (resolveError) {
-      summary = {
-        targetIps: [],
-        actionsRun: [],
-        status: 'FAILED',
-        durationMs: Date.now() - startTime,
-        errorMessage: resolveError,
-      };
-    } else if (targetIps.length === 0) {
-      summary = {
-        targetIps: [],
-        actionsRun: [],
-        status: 'SKIPPED',
-        durationMs: Date.now() - startTime,
-        errorMessage: 'No target IPs resolved',
-      };
-    } else {
-      const release = await this.mutex.acquire();
-      try {
-        // Re-check enabled inside the mutex: toggle may have fired between the
-        // initial check (above) and mutex acquisition.
-        const freshSchedule = await prisma.scheduledAssignment.findUnique({
-          where: { id: event.scheduleId },
-          select: { enabled: true },
+    if (schedule.targetType === 'NETWORK_ALIAS') {
+      // ── NETWORK_ALIAS path ──────────────────────────────────────────────────
+      const globalSettings = await prisma.globalSettings.findFirst({ orderBy: { id: 'asc' } });
+      if (!globalSettings?.manageNetworkAliasesEnabled) {
+        summary = {
+          targetIps: [],
+          targetAliasNames: [],
+          actionsRun: [],
+          status: 'SKIPPED',
+          durationMs: Date.now() - startTime,
+          errorMessage: 'FEATURE_DISABLED',
+        };
+        await logAuditEvent({
+          action: 'SCHEDULE_EXECUTION_SKIPPED_FEATURE_DISABLED',
+          details: { scheduleId: schedule.id, scheduleName: schedule.name, targetType: 'NETWORK_ALIAS' },
         });
-        if (!freshSchedule?.enabled) {
-          logger.info(
-            `Schedule ${event.scheduleId} was disabled between enabled-check and mutex acquire, skipping execution`,
-          );
+      } else {
+        const aliasNames = await this.resolveNetworkAliasTargets(schedule);
+        if (aliasNames.length === 0) {
           summary = {
             targetIps: [],
+            targetAliasNames: [],
             actionsRun: [],
             status: 'SKIPPED',
             durationMs: Date.now() - startTime,
-            errorMessage: 'Schedule disabled',
+            errorMessage: 'No network alias targets resolved',
           };
         } else {
-          summary = await this.executeActions(targetIps, actions, schedule);
+          const release = await this.mutex.acquire();
+          try {
+            summary = await this.executeNetworkAliasActions(aliasNames, actions, schedule);
+          } finally {
+            release();
+          }
         }
-      } finally {
-        release();
+      }
+    } else {
+      // ── Existing IP/HOST_ALIAS/NETWORK_GROUP path ───────────────────────────
+      // Resolve target IPs
+      let targetIps: string[] = [];
+      let resolveError: string | undefined;
+
+      try {
+        targetIps = await this.resolveTargets(schedule);
+      } catch (err) {
+        resolveError = err instanceof Error ? err.message : String(err);
+        logger.error(`Failed to resolve targets for schedule ${schedule.id}:`, err);
+      }
+
+      if (resolveError) {
+        summary = {
+          targetIps: [],
+          actionsRun: [],
+          status: 'FAILED',
+          durationMs: Date.now() - startTime,
+          errorMessage: resolveError,
+        };
+      } else if (targetIps.length === 0) {
+        summary = {
+          targetIps: [],
+          actionsRun: [],
+          status: 'SKIPPED',
+          durationMs: Date.now() - startTime,
+          errorMessage: 'No target IPs resolved',
+        };
+      } else {
+        const release = await this.mutex.acquire();
+        try {
+          // Re-check enabled inside the mutex: toggle may have fired between the
+          // initial check (above) and mutex acquisition.
+          const freshSchedule = await prisma.scheduledAssignment.findUnique({
+            where: { id: event.scheduleId },
+            select: { enabled: true },
+          });
+          if (!freshSchedule?.enabled) {
+            logger.info(
+              `Schedule ${event.scheduleId} was disabled between enabled-check and mutex acquire, skipping execution`,
+            );
+            summary = {
+              targetIps: [],
+              actionsRun: [],
+              status: 'SKIPPED',
+              durationMs: Date.now() - startTime,
+              errorMessage: 'Schedule disabled',
+            };
+          } else {
+            summary = await this.executeActions(targetIps, actions, schedule);
+          }
+        } finally {
+          release();
+        }
       }
     }
 
@@ -610,6 +659,7 @@ class ScheduleExecutionService {
         executedAt: new Date(),
         status: summary.status,
         targetIps: summary.targetIps,
+        targetAliasNames: summary.targetAliasNames !== undefined ? summary.targetAliasNames : undefined,
         actionsRun: summary.actionsRun as object[],
         durationMs: summary.durationMs,
         errorMessage: summary.errorMessage,
@@ -1413,6 +1463,165 @@ class ScheduleExecutionService {
       status,
       durationMs: 0, // set by caller
       errorMessage,
+    };
+  }
+
+  // ─── Private: NETWORK_ALIAS execution ────────────────────────────────────────
+
+  private async resolveNetworkAliasTargets(schedule: { targetSelector: unknown; id?: string }): Promise<string[]> {
+    const selector = schedule.targetSelector as { networkAliasUuids?: string[] };
+    const uuids = selector?.networkAliasUuids ?? [];
+    if (uuids.length === 0) return [];
+
+    const aliasesResponse = await exportAliases();
+    const aliases = aliasesResponse?.aliases?.alias ?? {};
+
+    const names: string[] = [];
+    for (const uuid of uuids) {
+      // eslint-disable-next-line security/detect-object-injection
+      const alias = aliases[uuid];
+      if (!alias) {
+        logger.warn(`[resolveNetworkAliasTargets] UUID ${uuid} not found in OPNsense — skipping`);
+        await logAuditEvent({
+          action: 'OPNSENSE_GROUP_NETWORK_ALIAS_SKIPPED_NOT_FOUND',
+          details: { uuid, scheduleId: schedule.id },
+        });
+        continue;
+      }
+      if (alias.type !== 'network') {
+        logger.warn(`[resolveNetworkAliasTargets] UUID ${uuid} has type '${alias.type}', expected 'network' — skipping`);
+        await logAuditEvent({
+          action: 'OPNSENSE_GROUP_NETWORK_ALIAS_SKIPPED_WRONG_TYPE',
+          details: { uuid, aliasName: alias.name, scheduleId: schedule.id },
+        });
+        continue;
+      }
+      names.push(alias.name);
+    }
+    return names;
+  }
+
+  private async executeNetworkAliasActions(
+    aliasNames: string[],
+    actions: Array<{
+      operation: string;
+      targetGroupUuid: string | null;
+      fromGroupUuid: string | null;
+      sortOrder: number;
+    }>,
+    schedule: { id: string; name: string },
+  ): Promise<ExecutionSummary> {
+    const sortedActions = [...actions].sort((a, b) => a.sortOrder - b.sortOrder);
+    const results: NetworkAliasActionResult[] = [];
+
+    const [allGroups, groupDisplays] = await Promise.all([
+      getNetworkGroups(),
+      prisma.opnsenseGroupDisplay.findMany(),
+    ]);
+    allGroups.forEach((g) => {
+      const display = groupDisplays.find((d) => d.opnsenseUuid === g.uuid);
+      if (display) g.friendlyName = display.friendlyName;
+    });
+
+    const groupMap = new Map(allGroups.map((g) => [g.uuid, g]));
+
+    // Live content state per group
+    const groupContentMap = new Map<string, string[]>(
+      allGroups.map((g) => [g.uuid, parseGroupContent(g.rawContent, g.name)]),
+    );
+
+    const makeGroupUpdateOp = (uuid: string, content: string[]): BatchAliasOperation => {
+      const g = groupMap.get(uuid)!;
+      return {
+        type: 'update',
+        uuid,
+        payload: {
+          alias: {
+            enabled: g.enabled ? '1' : '0',
+            name: g.name,
+            type: g.type || 'networkgroup',
+            content: content.join('\n'),
+            description: g.description || '',
+            proto: g.proto || '',
+            interface: g.interface || '',
+            counters: g.counters || '',
+            updatefreq: g.updatefreq || '',
+            categories: g.categories || '',
+          },
+        },
+      };
+    };
+
+    const scheduleCtx = { authMethod: 'SCHEDULED', scheduleId: schedule.id, scheduleName: schedule.name };
+
+    for (const action of sortedActions) {
+      const ops: BatchAliasOperation[] = [];
+
+      if (action.operation === 'ASSIGN' && action.targetGroupUuid) {
+        const currentContent = groupContentMap.get(action.targetGroupUuid) ?? [];
+        // MultiSelect semantics only — no eviction
+        const toAdd = aliasNames.filter(n => !currentContent.includes(n));
+        if (toAdd.length > 0) {
+          const newContent = [...currentContent, ...toAdd];
+          groupContentMap.set(action.targetGroupUuid, newContent);
+          ops.push(makeGroupUpdateOp(action.targetGroupUuid, newContent));
+        }
+        for (const aliasName of aliasNames) {
+          await logAuditEvent({ action: 'OPNSENSE_GROUP_NETWORK_ALIAS_ASSIGN_ATTEMPT', details: { ...scheduleCtx, targetGroupUuid: action.targetGroupUuid, aliasName } });
+        }
+      } else if (action.operation === 'UNASSIGN' && action.targetGroupUuid) {
+        const currentContent = groupContentMap.get(action.targetGroupUuid) ?? [];
+        const newContent = currentContent.filter(n => !aliasNames.includes(n));
+        groupContentMap.set(action.targetGroupUuid, newContent);
+        ops.push(makeGroupUpdateOp(action.targetGroupUuid, newContent));
+        for (const aliasName of aliasNames) {
+          await logAuditEvent({ action: 'OPNSENSE_GROUP_NETWORK_ALIAS_UNASSIGN_ATTEMPT', details: { ...scheduleCtx, targetGroupUuid: action.targetGroupUuid, aliasName } });
+        }
+      } else if (action.operation === 'CLEAR_ALL') {
+        for (const [groupUuid, currentContent] of groupContentMap.entries()) {
+          const newContent = currentContent.filter(n => !aliasNames.includes(n));
+          if (newContent.length !== currentContent.length) {
+            groupContentMap.set(groupUuid, newContent);
+            ops.push(makeGroupUpdateOp(groupUuid, newContent));
+          }
+        }
+        for (const aliasName of aliasNames) {
+          await logAuditEvent({ action: 'OPNSENSE_GROUP_NETWORK_ALIAS_CLEAR_ALL_ATTEMPT', details: { ...scheduleCtx, aliasName } });
+        }
+      }
+
+      if (ops.length > 0) {
+        const batchResult = await batchAliasOperations(ops);
+        const success = batchResult.success;
+        for (const aliasName of aliasNames) {
+          results.push({
+            operation: action.operation,
+            targetGroupUuid: action.targetGroupUuid,
+            fromGroupUuid: action.fromGroupUuid,
+            aliasName,
+            success,
+            error: success ? undefined : (batchResult.error ?? 'Batch operation failed'),
+          });
+          const auditSuffix = success ? 'SUCCESS' : 'FAILURE';
+          await logAuditEvent({ action: `OPNSENSE_GROUP_NETWORK_ALIAS_${action.operation}_${auditSuffix}`, details: { ...scheduleCtx, targetGroupUuid: action.targetGroupUuid, aliasName } });
+        }
+      }
+    }
+
+    const failedResults = results.filter(r => !r.success);
+    const allFailed = results.length > 0 && failedResults.length === results.length;
+    const anyFailed = failedResults.length > 0;
+    const status = allFailed ? 'FAILED' : anyFailed ? 'PARTIAL' : results.length === 0 ? 'SKIPPED' : 'SUCCESS';
+
+    return {
+      targetIps: [],
+      targetAliasNames: aliasNames,
+      actionsRun: results,
+      status,
+      durationMs: 0,
+      errorMessage: failedResults.length > 0
+        ? failedResults.map(r => `${r.operation}(${r.aliasName}): ${r.error}`).join('; ')
+        : undefined,
     };
   }
 

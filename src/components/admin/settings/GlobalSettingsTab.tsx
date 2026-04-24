@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { ClientOnly } from '@/components/util/ClientOnly';
-import { Globe, AlertTriangle, RefreshCw, Info, Loader2, Trash2, Layers, Type, UserPlus, Ban, Edit3, BarChart3, Laptop } from 'lucide-react';
+import { Globe, AlertTriangle, RefreshCw, Info, Loader2, Trash2, Layers, Type, UserPlus, Ban, Edit3, BarChart3, Laptop, Waypoints } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { LucideIconPicker } from '@/components/ui/lucide-icon-picker';
 import { logger } from '@/lib/logger';
@@ -66,6 +66,8 @@ interface GlobalSettingsTabProps {
   enableLoginPageSubtitle: boolean;
   setEnableLoginPageSubtitle: (checked: boolean) => void;
   customLucideIcons?: { name: string; icon: React.ComponentType<{ size?: number }> }[]; // Custom Lucide icons from global settings
+  manageNetworkAliasesEnabled: boolean;
+  setManageNetworkAliasesEnabled: (checked: boolean) => void;
 }
 
 export function GlobalSettingsTab({
@@ -111,6 +113,8 @@ export function GlobalSettingsTab({
   enableLoginPageSubtitle,
   setEnableLoginPageSubtitle,
   customLucideIcons = [],
+  manageNetworkAliasesEnabled,
+  setManageNetworkAliasesEnabled,
 }: GlobalSettingsTabProps) {
   const { toast } = useToast();
   const isMobile = useIsMobile();
@@ -120,6 +124,7 @@ export function GlobalSettingsTab({
   const [showMultiSelectRefreshDialog, setShowMultiSelectRefreshDialog] = useState(false);
   const [showMacTrackingRefreshDialog, setShowMacTrackingRefreshDialog] = useState(false);
   const [showClearMacDbDialog, setShowClearMacDbDialog] = useState(false);
+  const [showDisableNetworkAliasesDialog, setShowDisableNetworkAliasesDialog] = useState(false);
   const {
     canDisableGroupTypes,
     violations,
@@ -1201,6 +1206,50 @@ export function GlobalSettingsTab({
                   )}
                 </div>
               </div>
+              {/* Network Aliases Management Section */}
+              <div className="border rounded-lg p-4 space-y-4">
+                <div>
+                  <h3 className="text-lg font-semibold flex items-center">
+                    <ClientOnly><Waypoints size={20} className="mr-2 text-primary" /></ClientOnly> Network Aliases Management
+                  </h3>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Enable scheduling actions on OPNsense network aliases (CIDR ranges). When enabled, schedules can target network range aliases and administrators can configure per-group alias permissions.
+                  </p>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="manage-network-aliases">Enable Network Aliases Management</Label>
+                    <div className="text-sm text-muted-foreground">
+                      Adds a &ldquo;Network Ranges&rdquo; tab to the admin panel and allows schedules to target network aliases.
+                    </div>
+                  </div>
+                  <ClientOnly>
+                    <Switch
+                      id="manage-network-aliases"
+                      checked={manageNetworkAliasesEnabled}
+                      onCheckedChange={async (checked) => {
+                        if (!checked) {
+                          setShowDisableNetworkAliasesDialog(true);
+                          return;
+                        }
+                        setManageNetworkAliasesEnabled(true);
+                        try {
+                          await handleSaveSetting(
+                            'manageNetworkAliasesEnabled',
+                            true,
+                            setManageNetworkAliasesEnabled,
+                            'Network aliases management enabled.',
+                            'Failed to save network aliases setting.'
+                          );
+                          globalSettingsEvents.emit();
+                        } catch {
+                          setManageNetworkAliasesEnabled(false);
+                        }
+                      }}
+                    />
+                  </ClientOnly>
+                </div>
+              </div>
             </div>
           </ScrollArea>
         </CardContent>
@@ -1245,6 +1294,44 @@ export function GlobalSettingsTab({
         title="Page Refresh Required"
         description="The MAC tracking setting has been changed. A full page refresh is required to update the navigation menu and apply all changes."
       />
+
+      {/* Disable Network Aliases Confirmation Dialog */}
+      <AlertDialog open={showDisableNetworkAliasesDialog} onOpenChange={setShowDisableNetworkAliasesDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Disable Network Aliases Management?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Disabling this feature will hide the Network Ranges tab and prevent schedules from targeting network aliases.
+              Existing NETWORK_ALIAS schedules will be skipped at execution time until the feature is re-enabled.
+              Group permissions and alias settings are preserved and will resume when re-enabled.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                setShowDisableNetworkAliasesDialog(false);
+                setManageNetworkAliasesEnabled(false);
+                try {
+                  await handleSaveSetting(
+                    'manageNetworkAliasesEnabled',
+                    false,
+                    setManageNetworkAliasesEnabled,
+                    'Network aliases management disabled.',
+                    'Failed to save network aliases setting.'
+                  );
+                  globalSettingsEvents.emit();
+                } catch {
+                  setManageNetworkAliasesEnabled(true);
+                }
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Disable
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Clear MAC Database Confirmation Dialog */}
       <AlertDialog open={showClearMacDbDialog} onOpenChange={setShowClearMacDbDialog}>

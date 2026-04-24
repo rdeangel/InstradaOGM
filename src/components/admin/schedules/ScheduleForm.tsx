@@ -29,7 +29,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { Switch } from '@/components/ui/switch';
-import { Loader2, AlertTriangle, Info, ArrowUp, ArrowDown, Trash2, Plus, Play, Search, ChevronsUpDown, Check, Wand2 } from 'lucide-react';
+import { Loader2, AlertTriangle, Info, ArrowUp, ArrowDown, Trash2, Plus, Play, Search, ChevronsUpDown, Check, Wand2, Waypoints } from 'lucide-react';
 import {
   Sheet,
   SheetContent,
@@ -45,6 +45,7 @@ import type { NetworkGroup } from '@/types/opnsense';
 import { CronExpressionParser } from 'cron-parser';
 import cronstrue from 'cronstrue';
 import { CronBuilderModal } from './CronBuilderModal';
+import { useNetworkAliasesEnabled } from '@/hooks/useNetworkAliasesEnabled';
 
 // Inline pure helper — avoids importing server-only schedule-validation module
 function checkWindowOverlaps(windows: Array<{ startTime: string; endTime: string }>): {
@@ -94,8 +95,9 @@ export type ScheduleFormValues = {
   recurringActions: StandaloneAction[];
   // COMPLEX_WEEKLY — managed separately as `days` state
   // Targeting
-  targetType: 'HOST_ALIAS';
+  targetType: 'HOST_ALIAS' | 'NETWORK_ALIAS';
   hostAliasUuids: string[];
+  networkAliasUuids: string[];
 };
 
 const emptyFormValues: ScheduleFormValues = {
@@ -111,6 +113,7 @@ const emptyFormValues: ScheduleFormValues = {
   recurringActions: [],
   targetType: 'HOST_ALIAS',
   hostAliasUuids: [],
+  networkAliasUuids: [],
 };
 
 const defaultDays: ScheduleDayFormData[] = Array.from({ length: 7 }, (_, i) => ({
@@ -204,6 +207,7 @@ export function ScheduleForm({
 }: ScheduleFormProps) {
   const router = useRouter();
   const { groups, isLoading: groupsLoading, error: groupsError } = useOpnsenseNetworkGroups();
+  const { manageNetworkAliasesEnabled } = useNetworkAliasesEnabled();
 
   const [values, setValues] = useState<ScheduleFormValues>({
     ...emptyFormValues,
@@ -221,6 +225,13 @@ export function ScheduleForm({
   const [aliasPopoverOpen, setAliasPopoverOpen] = useState(false);
   const [aliasSearch, setAliasSearch] = useState('');
   const [aliasDisplayCount, setAliasDisplayCount] = useState(50);
+
+  // Network alias popover state
+  const [networkAliasOptions, setNetworkAliasOptions] = useState<{ value: string; label: string; content: string }[]>([]);
+  const [networkAliasOptionsLoading, setNetworkAliasOptionsLoading] = useState(false);
+  const [networkAliasPopoverOpen, setNetworkAliasPopoverOpen] = useState(false);
+  const [networkAliasSearch, setNetworkAliasSearch] = useState('');
+  const [networkAliasDisplayCount, setNetworkAliasDisplayCount] = useState(50);
 
   const timezones = Intl.supportedValuesOf('timeZone');
   const timezoneOptions = timezones.map(tz => ({ value: tz, label: tz, isDisabled: false }));
@@ -243,6 +254,24 @@ export function ScheduleForm({
       .catch(() => setHostAliasOptions([]))
       .finally(() => setHostAliasOptionsLoading(false));
   }, []);
+
+  // Lazy-load network aliases when user switches to NETWORK_ALIAS target type
+  useEffect(() => {
+    if (values.targetType !== 'NETWORK_ALIAS' || !manageNetworkAliasesEnabled) return;
+    if (networkAliasOptions.length > 0 || networkAliasOptionsLoading) return;
+    setNetworkAliasOptionsLoading(true);
+    fetch('/api/opnsense/network-aliases')
+      .then(r => r.json())
+      .then(data => {
+        const aliases: Array<{ uuid: string; name: string; content: string; description?: string }> =
+          Array.isArray(data) ? data : (data.aliases ?? []);
+        setNetworkAliasOptions(
+          aliases.map(a => ({ value: a.uuid, label: a.name, content: a.content ?? '' })),
+        );
+      })
+      .catch(() => setNetworkAliasOptions([]))
+      .finally(() => setNetworkAliasOptionsLoading(false));
+  }, [values.targetType, manageNetworkAliasesEnabled, networkAliasOptions.length, networkAliasOptionsLoading]);
 
   // Compute overlap warnings for COMPLEX_WEEKLY
   const overlapWarnings = values.scheduleType === 'COMPLEX_WEEKLY'
@@ -322,6 +351,12 @@ export function ScheduleForm({
       return d;
     });
 
+    const targetType = values.targetType;
+    const targetSelector =
+      targetType === 'NETWORK_ALIAS'
+        ? { networkAliasUuids: values.networkAliasUuids }
+        : { hostAliasUuids: values.hostAliasUuids };
+
     const base = {
       name: values.name,
       description: values.description || undefined,
@@ -329,8 +364,8 @@ export function ScheduleForm({
       priority: values.priority,
       scheduleType: values.scheduleType,
       timezone: values.timezone,
-      targetType: 'HOST_ALIAS',
-      targetSelector: { hostAliasUuids: values.hostAliasUuids },
+      targetType,
+      targetSelector,
     };
 
     if (values.scheduleType === 'COMPLEX_WEEKLY') {
@@ -375,7 +410,11 @@ export function ScheduleForm({
         errs.scheduleType = 'At least one time window must be defined across the weekly schedule.';
       }
     }
-    if (values.hostAliasUuids.length === 0) errs.targetSelector = 'Select at least one host alias';
+    if (values.targetType === 'NETWORK_ALIAS') {
+      if (values.networkAliasUuids.length === 0) errs.targetSelector = 'Select at least one network range';
+    } else {
+      if (values.hostAliasUuids.length === 0) errs.targetSelector = 'Select at least one host alias';
+    }
 
     setErrors(errs);
     return Object.keys(errs).length === 0;
@@ -561,118 +600,276 @@ export function ScheduleForm({
           </div>
         )}
 
-        {/* ── Target host aliases ── */}
-        <div className="space-y-2">
-          <Label>Target Host Aliases</Label>
+        {/* ── Target type + selector ── */}
+        <div className="space-y-3">
+          <Label>Target</Label>
 
-          {/* Selected chips — skeletons while aliases are loading */}
-          {values.hostAliasUuids.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {hostAliasOptionsLoading
-                ? values.hostAliasUuids.map((_, i) => (
-                  <Skeleton key={i} className="h-6 w-20 rounded-full" />
-                ))
-                : values.hostAliasUuids.map(uuid => {
-                  const opt = hostAliasOptions.find(o => o.value === uuid);
-                  return (
-                    <Badge key={uuid} variant="secondary" className="gap-1 pr-1">
-                      {opt?.label ?? uuid}
-                      <button
-                        type="button"
-                        className="ml-1 text-muted-foreground hover:text-foreground leading-none"
-                        onClick={() => set('hostAliasUuids', values.hostAliasUuids.filter(id => id !== uuid))}
-                      >
-                        ×
-                      </button>
-                    </Badge>
-                  );
-                })}
-            </div>
+          {/* Target type radio — only shown when feature is enabled */}
+          {manageNetworkAliasesEnabled && (
+            <RadioGroup
+              value={values.targetType}
+              onValueChange={val => set('targetType', val as ScheduleFormValues['targetType'])}
+              className="flex flex-wrap gap-4"
+            >
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="HOST_ALIAS" id="target-host" />
+                <Label htmlFor="target-host">Host Aliases (Devices)</Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="NETWORK_ALIAS" id="target-network" />
+                <Label htmlFor="target-network" className="flex items-center gap-1">
+                  <Waypoints className="h-3.5 w-3.5" />
+                  Network Ranges
+                </Label>
+              </div>
+            </RadioGroup>
           )}
 
-          {/* Popover multi-select */}
-          <Popover
-            open={aliasPopoverOpen}
-            onOpenChange={open => { setAliasPopoverOpen(open); if (!open) { setAliasSearch(''); setAliasDisplayCount(50); } }}
-          >
-            <PopoverTrigger asChild>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="w-full justify-between font-normal text-muted-foreground"
-                disabled={hostAliasOptionsLoading}
-              >
-                <span className="flex items-center gap-2">
+          {/* HOST_ALIAS popover */}
+          {values.targetType === 'HOST_ALIAS' && (
+            <>
+              {values.hostAliasUuids.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
                   {hostAliasOptionsLoading
-                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    : <Search className="h-3.5 w-3.5" />}
-                  {values.hostAliasUuids.length === 0
-                    ? 'Add host aliases...'
-                    : `${values.hostAliasUuids.length} selected — add or remove`}
-                </span>
-                <ChevronsUpDown className="h-4 w-4 opacity-50 shrink-0" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="p-0 w-[var(--radix-popover-trigger-width)]" align="start">
-              <div className="flex flex-col">
-                <div className="flex items-center border-b px-3">
-                  <Search className="h-4 w-4 mr-2 shrink-0 opacity-50" />
-                  <input
-                    type="text"
-                    placeholder="Search aliases..."
-                    value={aliasSearch}
-                    onChange={e => { setAliasSearch(e.target.value); setAliasDisplayCount(50); }}
-                    className="h-10 flex-grow bg-transparent text-sm focus:outline-none"
-                    autoFocus
-                  />
-                </div>
-                <ScrollArea
-                  className="h-[220px]"
-                  onViewportScroll={e => {
-                    const el = e.currentTarget;
-                    if (el.scrollHeight - el.scrollTop <= el.clientHeight * 1.5) {
-                      setAliasDisplayCount(prev => prev + 50);
-                    }
-                  }}
-                  onWheel={e => e.stopPropagation()}
-                >
-                  {hostAliasOptions.filter(o =>
-                    !aliasSearch || o.label.toLowerCase().includes(aliasSearch.toLowerCase())
-                  ).length === 0 ? (
-                    <p className="text-sm text-muted-foreground text-center py-4">No aliases found.</p>
-                  ) : (
-                    hostAliasOptions
-                      .filter(o => !aliasSearch || o.label.toLowerCase().includes(aliasSearch.toLowerCase()))
-                      .slice(0, aliasDisplayCount)
-                      .map(opt => {
-                        const isSelected = values.hostAliasUuids.includes(opt.value);
-                        return (
-                          <div
-                            key={opt.value}
-                            className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-muted text-sm transition-colors"
-                            onClick={() => {
-                              const next = isSelected
-                                ? values.hostAliasUuids.filter(id => id !== opt.value)
-                                : [...values.hostAliasUuids, opt.value];
-                              set('hostAliasUuids', next);
-                            }}
+                    ? values.hostAliasUuids.map((_, i) => (
+                      <Skeleton key={i} className="h-6 w-20 rounded-full" />
+                    ))
+                    : values.hostAliasUuids.map(uuid => {
+                      const opt = hostAliasOptions.find(o => o.value === uuid);
+                      return (
+                        <Badge key={uuid} variant="secondary" className="gap-1 pr-1">
+                          {opt?.label ?? uuid}
+                          <button
+                            type="button"
+                            className="ml-1 text-muted-foreground hover:text-foreground leading-none"
+                            onClick={() => set('hostAliasUuids', values.hostAliasUuids.filter(id => id !== uuid))}
                           >
-                            <div className={cn(
-                              'h-4 w-4 rounded border flex items-center justify-center shrink-0',
-                              isSelected ? 'bg-primary border-primary' : 'border-input',
-                            )}>
-                              {isSelected && <Check className="h-3 w-3 text-primary-foreground" />}
-                            </div>
-                            <span>{opt.label}</span>
-                          </div>
-                        );
-                      })
-                  )}
-                </ScrollArea>
-              </div>
-            </PopoverContent>
-          </Popover>
+                            ×
+                          </button>
+                        </Badge>
+                      );
+                    })}
+                </div>
+              )}
+              <Popover
+                open={aliasPopoverOpen}
+                onOpenChange={open => { setAliasPopoverOpen(open); if (!open) { setAliasSearch(''); setAliasDisplayCount(50); } }}
+              >
+                <PopoverTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-full justify-between font-normal text-muted-foreground"
+                    disabled={hostAliasOptionsLoading}
+                  >
+                    <span className="flex items-center gap-2">
+                      {hostAliasOptionsLoading
+                        ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        : <Search className="h-3.5 w-3.5" />}
+                      {values.hostAliasUuids.length === 0
+                        ? 'Add host aliases...'
+                        : `${values.hostAliasUuids.length} selected — add or remove`}
+                    </span>
+                    <ChevronsUpDown className="h-4 w-4 opacity-50 shrink-0" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="p-0 w-[var(--radix-popover-trigger-width)]" align="start">
+                  <div className="flex flex-col">
+                    <div className="flex items-center border-b px-3">
+                      <Search className="h-4 w-4 mr-2 shrink-0 opacity-50" />
+                      <input
+                        type="text"
+                        placeholder="Search aliases..."
+                        value={aliasSearch}
+                        onChange={e => { setAliasSearch(e.target.value); setAliasDisplayCount(50); }}
+                        className="h-10 flex-grow bg-transparent text-sm focus:outline-none"
+                        autoFocus
+                      />
+                    </div>
+                    <ScrollArea
+                      className="h-[220px]"
+                      onViewportScroll={e => {
+                        const el = e.currentTarget;
+                        if (el.scrollHeight - el.scrollTop <= el.clientHeight * 1.5) {
+                          setAliasDisplayCount(prev => prev + 50);
+                        }
+                      }}
+                      onWheel={e => e.stopPropagation()}
+                    >
+                      {hostAliasOptions.filter(o =>
+                        !aliasSearch || o.label.toLowerCase().includes(aliasSearch.toLowerCase())
+                      ).length === 0 ? (
+                        <p className="text-sm text-muted-foreground text-center py-4">No aliases found.</p>
+                      ) : (
+                        hostAliasOptions
+                          .filter(o => !aliasSearch || o.label.toLowerCase().includes(aliasSearch.toLowerCase()))
+                          .slice(0, aliasDisplayCount)
+                          .map(opt => {
+                            const isSelected = values.hostAliasUuids.includes(opt.value);
+                            return (
+                              <div
+                                key={opt.value}
+                                className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-muted text-sm transition-colors"
+                                onClick={() => {
+                                  const next = isSelected
+                                    ? values.hostAliasUuids.filter(id => id !== opt.value)
+                                    : [...values.hostAliasUuids, opt.value];
+                                  set('hostAliasUuids', next);
+                                }}
+                              >
+                                <div className={cn(
+                                  'h-4 w-4 rounded border flex items-center justify-center shrink-0',
+                                  isSelected ? 'bg-primary border-primary' : 'border-input',
+                                )}>
+                                  {isSelected && <Check className="h-3 w-3 text-primary-foreground" />}
+                                </div>
+                                <span>{opt.label}</span>
+                              </div>
+                            );
+                          })
+                      )}
+                    </ScrollArea>
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </>
+          )}
+
+          {/* NETWORK_ALIAS popover */}
+          {values.targetType === 'NETWORK_ALIAS' && (
+            <>
+              {!manageNetworkAliasesEnabled && (
+                <Alert variant="default" className="border-amber-400 bg-amber-50 dark:bg-amber-950/20">
+                  <AlertTriangle className="h-4 w-4 text-amber-600" />
+                  <AlertDescription className="text-amber-700 dark:text-amber-400">
+                    Network alias management is currently disabled. Enable it in Global Settings to modify this schedule&apos;s targets.
+                  </AlertDescription>
+                </Alert>
+              )}
+              {values.networkAliasUuids.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {networkAliasOptionsLoading
+                    ? values.networkAliasUuids.map((_, i) => (
+                      <Skeleton key={i} className="h-6 w-20 rounded-full" />
+                    ))
+                    : values.networkAliasUuids.map(uuid => {
+                      const opt = networkAliasOptions.find(o => o.value === uuid);
+                      return (
+                        <Badge key={uuid} variant="secondary" className="gap-1 pr-1">
+                          <Waypoints className="h-3 w-3 shrink-0" />
+                          {opt?.label ?? uuid}
+                          {manageNetworkAliasesEnabled && (
+                            <button
+                              type="button"
+                              className="ml-1 text-muted-foreground hover:text-foreground leading-none"
+                              onClick={() => set('networkAliasUuids', values.networkAliasUuids.filter(id => id !== uuid))}
+                            >
+                              ×
+                            </button>
+                          )}
+                        </Badge>
+                      );
+                    })}
+                </div>
+              )}
+              {manageNetworkAliasesEnabled && (
+                <Popover
+                  open={networkAliasPopoverOpen}
+                  onOpenChange={open => { setNetworkAliasPopoverOpen(open); if (!open) { setNetworkAliasSearch(''); setNetworkAliasDisplayCount(50); } }}
+                >
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="w-full justify-between font-normal text-muted-foreground"
+                      disabled={networkAliasOptionsLoading}
+                    >
+                      <span className="flex items-center gap-2">
+                        {networkAliasOptionsLoading
+                          ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          : <Search className="h-3.5 w-3.5" />}
+                        {values.networkAliasUuids.length === 0
+                          ? 'Add network ranges...'
+                          : `${values.networkAliasUuids.length} selected — add or remove`}
+                      </span>
+                      <ChevronsUpDown className="h-4 w-4 opacity-50 shrink-0" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="p-0 w-[var(--radix-popover-trigger-width)]" align="start">
+                    <div className="flex flex-col">
+                      <div className="flex items-center border-b px-3">
+                        <Search className="h-4 w-4 mr-2 shrink-0 opacity-50" />
+                        <input
+                          type="text"
+                          placeholder="Search network ranges..."
+                          value={networkAliasSearch}
+                          onChange={e => { setNetworkAliasSearch(e.target.value); setNetworkAliasDisplayCount(50); }}
+                          className="h-10 flex-grow bg-transparent text-sm focus:outline-none"
+                          autoFocus
+                        />
+                      </div>
+                      <ScrollArea
+                        className="h-[220px]"
+                        onViewportScroll={e => {
+                          const el = e.currentTarget;
+                          if (el.scrollHeight - el.scrollTop <= el.clientHeight * 1.5) {
+                            setNetworkAliasDisplayCount(prev => prev + 50);
+                          }
+                        }}
+                        onWheel={e => e.stopPropagation()}
+                      >
+                        {networkAliasOptions.filter(o =>
+                          !networkAliasSearch ||
+                          o.label.toLowerCase().includes(networkAliasSearch.toLowerCase()) ||
+                          o.content.toLowerCase().includes(networkAliasSearch.toLowerCase())
+                        ).length === 0 ? (
+                          <p className="text-sm text-muted-foreground text-center py-4">No network ranges found.</p>
+                        ) : (
+                          networkAliasOptions
+                            .filter(o =>
+                              !networkAliasSearch ||
+                              o.label.toLowerCase().includes(networkAliasSearch.toLowerCase()) ||
+                              o.content.toLowerCase().includes(networkAliasSearch.toLowerCase())
+                            )
+                            .slice(0, networkAliasDisplayCount)
+                            .map(opt => {
+                              const isSelected = values.networkAliasUuids.includes(opt.value);
+                              return (
+                                <div
+                                  key={opt.value}
+                                  className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-muted text-sm transition-colors"
+                                  onClick={() => {
+                                    const next = isSelected
+                                      ? values.networkAliasUuids.filter(id => id !== opt.value)
+                                      : [...values.networkAliasUuids, opt.value];
+                                    set('networkAliasUuids', next);
+                                  }}
+                                >
+                                  <div className={cn(
+                                    'h-4 w-4 rounded border flex items-center justify-center shrink-0',
+                                    isSelected ? 'bg-primary border-primary' : 'border-input',
+                                  )}>
+                                    {isSelected && <Check className="h-3 w-3 text-primary-foreground" />}
+                                  </div>
+                                  <div className="flex flex-col min-w-0">
+                                    <span>{opt.label}</span>
+                                    {opt.content && (
+                                      <span className="text-xs text-muted-foreground truncate">{opt.content}</span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })
+                        )}
+                      </ScrollArea>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              )}
+            </>
+          )}
 
           {errors.targetSelector && <p className="text-xs text-destructive">{errors.targetSelector}</p>}
         </div>

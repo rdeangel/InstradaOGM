@@ -99,6 +99,8 @@ export default function SettingsPage() {
   const [macTrackingInterval, setMacTrackingInterval] = useState<number>(5);
   const [macInactiveTimeout, setMacInactiveTimeout] = useState<number>(1440);
   const [macDataRetentionDays, setMacDataRetentionDays] = useState<number>(90);
+  // Network Aliases Management
+  const [manageNetworkAliasesEnabled, setManageNetworkAliasesEnabled] = useState<boolean>(false);
   // Application Subtitle Settings
   const [enableApplicationSubtitle, setEnableApplicationSubtitle] = useState<boolean>(false);
   const [subtitleText, setSubtitleText] = useState<string>('');
@@ -311,6 +313,10 @@ export default function SettingsPage() {
       }
       if (fetchedSettings.macDataRetentionDays !== undefined) {
         setMacDataRetentionDays(fetchedSettings.macDataRetentionDays);
+      }
+      // Network Aliases Management
+      if (fetchedSettings.manageNetworkAliasesEnabled !== undefined) {
+        setManageNetworkAliasesEnabled(fetchedSettings.manageNetworkAliasesEnabled);
       }
       // Application Subtitle Settings
       if (fetchedSettings.enableApplicationSubtitle !== undefined) {
@@ -884,6 +890,8 @@ export default function SettingsPage() {
                 enableLoginPageSubtitle={enableLoginPageSubtitle}
                 setEnableLoginPageSubtitle={setEnableLoginPageSubtitle}
                 customLucideIcons={customLucideIcons as { name: string; icon: React.ComponentType<{ size?: number }> }[]}
+                manageNetworkAliasesEnabled={manageNetworkAliasesEnabled}
+                setManageNetworkAliasesEnabled={setManageNetworkAliasesEnabled}
               />
             )}
 

@@ -200,6 +200,16 @@ function resolveTarget(
     return { targetNames: [name], targetSummary: name };
   }
 
+  if (targetType === 'NETWORK_ALIAS') {
+    const typed = selector as { networkAliasUuids?: string[] };
+    const uuids = typed.networkAliasUuids ?? [];
+    if (uuids.length === 0) {
+      return { targetNames: [], targetSummary: '(no network aliases configured)' };
+    }
+    const names = uuids.map((uuid) => aliasNameMap.get(uuid) ?? uuid);
+    return { targetNames: names, targetSummary: `Network Ranges: ${names.join(', ')}` };
+  }
+
   return { targetNames: [], targetSummary: `Unknown target type: ${targetType}` };
 }
 

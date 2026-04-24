@@ -34,6 +34,7 @@ export interface GlobalSettingsResponse {
   enableApplicationSubtitle: boolean;
   subtitleText?: string;
   enableLoginPageSubtitle: boolean;
+  manageNetworkAliasesEnabled: boolean;
   isSelfServiceAllowed: boolean;
 }
 
@@ -127,6 +128,7 @@ export async function getGlobalSettings(clientIp?: string | null): Promise<Globa
     enableApplicationSubtitle: transformedGlobalSettings.enableApplicationSubtitle || false,
     subtitleText: transformedGlobalSettings.subtitleText,
     enableLoginPageSubtitle: transformedGlobalSettings.enableLoginPageSubtitle || false,
+    manageNetworkAliasesEnabled: transformedGlobalSettings.manageNetworkAliasesEnabled || false,
     isSelfServiceAllowed,
   };
 } 
