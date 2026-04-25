@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { logger } from '@/lib/logger';
 import { formatVersionForDisplay } from '@/lib/version-utils';
-import { UserCog, Users, LogOut, Shield, LogIn, Settings, UserCircle, ChevronDown, Laptop, BrickWallFire, Monitor } from 'lucide-react'; // Added LayoutDashboard icon, ChevronDown, Laptop
+import { UserCog, Users, LogOut, Shield, LogIn, Settings, UserCircle, ChevronDown, Laptop, BrickWallFire, Monitor, Waypoints } from 'lucide-react';
 import { GoDeviceDesktop } from 'react-icons/go'; // Added GoDeviceDesktop icon
 import { ThemeToggle } from '@/components/layout/ThemeToggle';
 import { signOut } from 'next-auth/react'; // Import signOut from next-auth/react
@@ -94,6 +94,19 @@ export const AppHeaderClient = forwardRef<HTMLDivElement, AppHeaderProps>(({
 
   const isAdmin = session?.user?.role === Role.ADMIN || session?.user?.role === Role.SUPER_ADMIN;
 
+  const [networkAliasAccess, setNetworkAliasAccess] = useState(false);
+
+  useEffect(() => {
+    if (mounted && isAdmin) {
+      fetch('/api/user/has-network-alias-access')
+        .then(r => r.json())
+        .then(data => setNetworkAliasAccess(data.hasAccess === true))
+        .catch(() => setNetworkAliasAccess(false));
+    } else {
+      setNetworkAliasAccess(false);
+    }
+  }, [mounted, isAdmin]);
+
   const renderUserControls = () => {
     if (!mounted || authStatus === 'loading') {
       return (
@@ -150,6 +163,12 @@ export const AppHeaderClient = forwardRef<HTMLDivElement, AppHeaderProps>(({
                 <ClientOnly><Laptop className="mr-2 h-4 w-4" /></ClientOnly>
                 Device Management
               </DropdownMenuItem>
+              {networkAliasAccess && (
+                <DropdownMenuItem onClick={() => router.push('/network-management')}>
+                  <ClientOnly><Waypoints className="mr-2 h-4 w-4" /></ClientOnly>
+                  Network Management
+                </DropdownMenuItem>
+              )}
               {isAdmin && (
                 <DropdownMenuItem onClick={() => router.push('/admin/user-management')}>
                   <ClientOnly><Users className="mr-2 h-4 w-4" /></ClientOnly>

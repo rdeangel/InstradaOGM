@@ -4,7 +4,6 @@ import { logger } from '@/lib/logger';
 import { exportAliases, get_arpTable } from '@/lib/opnsense-api';
 import { Role } from '@/types/opnsense';
 import { prisma } from '@/lib/prisma';
-import { enrichNetworkAliasesWithGroups } from '@/lib/network-alias-filtering';
 import type { NetworkAlias } from '@/types/opnsense';
 
 interface HostAlias {

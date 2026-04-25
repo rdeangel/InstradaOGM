@@ -73,7 +73,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'; // Import Tooltip components
-import { Users as UsersIcon, PlusCircle, Edit, Trash2, Loader2, ShieldAlert, Shield, AlertCircle as AlertCircleIcon, RefreshCcw, XCircle } from 'lucide-react';
+import { Users as UsersIcon, PlusCircle, Edit, Trash2, Loader2, ShieldAlert, AlertCircle as AlertCircleIcon, RefreshCcw, XCircle } from 'lucide-react';
 import { ClientOnly } from '@/components/util/ClientOnly';
 // Removed unused import Badge
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';

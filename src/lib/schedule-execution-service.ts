@@ -768,11 +768,40 @@ class ScheduleExecutionService {
       for (const uuid of typed.hostAliasUuids ?? []) {
         // eslint-disable-next-line security/detect-object-injection
         const alias = aliases[uuid];
-        if (alias?.content) {
-          // Host alias content is a single IP string (possibly with whitespace)
-          const ip = alias.content.trim();
-          if (ip) ips.push(ip);
+        if (!alias) {
+          logger.warn(`[resolveTargets] HOST_ALIAS UUID ${uuid} not found — skipping`);
+          await logAuditEvent({
+            action: 'OPNSENSE_GROUP_HOST_ALIAS_SKIPPED_NOT_FOUND',
+            details: { uuid },
+          });
+          continue;
         }
+        if (alias.type !== 'host') {
+          logger.warn(`[resolveTargets] HOST_ALIAS UUID ${uuid} has type '${alias.type}', expected 'host' — skipping`);
+          await logAuditEvent({
+            action: 'OPNSENSE_GROUP_HOST_ALIAS_SKIPPED_WRONG_TYPE',
+            details: { uuid, aliasName: alias.name },
+          });
+          continue;
+        }
+        if (alias.enabled !== '1') {
+          logger.warn(`[resolveTargets] HOST_ALIAS UUID ${uuid} is disabled — skipping`);
+          await logAuditEvent({
+            action: 'OPNSENSE_GROUP_HOST_ALIAS_SKIPPED_DISABLED',
+            details: { uuid, aliasName: alias.name },
+          });
+          continue;
+        }
+        if (!alias.content || !alias.content.trim()) {
+          logger.warn(`[resolveTargets] HOST_ALIAS UUID ${uuid} has empty content — skipping`);
+          await logAuditEvent({
+            action: 'OPNSENSE_GROUP_HOST_ALIAS_SKIPPED_EMPTY_CONTENT',
+            details: { uuid, aliasName: alias.name },
+          });
+          continue;
+        }
+        const ip = alias.content.trim();
+        if (ip) ips.push(ip);
       }
       return ips;
     }
@@ -1469,6 +1498,16 @@ class ScheduleExecutionService {
   // ─── Private: NETWORK_ALIAS execution ────────────────────────────────────────
 
   private async resolveNetworkAliasTargets(schedule: { targetSelector: unknown; id?: string }): Promise<string[]> {
+    const settings = await prisma.globalSettings.findFirst({ orderBy: { id: 'asc' } });
+    if (!settings?.manageNetworkAliasesEnabled) {
+      logger.warn(`[resolveNetworkAliasTargets] Feature disabled — skipping all aliases`);
+      await logAuditEvent({
+        action: 'OPNSENSE_GROUP_NETWORK_ALIAS_FEATURE_DISABLED',
+        details: { scheduleId: schedule.id },
+      });
+      return [];
+    }
+
     const selector = schedule.targetSelector as { networkAliasUuids?: string[] };
     const uuids = selector?.networkAliasUuids ?? [];
     if (uuids.length === 0) return [];
@@ -1492,6 +1531,14 @@ class ScheduleExecutionService {
         logger.warn(`[resolveNetworkAliasTargets] UUID ${uuid} has type '${alias.type}', expected 'network' — skipping`);
         await logAuditEvent({
           action: 'OPNSENSE_GROUP_NETWORK_ALIAS_SKIPPED_WRONG_TYPE',
+          details: { uuid, aliasName: alias.name, scheduleId: schedule.id },
+        });
+        continue;
+      }
+      if (alias.enabled !== '1') {
+        logger.warn(`[resolveNetworkAliasTargets] UUID ${uuid} is disabled — skipping`);
+        await logAuditEvent({
+          action: 'OPNSENSE_GROUP_NETWORK_ALIAS_SKIPPED_DISABLED',
           details: { uuid, aliasName: alias.name, scheduleId: schedule.id },
         });
         continue;

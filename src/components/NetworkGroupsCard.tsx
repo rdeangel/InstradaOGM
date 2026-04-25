@@ -72,8 +72,9 @@ interface NetworkGroupsCardProps {
 
 import React, { memo } from 'react'; // Import memo directly
 
-export default memo(function NetworkGroupsCard({ // Wrap the component in memo
+export default memo(function NetworkGroupsCard({
   userRole,
+  mode = 'host',
   groups,
   isLoadingGroups,
   selectedGroupId,
@@ -102,6 +103,7 @@ export default memo(function NetworkGroupsCard({ // Wrap the component in memo
   unmanagedGroupResult,
 }: NetworkGroupsCardProps) {
   const isMobile = useIsMobile();
+  const isAliasMode = mode === 'networkAlias';
   const [searchTerm, setSearchTerm] = useState('');
   const { toast } = useToast();
   const { enableGroupTypes, enableSelfServiceMultiSelect, singleSelectName, multiSelectName, singleSelectIcon, multiSelectIcon } = useGroupType();
@@ -356,13 +358,14 @@ export default memo(function NetworkGroupsCard({ // Wrap the component in memo
               <ClientOnly fallback={<Skeleton className={`h-7 w-7 mr-2 rounded-full ${isMobile ? 'h-5 w-5' : ''}`} />}><NetworkIconLucide size={isMobile ? 22 : 28} className="mr-2 text-primary" /></ClientOnly> Network Groups
             </CardTitle>
             <CardDescription className={`mt-1 ${isMobile ? 'text-xs' : ''}`}>
-              {isUserAdmin ? "Select a group and assign your device to it." :
-                <ClientOnly fallback="Select a group and assign your device to it.">
-                  {isSelfServiceAllowed ?
-                    `Select a group membership for ${detectedIp || 'Not Detected'}` :
-                    `Self-Service group assignment is disabled for your IP address (${detectedIp || 'Not Detected'}). Please contact an administrator.`
-                  }
-                </ClientOnly>
+              {isAliasMode ? "Select a group to assign the selected alias to." :
+                isUserAdmin ? "Select a group and assign your device to it." :
+                  <ClientOnly fallback="Select a group and assign your device to it.">
+                    {isSelfServiceAllowed ?
+                      `Select a group membership for ${detectedIp || 'Not Detected'}` :
+                      `Self-Service group assignment is disabled for your IP address (${detectedIp || 'Not Detected'}). Please contact an administrator.`
+                    }
+                  </ClientOnly>
               }
             </CardDescription>
           </div>

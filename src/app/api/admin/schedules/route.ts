@@ -56,6 +56,16 @@ export const POST = withAdminApiTracking(async (request: NextRequest) => {
 
     const data = validation.data;
 
+    if (data.targetType === 'NETWORK_ALIAS') {
+      const settings = await prisma.globalSettings.findFirst({ orderBy: { id: 'asc' } });
+      if (!settings?.manageNetworkAliasesEnabled) {
+        return NextResponse.json(
+          { message: 'Network alias management is disabled' },
+          { status: 403 }
+        );
+      }
+    }
+
     // Shared validation (cron, group UUIDs, action constraints, overlaps)
     const validationError = await validateScheduleData(data);
     if (validationError) {

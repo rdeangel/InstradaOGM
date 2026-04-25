@@ -57,7 +57,25 @@ export const POST = withAdminApiTracking(async (request: NextRequest) => {
           skippedAliasUuids.push(uuid);
           continue;
         }
+        if (alias.enabled !== '1') {
+          skippedAliasUuids.push(uuid);
+          continue;
+        }
         resolvedTargets.push(alias.name);
+      }
+    } else if (schedule.targetType === 'HOST_ALIAS' && 'hostAliasUuids' in schedule.targetSelector) {
+      const uuids = schedule.targetSelector.hostAliasUuids as string[];
+      const aliasesResponse = await exportAliases().catch(() => null);
+      const aliases = aliasesResponse?.aliases?.alias ?? {};
+
+      for (const uuid of uuids) {
+        // eslint-disable-next-line security/detect-object-injection
+        const alias = aliases[uuid];
+        if (!alias || alias.type !== 'host' || alias.enabled !== '1' || !alias.content?.trim()) {
+          skippedAliasUuids.push(uuid);
+          continue;
+        }
+        resolvedTargets.push(alias.content.trim());
       }
     }
     // For HOST_ALIAS and NETWORK_GROUP, the full resolution requires OPNsense queries.

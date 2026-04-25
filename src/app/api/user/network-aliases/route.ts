@@ -43,7 +43,6 @@ export async function GET(request: Request) {
       const enriched = enrichNetworkAliasesWithGroups(networkAliases, aliasMap as Record<string, { type: string; name: string; content: string; description: string; enabled: string }>);
 
       const globallyDisabledGroups = await prisma.globallyDisabledGroup.findMany();
-      const disabledGroupUuids = new Set(globallyDisabledGroups.map(g => g.opnsenseUuid));
 
       const allGroups = await getNetworkGroups();
       const globalFilters = (await prisma.groupFilterSetting.findMany()).map(f => ({
