@@ -81,9 +81,11 @@ const getTimePeriodLabel = (period: TimePeriod): string => {
 interface DeviceGroupHistoryGraphProps {
     ipAddress?: string;
     hostAliasName?: string;
+    networkAliasUuid?: string;
+    networkAliasName?: string;
     currentGroups?: { id?: string; uuid?: string; name: string; friendlyName?: string; groupType?: 'SingleSelect' | 'MultiSelect' }[];
     className?: string;
-    isSelfService?: boolean; // Whether this is being used in self-service context
+    isSelfService?: boolean;
     hideTitle?: boolean;
 }
 
@@ -91,7 +93,7 @@ export interface DeviceGroupHistoryGraphHandles {
     refresh: () => Promise<void>;
 }
 
-export const DeviceGroupHistoryGraph = React.forwardRef<DeviceGroupHistoryGraphHandles, DeviceGroupHistoryGraphProps>(({ ipAddress, hostAliasName, currentGroups, className, isSelfService = false, hideTitle = false }, ref) => {
+export const DeviceGroupHistoryGraph = React.forwardRef<DeviceGroupHistoryGraphHandles, DeviceGroupHistoryGraphProps>(({ ipAddress, hostAliasName, networkAliasUuid, networkAliasName, currentGroups, className, isSelfService = false, hideTitle = false }, ref) => {
     const [data, setData] = useState<HistoryEvent[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -138,8 +140,10 @@ export const DeviceGroupHistoryGraph = React.forwardRef<DeviceGroupHistoryGraphH
         currentGroupsRef.current = currentGroups;
     }, [currentGroups]);
 
+    const isNetworkAliasMode = !!networkAliasUuid || !!networkAliasName;
+
     const fetchData = React.useCallback(async (isRefresh = false) => {
-        if (!ipAddress && !hostAliasName) return;
+        if (!ipAddress && !hostAliasName && !networkAliasUuid && !networkAliasName) return;
 
         // Only show loading spinner on initial load, not on refresh
         if (!isRefresh) {
@@ -149,8 +153,18 @@ export const DeviceGroupHistoryGraph = React.forwardRef<DeviceGroupHistoryGraphH
 
         try {
             const params = new URLSearchParams();
-            if (ipAddress) params.append('ipAddress', ipAddress);
-            if (hostAliasName) params.append('hostAliasName', hostAliasName);
+            if (isNetworkAliasMode) {
+                if (networkAliasUuid) params.append('aliasUuid', networkAliasUuid);
+                if (networkAliasName) params.append('aliasName', networkAliasName);
+            } else {
+                if (ipAddress) params.append('ipAddress', ipAddress);
+                if (hostAliasName) params.append('hostAliasName', hostAliasName);
+
+                // Filter out MultiSelect group operations when in self-service mode with multi-select disabled
+                if (isSelfService && enableGroupTypes && !enableSelfServiceMultiSelect) {
+                    params.append('excludeMultiSelectGroups', 'true');
+                }
+            }
 
             // Use the ref to get the latest currentGroups value
             const currentGroupsJson = JSON.stringify(currentGroupsRef.current || []);
@@ -158,12 +172,11 @@ export const DeviceGroupHistoryGraph = React.forwardRef<DeviceGroupHistoryGraphH
                 params.append('currentGroups', currentGroupsJson);
             }
 
-            // Filter out MultiSelect group operations when in self-service mode with multi-select disabled
-            if (isSelfService && enableGroupTypes && !enableSelfServiceMultiSelect) {
-                params.append('excludeMultiSelectGroups', 'true');
-            }
+            const endpoint = isNetworkAliasMode
+                ? '/api/analytics/network-alias-group-history'
+                : '/api/analytics/device-group-history';
 
-            const response = await fetch(`/api/analytics/device-group-history?${params.toString()}`);
+            const response = await fetch(`${endpoint}?${params.toString()}`);
 
             if (!response.ok) {
                 throw new Error('Failed to fetch history data');
@@ -185,18 +198,18 @@ export const DeviceGroupHistoryGraph = React.forwardRef<DeviceGroupHistoryGraphH
                 setIsLoading(false);
             }
         }
-    }, [ipAddress, hostAliasName, isSelfService, enableGroupTypes, enableSelfServiceMultiSelect]);
+    }, [ipAddress, hostAliasName, networkAliasUuid, networkAliasName, isSelfService, enableGroupTypes, enableSelfServiceMultiSelect, isNetworkAliasMode]);
 
     React.useImperativeHandle(ref, () => ({
         refresh: () => fetchData(true) // Silent refresh without loading spinner
     }), [fetchData]);
 
-    // Only fetch on mount or when IP/hostname changes
+    // Only fetch on mount or when IP/hostname/alias changes
     // Parent will call refresh() when currentGroups changes
     useEffect(() => {
         fetchData();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [ipAddress, hostAliasName]);
+    }, [ipAddress, hostAliasName, networkAliasUuid, networkAliasName]);
 
     const filteredData = React.useMemo(() => {
         if (!data || data.length === 0) return [];
