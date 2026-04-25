@@ -103,9 +103,24 @@ export const DeviceGroupHistoryGraph = React.forwardRef<DeviceGroupHistoryGraphH
     const [viewMode, setViewMode] = useLocalStorage<ViewMode>('device-group-history-view-mode', 'total');
     const [curveType, setCurveType] = useLocalStorage<CurveType>('device-group-history-curve-type', 'stepAfter');
     const [allGroupsMap, setAllGroupsMap] = useState<Map<string, 'SingleSelect' | 'MultiSelect'>>(new Map());
+    const [friendlyNameMap, setFriendlyNameMap] = useState<Map<string, string>>(new Map());
 
     // Use the same hook as NetworkGroupsCard and SelfServiceCard
     const { enableGroupTypes, enableSelfServiceMultiSelect } = useGroupType();
+
+    useEffect(() => {
+        const map = new Map<string, string>();
+        (currentGroups || []).forEach(g => {
+            if (g.name) {
+                map.set(g.name, g.friendlyName || g.name);
+            }
+        });
+        setFriendlyNameMap(prev => {
+            const merged = new Map(prev);
+            map.forEach((v, k) => merged.set(k, v));
+            return merged;
+        });
+    }, [currentGroups]);
 
     // Fetch all network groups to get types for historical groups
     useEffect(() => {
@@ -115,14 +130,23 @@ export const DeviceGroupHistoryGraph = React.forwardRef<DeviceGroupHistoryGraphH
                 if (groupsResponse.ok) {
                     const result = await groupsResponse.json();
                     if (result.networkGroups) {
-                        const map = new Map<string, 'SingleSelect' | 'MultiSelect'>();
+                        const typeMap = new Map<string, 'SingleSelect' | 'MultiSelect'>();
+                        const nameMap = new Map<string, string>();
                         result.networkGroups.forEach((g: { name?: string; friendlyName?: string; groupType?: 'SingleSelect' | 'MultiSelect' }) => {
                             if (g.groupType) {
-                                if (g.name) map.set(g.name, g.groupType);
-                                if (g.friendlyName) map.set(g.friendlyName, g.groupType);
+                                if (g.name) typeMap.set(g.name, g.groupType);
+                                if (g.friendlyName) typeMap.set(g.friendlyName, g.groupType);
+                            }
+                            if (g.name && g.friendlyName) {
+                                nameMap.set(g.name, g.friendlyName);
                             }
                         });
-                        setAllGroupsMap(map);
+                        setAllGroupsMap(typeMap);
+                        setFriendlyNameMap(prev => {
+                            const merged = new Map(prev);
+                            nameMap.forEach((v, k) => merged.set(k, v));
+                            return merged;
+                        });
                     }
                 }
             } catch (err) {
@@ -296,6 +320,11 @@ export const DeviceGroupHistoryGraph = React.forwardRef<DeviceGroupHistoryGraphH
 
     const containerRef = useRef<HTMLDivElement>(null);
 
+    const resolveFriendlyName = (groupName: string): string => {
+        if (!groupName) return groupName;
+        return friendlyNameMap.get(groupName) || groupName;
+    };
+
     const CustomTooltip = ({ active, payload, coordinate }: { active?: boolean; payload?: { payload: HistoryEvent }[]; coordinate?: { x: number; y: number } }) => {
         if (!active || !payload || !payload.length) return null;
 
@@ -362,11 +391,11 @@ export const DeviceGroupHistoryGraph = React.forwardRef<DeviceGroupHistoryGraphH
             const targetGroup = event.details.moveOperation.targetGroup;
 
             if (sourceGroups.length === 1) {
-                actionText = `Moved from "${sourceGroups[0]}" → "${targetGroup}" by ${userName} - ${timeAgo}`;
+                actionText = `Moved from "${resolveFriendlyName(sourceGroups[0])}" → "${resolveFriendlyName(targetGroup)}" by ${userName} - ${timeAgo}`;
             } else if (sourceGroups.length > 1) {
-                actionText = `Moved from ${sourceGroups.length} groups → "${targetGroup}" by ${userName} - ${timeAgo}`;
+                actionText = `Moved from ${sourceGroups.length} groups → "${resolveFriendlyName(targetGroup)}" by ${userName} - ${timeAgo}`;
             } else {
-                actionText = `Moved to "${targetGroup}" by ${userName} - ${timeAgo}`;
+                actionText = `Moved to "${resolveFriendlyName(targetGroup)}" by ${userName} - ${timeAgo}`;
             }
         } else {
             // Handle non-move operations
@@ -377,25 +406,25 @@ export const DeviceGroupHistoryGraph = React.forwardRef<DeviceGroupHistoryGraphH
                 case 'OPNSENSE_GROUP_IP_ASSIGN_SUCCESS':
                 case 'OPNSENSE_GROUP_IP_ADD_SUCCESS':
                     if (isBatch) {
-                        const batchGroupName = event.details.targetGroup || event.details.groupName || 'Group';
+                        const batchGroupName = resolveFriendlyName(event.details.targetGroup || event.details.groupName || 'Group');
                         actionText = `Batch assigned to ${batchGroupName} by ${userName} - ${timeAgo}`;
                     } else {
-                        const assignGroupName = event.details.targetGroup || event.details.groupName || 'Group';
+                        const assignGroupName = resolveFriendlyName(event.details.targetGroup || event.details.groupName || 'Group');
                         actionText = `Assigned to ${assignGroupName} by ${userName} - ${timeAgo}`;
                     }
                     break;
                 case 'OPNSENSE_GROUP_IP_UNASSIGN_SUCCESS':
                 case 'OPNSENSE_GROUP_IP_REMOVE_SUCCESS':
                     if (isBatch) {
-                        const batchUnassignGroupName = event.details.groupName || 'Group';
+                        const batchUnassignGroupName = resolveFriendlyName(event.details.groupName || 'Group');
                         actionText = `Batch unassigned from ${batchUnassignGroupName} by ${userName} - ${timeAgo}`;
                     } else {
-                        const unassignGroupName = event.details.groupName || 'Group';
+                        const unassignGroupName = resolveFriendlyName(event.details.groupName || 'Group');
                         actionText = `Unassigned from ${unassignGroupName} by ${userName} - ${timeAgo}`;
                     }
                     break;
                 case 'OPNSENSE_GROUP_IP_MOVE_SUCCESS':
-                    const moveTargetGroup = event.details.targetGroup || 'Group';
+                    const moveTargetGroup = resolveFriendlyName(event.details.targetGroup || 'Group');
                     actionText = `Moved to ${moveTargetGroup} (Removed from ${event.details.removedGroups} others) by ${userName} - ${timeAgo}`;
                     break;
                 case 'OPNSENSE_GROUP_IP_UNASSIGN_ALL_SUCCESS':
@@ -403,14 +432,13 @@ export const DeviceGroupHistoryGraph = React.forwardRef<DeviceGroupHistoryGraphH
                     actionText = `Unassigned from all groups (${event.details.removedGroups} groups) by ${userName} - ${timeAgo}`;
                     break;
                 case 'OPNSENSE_GROUP_IP_BATCH_ASSIGN_SUCCESS':
-                    const batchAssignTargetGroup = event.details.targetGroup || event.details.groupName || 'multiple groups';
+                    const batchAssignTargetGroup = resolveFriendlyName(event.details.targetGroup || event.details.groupName || 'multiple groups');
                     actionText = `Batch assigned to ${batchAssignTargetGroup} by ${userName} - ${timeAgo}`;
                     break;
                 case 'OPNSENSE_GROUP_IP_BATCH_UNASSIGN_SUCCESS':
                     actionText = `Batch unassigned from ${event.details.removedGroups} groups by ${userName} - ${timeAgo}`;
                     break;
                 default:
-                    // Handle unknown actions by extracting meaningful info from the action name
                     if (displayAction.includes('BATCH')) {
                         if (displayAction.includes('ASSIGN')) {
                             actionText = `Batch assign operation by ${userName} - ${timeAgo}`;
@@ -420,10 +448,10 @@ export const DeviceGroupHistoryGraph = React.forwardRef<DeviceGroupHistoryGraphH
                             actionText = `Batch operation by ${userName} - ${timeAgo}`;
                         }
                     } else if (displayAction.includes('ASSIGN') || displayAction.includes('ADD')) {
-                        const defaultAssignGroup = event.details.targetGroup || event.details.groupName || 'Group';
+                        const defaultAssignGroup = resolveFriendlyName(event.details.targetGroup || event.details.groupName || 'Group');
                         actionText = `Assigned to ${defaultAssignGroup} by ${userName} - ${timeAgo}`;
                     } else if (displayAction.includes('UNASSIGN') || displayAction.includes('REMOVE')) {
-                        const defaultUnassignGroup = event.details.groupName || 'Group';
+                        const defaultUnassignGroup = resolveFriendlyName(event.details.groupName || 'Group');
                         actionText = `Unassigned from ${defaultUnassignGroup} by ${userName} - ${timeAgo}`;
                     } else {
                         actionText = `${displayAction} by ${userName} - ${timeAgo}`;
@@ -501,13 +529,13 @@ export const DeviceGroupHistoryGraph = React.forwardRef<DeviceGroupHistoryGraphH
                         <ul className="list-disc list-inside text-xs space-y-0.5">
                             {event.currentGroupNames.map((name, idx) => {
                                 const groupType = lookupGroupType(name);
-                                // Use same conditional logic as renderGroupName
+                                const displayName = resolveFriendlyName(name);
                                 const shouldShowIcon = enableGroupTypes && (!isSelfService || enableSelfServiceMultiSelect);
                                 return (
                                     <li key={idx} className="truncate">
                                         {groupType && shouldShowIcon ? (
                                             <span className="inline-flex items-center gap-1">
-                                                {name}
+                                                {displayName}
                                                 {groupType === 'SingleSelect' ? (
                                                     <Square className="h-3 w-3 inline-block text-blue-500 opacity-60" />
                                                 ) : (
@@ -515,7 +543,7 @@ export const DeviceGroupHistoryGraph = React.forwardRef<DeviceGroupHistoryGraphH
                                                 )}
                                             </span>
                                         ) : (
-                                            name
+                                            displayName
                                         )}
                                     </li>
                                 );

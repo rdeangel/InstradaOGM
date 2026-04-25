@@ -315,6 +315,8 @@ export default function NetworkManagementPage() {
                   layoutMode={layoutMode}
                   allEmojiValues={allEmojiValues}
                   allFlagValues={allFlagValues}
+                  vpnConnectionStatuses={vpnConnectionStatuses}
+                  groupVpnMap={groupVpnMap}
                 />
               </div>
 

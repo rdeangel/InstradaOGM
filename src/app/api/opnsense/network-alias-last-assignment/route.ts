@@ -94,13 +94,71 @@ export async function GET(request: NextRequest) {
 
       const groupName = (typeof details.groupName === 'string' ? details.groupName : null) || null;
 
-      return NextResponse.json({
+      const groupDisplays = await prisma.opnsenseGroupDisplay.findMany({
+        select: { opnsenseUuid: true, friendlyName: true },
+      });
+      const groupFriendlyNameMap = new Map<string, string>();
+      for (const gd of groupDisplays) {
+        groupFriendlyNameMap.set(gd.opnsenseUuid.toLowerCase(), gd.friendlyName);
+      }
+
+      const resolveFriendlyName = (name: string | null, groupUuid?: string | null): string | null => {
+        if (!name) return null;
+        if (groupUuid) {
+          const friendly = groupFriendlyNameMap.get(groupUuid.toLowerCase());
+          if (friendly) return friendly;
+        }
+        return name;
+      };
+
+      const resolvedGroupName = resolveFriendlyName(groupName, typeof details.groupUuid === 'string' ? details.groupUuid : null);
+
+      const response: Record<string, unknown> = {
         timestamp: lastAssignment.timestamp.toISOString(),
         operationType,
         action: lastAssignment.action,
-        groupName,
+        groupName: resolvedGroupName,
         userName: lastAssignment.user?.name || lastAssignment.user?.email || null,
-      });
+      };
+
+      if (details.targetGroup && typeof details.targetGroup === 'object') {
+        const tg = details.targetGroup as Record<string, unknown>;
+        const tgFriendly = typeof tg.friendlyName === 'string' ? tg.friendlyName : null;
+        const tgId = typeof tg.id === 'string' ? tg.id : null;
+        response.targetGroup = {
+          id: tgId || '',
+          name: typeof tg.name === 'string' ? tg.name : '',
+          friendlyName: tgFriendly || (tgId ? groupFriendlyNameMap.get(tgId.toLowerCase()) : null) || null,
+        };
+      }
+
+      if (details.sourceGroups && Array.isArray(details.sourceGroups)) {
+        response.sourceGroups = (details.sourceGroups as Array<Record<string, unknown>>).map((sg) => {
+          const sgId = typeof sg.id === 'string' ? sg.id : '';
+          const sgName = typeof sg.name === 'string' ? sg.name : '';
+          const sgFriendly = typeof sg.friendlyName === 'string' ? sg.friendlyName : null;
+          return {
+            id: sgId,
+            name: sgName,
+            friendlyName: sgFriendly || (sgId ? groupFriendlyNameMap.get(sgId.toLowerCase()) : null) || null,
+          };
+        });
+      }
+
+      if (details.removedFromGroups && Array.isArray(details.removedFromGroups)) {
+        response.sourceGroups = (details.removedFromGroups as Array<Record<string, unknown>>).map((sg) => {
+          const sgId = typeof sg.uuid === 'string' ? sg.uuid : typeof sg.id === 'string' ? sg.id : '';
+          const sgName = typeof sg.name === 'string' ? sg.name : '';
+          const sgFriendly = typeof sg.friendlyName === 'string' ? sg.friendlyName : null;
+          return {
+            id: sgId,
+            name: sgName,
+            friendlyName: sgFriendly || (sgId ? groupFriendlyNameMap.get(sgId.toLowerCase()) : null) || null,
+          };
+        });
+      }
+
+      return NextResponse.json(response);
     } catch (error) {
       logger.error('Error fetching network alias last assignment:', error);
       return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

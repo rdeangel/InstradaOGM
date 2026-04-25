@@ -43,6 +43,8 @@ interface NetworkAliasManagementCardProps {
   layoutMode?: 'stacked' | 'side-by-side';
   allEmojiValues?: string[];
   allFlagValues?: string[];
+  vpnConnectionStatuses?: Map<string, { status: 'connected' | 'disconnected' | 'disabled'; type: string; enabled?: string }>;
+  groupVpnMap?: Map<string, string>;
 }
 
 interface AliasSelectOption {
@@ -60,6 +62,8 @@ const NetworkAliasManagementCard = forwardRef<NetworkAliasManagementCardHandles,
   layoutMode,
   allEmojiValues = [],
   allFlagValues = [],
+  vpnConnectionStatuses = new Map(),
+  groupVpnMap = new Map(),
 }, ref) {
   const { toast } = useToast();
   const isMobile = useIsMobile();
@@ -360,8 +364,172 @@ const NetworkAliasManagementCard = forwardRef<NetworkAliasManagementCardHandles,
       id: g.uuid,
       uuid: g.uuid,
       name: g.name,
+      friendlyName: g.friendlyName,
+      groupType: g.groupType,
     }));
   }, [selectedAlias?.memberOfGroups]);
+
+  const allVpnInfos = useMemo(() => {
+    const vpns: Array<{ vpnUuid: string; status: 'connected' | 'disconnected' | 'disabled'; type: string; enabled?: string }> = [];
+    for (const g of (selectedAlias?.memberOfGroups || [])) {
+      const vpnUuidRaw = groupVpnMap.get(g.uuid);
+      if (vpnUuidRaw) {
+        const vpnUuid = vpnUuidRaw.trim();
+        if (!vpns.find(v => v.vpnUuid === vpnUuid)) {
+          const info = vpnConnectionStatuses.get(vpnUuid);
+          if (info) vpns.push({ vpnUuid, status: info.status, type: info.type, enabled: info.enabled });
+        }
+      }
+    }
+    return vpns;
+  }, [selectedAlias?.memberOfGroups, vpnConnectionStatuses, groupVpnMap]);
+
+  const relevantVpnInfo: { vpnUuid: string; status: 'connected' | 'disconnected' | 'disabled'; type: string; enabled?: string; isMultiple?: boolean; connectedCount?: number; totalCount?: number } | null = useMemo(() => {
+    if (allVpnInfos.length === 0) return null;
+    if (allVpnInfos.length === 1) return allVpnInfos[0];
+    const connectedCount = allVpnInfos.filter(v => v.status === 'connected').length;
+    const totalCount = allVpnInfos.length;
+    let overallStatus: 'connected' | 'disconnected' | 'disabled';
+    if (connectedCount === totalCount) overallStatus = 'connected';
+    else if (connectedCount === 0) overallStatus = 'disconnected';
+    else overallStatus = 'disabled';
+    return { ...allVpnInfos[0], status: overallStatus, isMultiple: true as const, connectedCount, totalCount };
+  }, [allVpnInfos]);
+
+  const renderVpnBadge = useCallback(() => {
+    if (!relevantVpnInfo) return null;
+    return (
+      <ClientOnly fallback={<Skeleton className={cn("h-3 w-16 rounded-full", isMobile ? "mt-1" : "ml-1.5")} />}>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Badge
+                className={cn(
+                  "text-white px-1.5 py-0.5",
+                  isMobile ? "text-[0.7rem] mt-1" : "text-xs ml-1.5",
+                  relevantVpnInfo.status === 'connected' ? "bg-darker-green hover:bg-darker-green/80" :
+                    relevantVpnInfo.status === 'disabled' ? (relevantVpnInfo.isMultiple ? "bg-orange-500 hover:bg-orange-600" : "bg-gray-500 hover:bg-gray-600") :
+                      "bg-darker-red hover:bg-darker-red/80"
+                )}
+              >
+                {relevantVpnInfo.isMultiple ? (
+                  `${relevantVpnInfo.totalCount} VPNs`
+                ) : (
+                  relevantVpnInfo.type === 'openvpn' ? 'OpenVPN' :
+                    relevantVpnInfo.type === 'wireguard' ? 'WireGuard' :
+                      relevantVpnInfo.type === 'ipsec' ? 'IPsec' :
+                        relevantVpnInfo.type
+                )}
+              </Badge>
+            </TooltipTrigger>
+            <TooltipContent>
+              {relevantVpnInfo.isMultiple ? (
+                <div className="space-y-1">
+                  <p className="font-medium">VPN Status Summary:</p>
+                  <p>✓ {relevantVpnInfo.connectedCount} Connected</p>
+                  <p>✗ {relevantVpnInfo.totalCount! - relevantVpnInfo.connectedCount!} Disconnected/Disabled</p>
+                  <div className="border-t pt-1 mt-2">
+                    <p className="font-medium">VPNs:</p>
+                    {allVpnInfos.map((vpn, index) => (
+                      <p key={index} className="text-sm">
+                        {vpn.type === 'openvpn' ? 'OpenVPN' :
+                          vpn.type === 'wireguard' ? 'WireGuard' :
+                            vpn.type === 'ipsec' ? 'IPsec' :
+                              vpn.type} - {vpn.status === 'connected' ? 'Connected' : vpn.status === 'disabled' ? 'Disabled' : 'Disconnected'}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {relevantVpnInfo.type === 'openvpn' && (
+                    <p>OpenVPN {relevantVpnInfo.status === 'connected' ? 'Connected' : 'Disconnected'}</p>
+                  )}
+                  {relevantVpnInfo.type === 'wireguard' && (
+                    <p>WireGuard {relevantVpnInfo.status === 'connected' ? 'Connected' : relevantVpnInfo.status === 'disabled' ? 'Disabled' : 'Disconnected'}</p>
+                  )}
+                  {relevantVpnInfo.type === 'ipsec' && (
+                    <p>IPsec {relevantVpnInfo.status === 'connected' ? 'Connected' : 'Disconnected'}</p>
+                  )}
+                </>
+              )}
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      </ClientOnly>
+    );
+  }, [relevantVpnInfo, allVpnInfos, isMobile]);
+
+  const renderGroupBreakdown = useCallback(() => {
+    const groups = selectedAlias?.memberOfGroups || [];
+    if (groups.length < 2) return null;
+
+    return (
+      <div className="flex items-start gap-1 flex-wrap">
+        <strong className={cn(isMobile ? "text-sm" : "")}>Group Breakdown:</strong>
+        <span className={cn("text-muted-foreground", isMobile ? "text-sm" : "")}>
+          {[...groups]
+            .sort((a, b) => {
+              if (a.groupType === 'SingleSelect' && b.groupType === 'MultiSelect') return -1;
+              if (a.groupType === 'MultiSelect' && b.groupType === 'SingleSelect') return 1;
+              return 0;
+            })
+            .map((group, index, sortedArray) => {
+              const vpnUuidRaw = groupVpnMap.get(group.uuid);
+              const vpnInfo = vpnUuidRaw ? vpnConnectionStatuses.get(vpnUuidRaw.trim()) : undefined;
+
+              return (
+                <span key={`${group.uuid}-${index}`} className="inline-flex items-center gap-1">
+                  <ClientOnly fallback={<Skeleton className="h-3 w-3 rounded-full inline-block" />}>
+                    {getGroupIcon(group.uuid)}
+                  </ClientOnly>
+                  <span>
+                    {group.friendlyName || group.name}
+                    {enableGroupTypes && group.groupType ? (
+                      <span className="ml-0.5 text-xs opacity-70">
+                        ({group.groupType === 'SingleSelect' ? singleSelectName : multiSelectName})
+                      </span>
+                    ) : null}
+                  </span>
+                  {vpnInfo && (
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Badge className={cn(
+                            "text-white px-1.5 py-0.5",
+                            vpnInfo.status === 'connected' ? "bg-darker-green hover:bg-darker-green/80 text-white" :
+                              vpnInfo.status === 'disabled' ? "bg-gray-500 hover:bg-gray-600 text-white" :
+                                "bg-darker-red hover:bg-darker-red/80 text-white"
+                          )}>
+                            {vpnInfo.type === 'openvpn' ? 'OpenVPN' :
+                              vpnInfo.type === 'wireguard' ? 'WireGuard' :
+                                vpnInfo.type === 'ipsec' ? 'IPsec' :
+                                  vpnInfo.type}
+                          </Badge>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          {vpnInfo.type === 'openvpn' && (
+                            <p>OpenVPN {vpnInfo.status === 'connected' ? 'Connected' : 'Disconnected'}</p>
+                          )}
+                          {vpnInfo.type === 'wireguard' && (
+                            <p>WireGuard {vpnInfo.status === 'connected' ? 'Connected' : vpnInfo.status === 'disabled' ? 'Disabled' : 'Disconnected'}</p>
+                          )}
+                          {vpnInfo.type === 'ipsec' && (
+                            <p>IPsec {vpnInfo.status === 'connected' ? 'Connected' : 'Disconnected'}</p>
+                          )}
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  )}
+                  {index < sortedArray.length - 1 && <span className="mx-1">-</span>}
+                </span>
+              );
+            })
+          }
+        </span>
+      </div>
+    );
+  }, [selectedAlias?.memberOfGroups, enableGroupTypes, singleSelectName, multiSelectName, isMobile, getGroupIcon, groupVpnMap, vpnConnectionStatuses]);
 
   const renderGroupsDisplay = useCallback(() => {
     const groups = selectedAlias?.memberOfGroups || [];
@@ -703,6 +871,7 @@ const NetworkAliasManagementCard = forwardRef<NetworkAliasManagementCardHandles,
                         <div className="flex items-center gap-1 flex-wrap">
                           <strong className={cn(isMobile ? "text-sm" : "")}>Groups:</strong>
                           {renderGroupsDisplay()}
+                          {renderVpnBadge()}
                         </div>
                       </>
                     )}
@@ -750,6 +919,8 @@ const NetworkAliasManagementCard = forwardRef<NetworkAliasManagementCardHandles,
                                         </TooltipProvider>
                                       </div>
                                     )}
+
+                                {renderGroupBreakdown()}
 
                                 <div className="border-t border-gray-200 dark:border-gray-700 my-4" />
                                   </>
