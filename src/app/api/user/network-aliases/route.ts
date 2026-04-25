@@ -40,7 +40,14 @@ export async function GET(request: Request) {
           enabled: (alias.enabled as '0' | '1') || '1',
         }));
 
-      const enriched = enrichNetworkAliasesWithGroups(networkAliases, aliasMap as Record<string, { type: string; name: string; content: string; description: string; enabled: string }>);
+      const groupDisplays = await prisma.opnsenseGroupDisplay.findMany({
+        select: { opnsenseUuid: true, friendlyName: true, iconIdentifier: true, groupType: true },
+      });
+      const groupDisplayMap = new Map<string, { opnsenseUuid: string; friendlyName: string; iconIdentifier?: string | null; groupType?: string }>();
+      for (const gd of groupDisplays) {
+        groupDisplayMap.set(gd.opnsenseUuid.toLowerCase(), gd);
+      }
+      const enriched = enrichNetworkAliasesWithGroups(networkAliases, aliasMap as Record<string, { type: string; name: string; content: string; description: string; enabled: string }>, groupDisplayMap);
 
       const globallyDisabledGroups = await prisma.globallyDisabledGroup.findMany();
 

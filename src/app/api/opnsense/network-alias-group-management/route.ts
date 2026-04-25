@@ -6,6 +6,25 @@ import { prisma } from '@/lib/prisma';
 import { logApiAccess } from '@/lib/auditLog';
 import { exportAliases, batchAliasOperations, reconfigureAliases, parseGroupContent } from '@/lib/opnsense-api';
 
+interface BatchAliasOperation {
+  type: 'update';
+  uuid: string;
+  payload: {
+    alias: {
+      enabled: string;
+      name: string;
+      type: string;
+      content: string;
+      description: string;
+      proto: string;
+      interface: string;
+      updatefreq: string;
+      categories: string;
+      counters: string;
+    };
+  };
+}
+
 async function getVpnStatusForGroup(groupId: string): Promise<{ vpnUuid: string; status: 'connected' | 'disconnected' | 'disabled'; type: string; enabled?: string } | null> {
   try {
     const vpnMapping = await prisma.vpnMapping.findFirst({
@@ -101,61 +120,155 @@ export async function POST(request: Request) {
         aliasUuid: body.aliasUuid, aliasName: alias.name, groupUuid: body.groupId, groupName: group.name,
       }, request);
 
-      const currentContent = new Set(parseGroupContent(group.content, group.name));
-      let changed = false;
+      const batchOperations: BatchAliasOperation[] = [];
+      const removedFromGroups: { uuid: string; name: string; friendlyName?: string }[] = [];
 
       if (body.operation === 'assign') {
+        const groupDisplays = await prisma.opnsenseGroupDisplay.findMany({
+          select: { opnsenseUuid: true, friendlyName: true, groupType: true },
+        });
+        const groupDisplayMap = new Map<string, { friendlyName: string; groupType: string }>();
+        for (const gd of groupDisplays) {
+          groupDisplayMap.set(gd.opnsenseUuid.toLowerCase(), { friendlyName: gd.friendlyName, groupType: gd.groupType });
+        }
+
+        const targetGroupDisplay = groupDisplayMap.get(body.groupId.toLowerCase());
+        const targetGroupType = targetGroupDisplay?.groupType || 'SingleSelect';
+
+        if (targetGroupType === 'SingleSelect') {
+          const currentSingleSelectGroups: { uuid: string; alias: { name: string; content: string; enabled: string; type: string; description: string } }[] = [];
+          for (const [uuid, a] of Object.entries(aliasMap)) {
+            if (a.type !== 'networkgroup') continue;
+            if (uuid === body.groupId) continue;
+            const members = (a.content || '').split('\n').map((s: string) => s.trim()).filter(Boolean);
+            if (!members.includes(alias.name)) continue;
+            const display = groupDisplayMap.get(uuid.toLowerCase());
+            if (display?.groupType === 'MultiSelect') continue;
+            currentSingleSelectGroups.push({ uuid, alias: a as unknown as { name: string; content: string; enabled: string; type: string; description: string } });
+          }
+
+          for (const sg of currentSingleSelectGroups) {
+            const contentSet = new Set(parseGroupContent(sg.alias.content, sg.alias.name));
+            if (contentSet.delete(alias.name)) {
+              const newContent = Array.from(contentSet).join('\n');
+              batchOperations.push({
+                type: 'update',
+                uuid: sg.uuid,
+                payload: {
+                  alias: {
+                    enabled: sg.alias.enabled || '1',
+                    name: sg.alias.name,
+                    type: sg.alias.type,
+                    content: newContent,
+                    description: sg.alias.description || '',
+                    proto: '',
+                    interface: '',
+                    updatefreq: '',
+                    categories: '',
+                    counters: '',
+                  },
+                },
+              });
+              const removedDisplay = groupDisplayMap.get(sg.uuid.toLowerCase());
+              removedFromGroups.push({ uuid: sg.uuid, name: sg.alias.name, friendlyName: removedDisplay?.friendlyName });
+            }
+          }
+
+          await logApiAccess(auth, 'NETWORK_ALIAS_GROUP_ASSIGN_MOVE', {
+            aliasUuid: body.aliasUuid, aliasName: alias.name, groupUuid: body.groupId, groupName: group.name,
+            removedFromGroups: removedFromGroups.map(g => ({ uuid: g.uuid, name: g.name })),
+          }, request);
+        }
+
+        const currentContent = new Set(parseGroupContent(group.content, group.name));
         if (!currentContent.has(alias.name)) {
           currentContent.add(alias.name);
-          changed = true;
+          batchOperations.push({
+            type: 'update',
+            uuid: body.groupId,
+            payload: {
+              alias: {
+                enabled: group.enabled || '1',
+                name: group.name,
+                type: group.type,
+                content: Array.from(currentContent).join('\n'),
+                description: group.description || '',
+                proto: '',
+                interface: '',
+                updatefreq: '',
+                categories: '',
+                counters: '',
+              },
+            },
+          });
+        }
+
+        if (batchOperations.length > 0) {
+          await batchAliasOperations(batchOperations);
+          await reconfigureAliases();
         }
       } else {
+        const currentContent = new Set(parseGroupContent(group.content, group.name));
         if (currentContent.has(alias.name)) {
           currentContent.delete(alias.name);
-          changed = true;
-        }
-      }
-
-      if (changed) {
-        const newContent = Array.from(currentContent).join('\n');
-        await batchAliasOperations([{
-          type: 'update',
-          uuid: body.groupId,
-          payload: {
-            alias: {
-              enabled: group.enabled || '1',
-              name: group.name,
-              type: group.type,
-              content: newContent,
-              description: group.description || '',
-              proto: '',
-              interface: '',
-              updatefreq: '',
-              categories: '',
-              counters: '',
+          const newContent = Array.from(currentContent).join('\n');
+          await batchAliasOperations([{
+            type: 'update',
+            uuid: body.groupId,
+            payload: {
+              alias: {
+                enabled: group.enabled || '1',
+                name: group.name,
+                type: group.type,
+                content: newContent,
+                description: group.description || '',
+                proto: '',
+                interface: '',
+                updatefreq: '',
+                categories: '',
+                counters: '',
+              },
             },
-          },
-        }]);
-        await reconfigureAliases();
+          }]);
+          await reconfigureAliases();
+        }
       }
 
       await logApiAccess(auth, `NETWORK_ALIAS_GROUP_${body.operation.toUpperCase()}_SUCCESS`, {
         aliasUuid: body.aliasUuid, aliasName: alias.name, groupUuid: body.groupId, groupName: group.name,
       }, request);
 
-      // Compute updated memberOfGroups
+      const groupDisplays = await prisma.opnsenseGroupDisplay.findMany({
+        select: { opnsenseUuid: true, friendlyName: true, iconIdentifier: true, groupType: true },
+      });
+      const groupDisplayMap = new Map<string, { friendlyName: string; iconIdentifier?: string | null; groupType?: string }>();
+      for (const gd of groupDisplays) {
+        groupDisplayMap.set(gd.opnsenseUuid.toLowerCase(), gd);
+      }
+
       const updatedResponse = await exportAliases();
       const updatedAliasMap = updatedResponse?.aliases?.alias ?? {};
-      const updatedGroups: { uuid: string; name: string }[] = [];
+      const updatedGroups: { uuid: string; name: string; friendlyName?: string; iconIdentifier?: string | null; groupType?: 'SingleSelect' | 'MultiSelect' }[] = [];
       for (const [uuid, a] of Object.entries(updatedAliasMap)) {
         if (a.type !== 'networkgroup') continue;
-        const members = (a.content || '').split('\n').map(s => s.trim()).filter(Boolean);
+        const members = (a.content || '').split('\n').map((s: string) => s.trim()).filter(Boolean);
         if (members.includes(alias.name)) {
-          updatedGroups.push({ uuid, name: a.name });
+          const display = groupDisplayMap.get(uuid.toLowerCase());
+          updatedGroups.push({
+            uuid,
+            name: a.name,
+            friendlyName: display?.friendlyName || undefined,
+            iconIdentifier: display?.iconIdentifier ?? null,
+            groupType: (display?.groupType === 'MultiSelect' ? 'MultiSelect' : 'SingleSelect') as 'SingleSelect' | 'MultiSelect',
+          });
         }
       }
 
-      return NextResponse.json({ success: true, memberOfGroups: updatedGroups });
+      const response: { success: boolean; memberOfGroups: typeof updatedGroups; removedFromGroups?: typeof removedFromGroups } = { success: true, memberOfGroups: updatedGroups };
+      if (removedFromGroups.length > 0) {
+        response.removedFromGroups = removedFromGroups;
+      }
+      return NextResponse.json(response);
     } catch (error) {
       logger.error('Error in network alias group management:', error);
       await logApiAccess(auth, 'NETWORK_ALIAS_GROUP_MANAGEMENT_FAILURE', {

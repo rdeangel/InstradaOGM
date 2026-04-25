@@ -8,7 +8,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Waypoints, RefreshCcw, Loader2, Terminal, ChevronUp, ChevronDown, Copy, Activity, AlertCircle, CheckCircle } from 'lucide-react';
+import { Waypoints, RefreshCcw, Loader2, Terminal, ChevronUp, ChevronDown, Copy, Activity, AlertCircle, CheckCircle, Network as NetworkIconLucide } from 'lucide-react';
+import * as LucideIcons from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
+import { flags, generalEmojis } from '@/components/ui/icon-picker';
 import { cn } from '@/lib/utils';
 import { ClientOnly } from '@/components/util/ClientOnly';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -22,6 +25,8 @@ import {
 import { logger } from '@/lib/logger';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useToast } from '@/hooks/use-toast';
+import { useGroupType } from '@/context/GroupTypeContext';
+import { hasAnyGroupError, getGroupErrorType, getGroupErrorMessage } from '@/utils/groupErrorDetection';
 import type { NetworkAlias } from '@/types/opnsense';
 import { formatLastOperation, getLastOperationTooltip, type LastAssignmentData } from '@/lib/format-last-operation';
 import { DeviceGroupHistoryGraph, DeviceGroupHistoryGraphHandles } from '@/components/DeviceGroupHistoryGraph';
@@ -36,13 +41,15 @@ interface NetworkAliasManagementCardProps {
   selectedAlias: NetworkAlias | null;
   onSelectAlias: (alias: NetworkAlias | null) => void;
   layoutMode?: 'stacked' | 'side-by-side';
+  allEmojiValues?: string[];
+  allFlagValues?: string[];
 }
 
 interface AliasSelectOption {
   value: string;
   label: string;
   aliasDescription: string | null;
-  memberOfGroups: { uuid: string; name: string }[];
+  memberOfGroups: { uuid: string; name: string; friendlyName?: string; iconIdentifier?: string | null; groupType?: 'SingleSelect' | 'MultiSelect' }[];
   isDisabled: boolean;
   searchableText: string;
 }
@@ -51,9 +58,12 @@ const NetworkAliasManagementCard = forwardRef<NetworkAliasManagementCardHandles,
   selectedAlias,
   onSelectAlias,
   layoutMode,
+  allEmojiValues = [],
+  allFlagValues = [],
 }, ref) {
   const { toast } = useToast();
   const isMobile = useIsMobile();
+  const { enableGroupTypes, singleSelectName, multiSelectName } = useGroupType();
 
   const [aliases, setAliases] = useState<NetworkAlias[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -68,6 +78,31 @@ const NetworkAliasManagementCard = forwardRef<NetworkAliasManagementCardHandles,
 
   const [windowWidth, setWindowWidth] = useState(0);
   const [windowHeight, setWindowHeight] = useState(0);
+
+  const memoizedAllGeneralEmojiValues = useMemo(() => new Set([...generalEmojis.map(e => e.value.normalize('NFC')), ...allEmojiValues.map(e => e.normalize('NFC'))]), [allEmojiValues]);
+  const memoizedAllFlagValues = useMemo(() => new Set([...flags.map(f => f.value.normalize('NFC')), ...allFlagValues.map(flag => flag.normalize('NFC'))]), [allFlagValues]);
+
+  const getGroupIcon = useCallback((groupUuid: string): React.ReactNode => {
+    const group = selectedAlias?.memberOfGroups?.find(g => g.uuid === groupUuid);
+    const mappedIconIdentifier = group?.iconIdentifier;
+
+    if (mappedIconIdentifier) {
+      const normalizedIconIdentifier = mappedIconIdentifier.normalize('NFC');
+      const isEmoji = memoizedAllGeneralEmojiValues.has(normalizedIconIdentifier);
+      const isFlag = memoizedAllFlagValues.has(normalizedIconIdentifier);
+
+      if (isEmoji || isFlag) {
+        return <span className="text-xl leading-none mr-1.5">{mappedIconIdentifier}</span>;
+      }
+
+      const IconComponent = LucideIcons[mappedIconIdentifier as keyof typeof LucideIcons] as LucideIcon;
+      if (IconComponent) {
+        return <IconComponent size={18} className="mr-1.5 text-primary opacity-80" />;
+      }
+    }
+
+    return <NetworkIconLucide size={18} className="mr-1.5 text-primary opacity-80" />;
+  }, [selectedAlias?.memberOfGroups, memoizedAllGeneralEmojiValues, memoizedAllFlagValues]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -215,6 +250,7 @@ const NetworkAliasManagementCard = forwardRef<NetworkAliasManagementCardHandles,
         alias.content,
         alias.description,
         ...(alias.memberOfGroups || []).map(g => g.name),
+        ...(alias.memberOfGroups || []).map(g => g.friendlyName),
         alias.enabled !== '1' ? 'disabled' : '',
       ].filter(Boolean).join(' ').toLowerCase();
 
@@ -237,14 +273,47 @@ const NetworkAliasManagementCard = forwardRef<NetworkAliasManagementCardHandles,
         </div>
         <div className="flex-grow flex items-center gap-1 mt-1 sm:mt-0 sm:ml-2 flex-wrap max-w-full justify-end">
           {option.memberOfGroups.length > 0 && (
-            <Badge variant="secondary" className={cn(
-              "h-4 w-auto px-1 text-xs",
-              option.memberOfGroups.length === 1
-                ? "bg-amber-700 hover:bg-amber-700/80 text-white"
-                : "bg-red-600 hover:bg-red-700 text-white"
-            )}>
-              {option.memberOfGroups.length === 1 ? 'InGroup' : `${option.memberOfGroups.length} Groups`}
-            </Badge>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge variant="secondary" className={cn(
+                    "h-4 w-auto px-1 text-xs",
+                    option.memberOfGroups.length === 1
+                      ? "bg-amber-700 hover:bg-amber-700/80 text-white"
+                      : hasAnyGroupError(option.memberOfGroups, enableGroupTypes)
+                        ? "bg-orange-500 hover:bg-orange-600 text-white"
+                        : "bg-red-600 hover:bg-red-700 text-white"
+                  )}>
+                    {option.memberOfGroups.length === 1 ? 'InGroup' : `${option.memberOfGroups.length} Groups`}
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {hasAnyGroupError(option.memberOfGroups, enableGroupTypes) ? (
+                    <div>
+                      <p className="text-orange-400 font-semibold">{getGroupErrorMessage(getGroupErrorType(option.memberOfGroups, enableGroupTypes))}</p>
+                      <p className="text-sm mt-1">Member of:</p>
+                      {option.memberOfGroups.map((g, index) => (
+                        <p key={index} className="text-sm">{g.friendlyName || g.name}{enableGroupTypes ? ` (${g.groupType === 'MultiSelect' ? multiSelectName : singleSelectName})` : ''}</p>
+                      ))}
+                    </div>
+                  ) : enableGroupTypes ? (
+                    <div>
+                      <p className="text-sm">Member of:</p>
+                      {option.memberOfGroups.map((g, index) => (
+                        <p key={index} className="text-sm">{g.friendlyName || g.name} ({g.groupType === 'MultiSelect' ? multiSelectName : singleSelectName})</p>
+                      ))}
+                    </div>
+                  ) : (
+                    <div>
+                      <p className="text-sm">Member of:</p>
+                      {option.memberOfGroups.map((g, index) => (
+                        <p key={index} className="text-sm">{g.friendlyName || g.name}</p>
+                      ))}
+                    </div>
+                  )}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           )}
           {option.isDisabled && (
             <Badge className="h-4 w-auto px-1 text-xs bg-gray-400 hover:bg-gray-400 text-white">
@@ -254,7 +323,7 @@ const NetworkAliasManagementCard = forwardRef<NetworkAliasManagementCardHandles,
         </div>
       </div>
     );
-  }, []);
+  }, [enableGroupTypes, singleSelectName, multiSelectName]);
 
   const renderSelectedAlias = useCallback((option: AliasSelectOption) => {
     return (
@@ -273,7 +342,7 @@ const NetworkAliasManagementCard = forwardRef<NetworkAliasManagementCardHandles,
       selectedAlias.description ? `- **Description:** ${selectedAlias.description}` : '',
       extendedDetails?.lastAssignment ? `- **Last Operation:** ${formatLastOperation(extendedDetails.lastAssignment, true)}` : '',
       selectedAlias.memberOfGroups && selectedAlias.memberOfGroups.length > 0
-        ? `- **Groups:** ${selectedAlias.memberOfGroups.map(g => g.name).join(', ')}`
+        ? `- **Groups:** ${selectedAlias.memberOfGroups.map(g => g.friendlyName || g.name).join(', ')}`
         : '- **Groups:** None',
     ].filter(Boolean).join('\n');
 
@@ -293,6 +362,112 @@ const NetworkAliasManagementCard = forwardRef<NetworkAliasManagementCardHandles,
       name: g.name,
     }));
   }, [selectedAlias?.memberOfGroups]);
+
+  const renderGroupsDisplay = useCallback(() => {
+    const groups = selectedAlias?.memberOfGroups || [];
+    if (groups.length === 0) {
+      return (
+        <span className={cn(
+          "font-mono px-1.5 py-0.5 rounded-md inline-flex items-center gap-1",
+          "bg-gray-400 dark:bg-gray-700 text-white opacity-60 border border-gray-400 dark:border-gray-700",
+          isMobile ? "text-sm" : "text-base"
+        )}>
+          <AlertCircle className="h-3 w-3 mr-1" />
+          No Membership
+        </span>
+      );
+    }
+
+    if (groups.length === 1) {
+      const group = groups[0];
+      return (
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className={cn(
+                "font-mono px-1.5 py-0.5 rounded-md inline-flex items-center gap-1",
+                "bg-green-100 text-green-800 border border-green-700",
+                isMobile ? "text-sm" : "text-base"
+              )}>
+                <CheckCircle className="h-3 w-3 mr-1" />
+                <ClientOnly fallback={<Skeleton className="h-4 w-4 mr-1.5 rounded-full" />}>
+                  {getGroupIcon(group.uuid)}
+                </ClientOnly>
+                {group.friendlyName || group.name}
+                {enableGroupTypes && group.groupType ? ` (${group.groupType === 'SingleSelect' ? singleSelectName : multiSelectName})` : ''}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <ClientOnly fallback={<Skeleton className="h-3 w-3 rounded-full" />}>
+                    {getGroupIcon(group.uuid)}
+                  </ClientOnly>
+                  <span>
+                    {group.friendlyName || group.name}
+                    {enableGroupTypes && group.groupType ? ` (${group.groupType === 'SingleSelect' ? singleSelectName : multiSelectName})` : ''}
+                  </span>
+                </div>
+              </div>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      );
+    }
+
+    return (
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className={cn(
+              "font-mono px-1.5 py-0.5 rounded-md inline-flex items-center gap-1",
+              hasAnyGroupError(groups, enableGroupTypes)
+                ? "bg-orange-100 text-orange-800 border border-orange-600"
+                : "bg-green-100 text-green-800 border border-green-700",
+              isMobile ? "text-sm" : "text-base"
+            )}>
+              <CheckCircle className="h-3 w-3 mr-1" />
+              {groups.length} Groups
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>
+            {hasAnyGroupError(groups, enableGroupTypes) ? (
+              <div>
+                <p className="text-orange-400 font-semibold">{getGroupErrorMessage(getGroupErrorType(groups, enableGroupTypes))}</p>
+                <p className="text-sm mt-1">Member of:</p>
+                {groups.map((group) => (
+                  <div key={group.uuid} className="flex items-center gap-2">
+                    <ClientOnly fallback={<Skeleton className="h-3 w-3 rounded-full" />}>
+                      {getGroupIcon(group.uuid)}
+                    </ClientOnly>
+                    <span className="text-sm">
+                      {group.friendlyName || group.name}
+                      {enableGroupTypes && group.groupType ? ` (${group.groupType === 'SingleSelect' ? singleSelectName : multiSelectName})` : ''}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div>
+                <p className="text-sm">Member of:</p>
+                {groups.map((group) => (
+                  <div key={group.uuid} className="flex items-center gap-2">
+                    <ClientOnly fallback={<Skeleton className="h-3 w-3 rounded-full" />}>
+                      {getGroupIcon(group.uuid)}
+                    </ClientOnly>
+                    <span className="text-sm">
+                      {group.friendlyName || group.name}
+                      {enableGroupTypes && group.groupType ? ` (${group.groupType === 'SingleSelect' ? singleSelectName : multiSelectName})` : ''}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
+  }, [selectedAlias?.memberOfGroups, enableGroupTypes, singleSelectName, multiSelectName, isMobile, getGroupIcon]);
 
   return (
     <>
@@ -527,25 +702,7 @@ const NetworkAliasManagementCard = forwardRef<NetworkAliasManagementCardHandles,
                         )}
                         <div className="flex items-center gap-1 flex-wrap">
                           <strong className={cn(isMobile ? "text-sm" : "")}>Groups:</strong>
-                          <span className={cn(
-                            "font-mono px-1.5 py-0.5 rounded-md inline-flex items-center gap-1",
-                            selectedAlias.memberOfGroups && selectedAlias.memberOfGroups.length > 0
-                              ? "bg-green-100 text-green-800 border border-green-700"
-                              : "bg-gray-400 dark:bg-gray-700 text-white opacity-60 border border-gray-400 dark:border-gray-700",
-                            isMobile ? "text-sm" : "text-base"
-                          )}>
-                            {selectedAlias.memberOfGroups && selectedAlias.memberOfGroups.length > 0 ? (
-                              <>
-                                <CheckCircle className="h-3 w-3 mr-1" />
-                                {selectedAlias.memberOfGroups.map(g => g.name).join(', ')}
-                              </>
-                            ) : (
-                              <>
-                                <AlertCircle className="h-3 w-3 mr-1" />
-                                No Membership
-                              </>
-                            )}
-                          </span>
+                          {renderGroupsDisplay()}
                         </div>
                       </>
                     )}

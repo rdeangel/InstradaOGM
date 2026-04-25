@@ -176,7 +176,16 @@ export default function NetworkManagementPage() {
       });
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.error || 'Failed to assign');
-      toast({ title: 'Alias assigned to group', variant: 'success' });
+
+      if (data.removedFromGroups && data.removedFromGroups.length > 0) {
+        const removedNames = data.removedFromGroups.map((g: { name: string; friendlyName?: string }) => g.friendlyName || g.name).join(', ');
+        const targetGroup = groups.find(g => g.id === targetGroupId || g.uuid === targetGroupId);
+        const targetName = targetGroup?.friendlyName || targetGroup?.name || 'group';
+        toast({ title: 'Alias moved', description: `Moved from ${removedNames} to ${targetName}`, variant: 'success' });
+      } else {
+        toast({ title: 'Alias assigned to group', variant: 'success' });
+      }
+
       if (data.memberOfGroups) {
         setSelectedAlias(prev => prev ? { ...prev, memberOfGroups: data.memberOfGroups } : prev);
       }
@@ -186,7 +195,7 @@ export default function NetworkManagementPage() {
     } finally {
       setIsAssigning(false);
     }
-  }, [selectedAlias, toast, refreshGroups]);
+  }, [selectedAlias, toast, refreshGroups, groups]);
 
   const handleRemoveFromGroup = useCallback(async (groupId: string) => {
     if (!selectedAlias) return;
@@ -304,6 +313,8 @@ export default function NetworkManagementPage() {
                   selectedAlias={selectedAlias}
                   onSelectAlias={setSelectedAlias}
                   layoutMode={layoutMode}
+                  allEmojiValues={allEmojiValues}
+                  allFlagValues={allFlagValues}
                 />
               </div>
 
