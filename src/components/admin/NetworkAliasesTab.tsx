@@ -31,6 +31,7 @@ import { ClientOnly } from '@/components/util/ClientOnly';
 import { useAuth } from '@/context/AuthContext';
 import { Role } from '@/types/opnsense';
 
+// eslint-disable-next-line security/detect-unsafe-regex
 const CIDR_REGEX = /^(\d{1,3}\.){3}\d{1,3}\/\d{1,2}$|^[0-9a-fA-F:]+\/\d{1,3}$/;
 const NAME_REGEX = /^[a-zA-Z0-9_]+$/;
 

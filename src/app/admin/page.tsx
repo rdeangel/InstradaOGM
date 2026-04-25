@@ -341,7 +341,7 @@ export default function AdminPage() {
         setActiveTab(tabParam);
       }
     }
-  }, [searchParams, setActiveTab]);
+  }, [searchParams, setActiveTab, manageNetworkAliasesEnabled]);
 
   // Update connection error modal from useOpnsenseData hook
   useEffect(() => {

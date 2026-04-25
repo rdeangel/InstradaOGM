@@ -60,6 +60,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ uuid
         );
       }
 
+      // eslint-disable-next-line security/detect-object-injection
       const oldAlias = aliasMap[uuid];
       const oldName = oldAlias?.name || uuid;
 
@@ -137,6 +138,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ u
       }
 
       const allAliasesResponse = await exportAliases();
+      // eslint-disable-next-line security/detect-object-injection
       const aliasName = allAliasesResponse?.aliases?.alias?.[uuid]?.name || uuid;
 
       await logApiAccess(auth, 'NETWORK_ALIAS_DELETE_ATTEMPT', { uuid, name: aliasName }, request);

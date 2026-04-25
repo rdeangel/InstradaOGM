@@ -68,7 +68,6 @@ export async function POST(request: Request) {
 
       const aliasMap = allAliasesResponse.aliases.alias;
 
-      // eslint-disable-next-line security/detect-object-injection
       const alias = aliasMap[body.aliasUuid];
       if (!alias) {
         return NextResponse.json({ error: 'Network alias not found' }, { status: 404 });
@@ -80,7 +79,6 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Network alias is disabled in OPNsense' }, { status: 400 });
       }
 
-      // eslint-disable-next-line security/detect-object-injection
       const group = aliasMap[body.groupId];
       if (!group || group.type !== 'networkgroup') {
         return NextResponse.json({ error: 'Network group not found' }, { status: 404 });

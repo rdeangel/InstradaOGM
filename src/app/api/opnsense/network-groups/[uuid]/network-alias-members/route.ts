@@ -50,6 +50,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ uui
 
       // Resolve UUIDs to names
       const resolveUuid = async (aliasUuid: string): Promise<{ name: string } | null> => {
+        // eslint-disable-next-line security/detect-object-injection
         const alias = aliasMap[aliasUuid];
         if (!alias) {
           skipped.push({ uuid: aliasUuid, reason: 'not-found' });
@@ -77,6 +78,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ uui
       }
 
       for (const aliasUuid of toRemove) {
+        // eslint-disable-next-line security/detect-object-injection
         const alias = aliasMap[aliasUuid];
         if (!alias) { skipped.push({ uuid: aliasUuid, reason: 'not-found' }); continue; }
         currentContent.delete(alias.name);
