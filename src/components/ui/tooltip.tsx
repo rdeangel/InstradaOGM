@@ -49,15 +49,15 @@ interface TouchAwareTooltipProps {
 const TouchAwareTooltip = ({ children, open, defaultOpen, onOpenChange, ...props }: TouchAwareTooltipProps) => {
   const isTouchDevice = useTouchDevice()
 
-  // Determine if controlled mode on first render and never change it
-  // This prevents controlled/uncontrolled switching warnings
+  // Determine if externally controlled mode on first render and never change it
   const isControlledRef = React.useRef(open !== undefined)
   const isControlled = isControlledRef.current
 
   const [internalOpen, setInternalOpen] = React.useState(defaultOpen ?? false)
   const timeoutRef = React.useRef<NodeJS.Timeout>()
 
-  // Use external 'open' prop if controlled, otherwise use internal state
+  // Always use controlled mode internally to prevent Radix controlled/uncontrolled warnings
+  // External 'open' prop takes precedence if provided, otherwise use internal state
   const isOpen = isControlled ? (open ?? false) : internalOpen
 
   // Keep internal state in sync with external controlled state
@@ -66,14 +66,6 @@ const TouchAwareTooltip = ({ children, open, defaultOpen, onOpenChange, ...props
       setInternalOpen(open)
     }
   }, [isControlled, open, internalOpen])
-
-  // Prevent controlled/uncontrolled switching during SSR/hydration
-  // by ensuring we have a consistent state management approach
-  const [isClient, setIsClient] = React.useState(false)
-
-  React.useEffect(() => {
-    setIsClient(true)
-  }, [])
 
   const handleOpenChange = React.useCallback((newOpen: boolean) => {
     // Always update internal state for uncontrolled mode OR touch devices
@@ -152,29 +144,8 @@ const TouchAwareTooltip = ({ children, open, defaultOpen, onOpenChange, ...props
     }
   }, [isTouchDevice, isOpen, handleOpenChange])
 
-  // Build props for TooltipPrimitive.Root based on controlled/uncontrolled mode
-  // For touch devices, ALWAYS use controlled mode so our custom handlers work
-  // For non-touch devices, respect the original controlled/uncontrolled mode
-  const rootProps = (isTouchDevice || isControlled)
-    ? { open: isOpen, onOpenChange: handleOpenChange, ...props }
-    : { defaultOpen: defaultOpen ?? false, ...props }
-
-  // During SSR/hydration, use simple uncontrolled mode
-  if (!isClient) {
-    return (
-      <TooltipPrimitive.Root defaultOpen={defaultOpen ?? false} {...props}>
-        {React.Children.map(children, (child) => {
-          if (React.isValidElement(child) && child.type === TouchAwareTooltipTrigger) {
-            return React.cloneElement(child, {})
-          }
-          return child
-        })}
-      </TooltipPrimitive.Root>
-    )
-  }
-
-  // For touch devices, add touch-specific event handlers
-  // Always use controlled mode on touch devices for better UX
+  // Always use controlled mode to prevent Radix controlled/uncontrolled switching warnings.
+  // This ensures consistent behavior across SSR and client hydration.
   if (isTouchDevice) {
     return (
       <TooltipPrimitive.Root open={isOpen} onOpenChange={handleOpenChange} {...props}>
@@ -183,7 +154,6 @@ const TouchAwareTooltip = ({ children, open, defaultOpen, onOpenChange, ...props
             return React.cloneElement(child, {
               onTouchStart: handleTouchStart,
               onClick: handleClick,
-              // Prevent default hover behavior on touch devices
               onPointerEnter: undefined,
               onPointerLeave: undefined,
             } as React.ComponentProps<typeof TouchAwareTooltipTrigger>)
@@ -194,18 +164,15 @@ const TouchAwareTooltip = ({ children, open, defaultOpen, onOpenChange, ...props
     )
   }
 
-  // For non-touch devices, use hover event handlers only if controlled
-  // For uncontrolled mode, let Radix UI handle everything automatically
+  // Non-touch devices: always controlled mode with hover handlers
   return (
-    <TooltipPrimitive.Root {...rootProps}>
+    <TooltipPrimitive.Root open={isOpen} onOpenChange={handleOpenChange} {...props}>
       {React.Children.map(children, (child) => {
         if (React.isValidElement(child) && child.type === TouchAwareTooltipTrigger) {
-          // Only add custom handlers if in controlled mode
-          const customHandlers = isControlled ? {
+          return React.cloneElement(child, {
             onMouseEnter: handleMouseEnter,
             onMouseLeave: handleMouseLeave,
-          } : {}
-          return React.cloneElement(child, customHandlers as React.ComponentProps<typeof TouchAwareTooltipTrigger>)
+          } as React.ComponentProps<typeof TouchAwareTooltipTrigger>)
         }
         return child
       })}

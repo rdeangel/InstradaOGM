@@ -40,6 +40,9 @@ export async function GET(request: Request) {
             in: [
               'NETWORK_ALIAS_GROUP_ASSIGN_SUCCESS',
               'NETWORK_ALIAS_GROUP_UNASSIGN_SUCCESS',
+              'NETWORK_ALIAS_GROUP_ASSIGN_MOVE',
+              'OPNSENSE_NETWORK_GROUP_NETWORK_ALIAS_ADD_SUCCESS',
+              'OPNSENSE_NETWORK_GROUP_NETWORK_ALIAS_REMOVE_SUCCESS',
             ],
           },
         },
@@ -58,14 +61,27 @@ export async function GET(request: Request) {
         aliasName?: string;
         groupUuid?: string;
         groupName?: string;
+        networkAliasUuid?: string;
+        networkAliasName?: string;
+        networkGroupUuid?: string;
+        networkGroupName?: string;
+        removedFromGroups?: { uuid: string; name: string; friendlyName?: string }[];
         [key: string]: unknown;
       }
+
+      const normalizeDetails = (details: LogDetails) => ({
+        aliasUuid: details.aliasUuid || details.networkAliasUuid,
+        aliasName: details.aliasName || details.networkAliasName,
+        groupUuid: details.groupUuid || details.networkGroupUuid,
+        groupName: details.groupName || details.networkGroupName,
+      });
 
       const aliasLogs = logs.filter(log => {
         const details = log.details as unknown as LogDetails;
         if (!details) return false;
-        if (aliasUuid && details.aliasUuid === aliasUuid) return true;
-        if (aliasName && details.aliasName === aliasName) return true;
+        const n = normalizeDetails(details);
+        if (aliasUuid && n.aliasUuid === aliasUuid) return true;
+        if (aliasName && n.aliasName === aliasName) return true;
         return false;
       });
 
@@ -82,8 +98,9 @@ export async function GET(request: Request) {
       });
 
       const getGroupInfo = (details: LogDetails): { id: string; name: string } | null => {
-        const id = details.groupUuid || details.groupName;
-        const name = details.groupName || id;
+        const n = normalizeDetails(details);
+        const id = n.groupUuid || n.groupName;
+        const name = n.groupName || id;
         return id ? { id: id as string, name: (name || id) as string } : null;
       };
 
@@ -99,7 +116,10 @@ export async function GET(request: Request) {
           return Array.from(currentGroupIds).map(id => groupNameMap.get(id) || id);
         };
 
-        if (log.action === 'NETWORK_ALIAS_GROUP_ASSIGN_SUCCESS') {
+        if (
+          log.action === 'NETWORK_ALIAS_GROUP_ASSIGN_SUCCESS' ||
+          log.action === 'OPNSENSE_NETWORK_GROUP_NETWORK_ALIAS_ADD_SUCCESS'
+        ) {
           if (groupInfo) {
             history.push({
               id: log.id,
@@ -118,7 +138,10 @@ export async function GET(request: Request) {
             });
             currentGroupIds.delete(groupInfo.id);
           }
-        } else if (log.action === 'NETWORK_ALIAS_GROUP_UNASSIGN_SUCCESS') {
+        } else if (
+          log.action === 'NETWORK_ALIAS_GROUP_UNASSIGN_SUCCESS' ||
+          log.action === 'OPNSENSE_NETWORK_GROUP_NETWORK_ALIAS_REMOVE_SUCCESS'
+        ) {
           if (groupInfo) {
             history.push({
               id: log.id,
@@ -137,6 +160,34 @@ export async function GET(request: Request) {
             });
             currentGroupIds.add(groupInfo.id);
             groupNameMap.set(groupInfo.id, groupInfo.name);
+          }
+        } else if (log.action === 'NETWORK_ALIAS_GROUP_ASSIGN_MOVE') {
+          if (groupInfo) {
+            const removedGroups = details.removedFromGroups || [];
+            history.push({
+              id: log.id,
+              timestamp: log.timestamp,
+              groupCount: currentGroupIds.size,
+              currentGroupNames: getCurrentGroupNames(),
+              action: log.action,
+              change: 1,
+              details: {
+                groupName: groupInfo.name,
+                targetGroup: groupInfo.name,
+                user: log.user?.name || 'System',
+                removedGroups: removedGroups.length,
+                originalAction: log.action,
+                moveOperation: {
+                  isMove: true,
+                  sourceGroups: removedGroups.map((g: { name: string; friendlyName?: string }) => g.friendlyName || g.name),
+                  targetGroup: groupInfo.name,
+                },
+              },
+            });
+            currentGroupIds.delete(groupInfo.id);
+            for (const rg of removedGroups) {
+              currentGroupIds.delete(rg.uuid);
+            }
           }
         }
       }

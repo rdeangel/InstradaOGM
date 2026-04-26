@@ -72,16 +72,20 @@ export default function AdminPage() {
   // State for network groups sort
   const [networkGroupsSort, setNetworkGroupsSort] = useState<{ sortBy: string; sortDirection: 'asc' | 'desc' }>({ sortBy: 'displayName', sortDirection: 'asc' });
   const [hostAliasesSort, setHostAliasesSort] = useState<{ sortBy: string; sortDirection: 'asc' | 'desc' }>({ sortBy: 'name', sortDirection: 'asc' });
+  const [networkAliasesSort, setNetworkAliasesSort] = useState<{ sortBy: string; sortDirection: 'asc' | 'desc' }>({ sortBy: 'name', sortDirection: 'asc' });
 
   // Add pagination state for all tabs
   const [networkGroupsCurrentPage, setNetworkGroupsCurrentPage] = useState(1);
   const [networkGroupsPageSize, setNetworkGroupsPageSize] = useLocalStorage<number | 'ALL'>('network-groups-table-page-size', 5);
   const [hostAliasesCurrentPage, setHostAliasesCurrentPage] = useState(1);
   const [hostAliasesPageSize, setHostAliasesPageSize] = useLocalStorage<number | 'ALL'>('host-aliases-table-page-size', 5);
+  const [networkAliasesCurrentPage, setNetworkAliasesCurrentPage] = useState(1);
+  const [networkAliasesPageSize, setNetworkAliasesPageSize] = useLocalStorage<number | 'ALL'>('network-aliases-table-page-size', 10);
 
   // Add search state for all tabs to persist across tab switches
   const [networkGroupsSearchTerm, setNetworkGroupsSearchTerm] = useState("");
   const [hostAliasesSearchTerm, setHostAliasesSearchTerm] = useState("");
+  const [networkAliasesSearchTerm, setNetworkAliasesSearchTerm] = useState("");
 
   // Add DHCP form state for memoization
   const [dhcpSelectedAlias, setDhcpSelectedAlias] = useState<OpnsenseAliasDetailFromExport | null>(null);
@@ -90,6 +94,11 @@ export default function AdminPage() {
   const [dhcpHostname, setDhcpHostname] = useState('');
   const [dhcpDescription, setDhcpDescription] = useState('');
   const [dhcpSelectedSubnet, setDhcpSelectedSubnet] = useState('');
+
+  // State for network aliases data
+  const [networkAliases, setNetworkAliases] = useState<import('@/types/opnsense').NetworkAlias[]>([]);
+  const [networkAliasesError, setNetworkAliasesError] = useState<string | null>(null);
+  const [isRefreshingNetworkAliases, setIsRefreshingNetworkAliases] = useState(false);
 
   // State to track if data has been loaded for each tab
   const [hasLoadedNetworkGroups, setHasLoadedNetworkGroups] = useState(false);
@@ -291,6 +300,37 @@ export default function AdminPage() {
     }
   }, [toast, opnsenseGroupDisplays, groupVpnMap, vpnConnectionStatuses, vpnMappings]);
 
+  const fetchNetworkAliases = useCallback(async (inPlace = false) => {
+    if (inPlace) {
+      setIsRefreshingNetworkAliases(true);
+    } else {
+      setNetworkAliasesError(null);
+    }
+    try {
+      const resp = await fetch('/api/opnsense/network-aliases', { cache: 'no-store' });
+      if (!resp.ok) {
+        if (resp.status === 403) {
+          setNetworkAliasesError('Network Aliases Management is disabled. Enable it in Global Settings.');
+          return;
+        }
+        const data = await resp.json().catch(() => ({}));
+        throw new Error(data.message || `HTTP ${resp.status}`);
+      }
+      const data: import('@/types/opnsense').NetworkAlias[] = await resp.json();
+      setNetworkAliases(data);
+      setNetworkAliasesError(null);
+      setHasLoadedNetworkAliases(true);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to load network aliases';
+      setNetworkAliasesError(msg);
+      if (msg.toLowerCase().includes('connect') || msg.toLowerCase().includes('opnsense')) {
+        setShowConnectionErrorModal(true);
+      }
+    } finally {
+      setIsRefreshingNetworkAliases(false);
+    }
+  }, []);
+
   // Wrapper function for NetworkGroupsTab refresh
   const handleNetworkGroupsRefresh = useCallback(() => {
     refreshOpnsenseData(true); // Call with inPlace: true to trigger refresh spinner
@@ -314,6 +354,15 @@ export default function AdminPage() {
       fetchHostAliases();
     }
   }, [mounted, authStatus, session?.user?.role, isLoadingVpnStatuses, isLoadingMappings, fetchHostAliases]);
+
+  // Initial fetch for network aliases
+  useEffect(() => {
+    if (mounted && authStatus === 'authenticated' &&
+      (session?.user?.role === Role.ADMIN || session?.user?.role === Role.SUPER_ADMIN) &&
+      manageNetworkAliasesEnabled && !hasLoadedNetworkAliases) {
+      fetchNetworkAliases();
+    }
+  }, [mounted, authStatus, session?.user?.role, manageNetworkAliasesEnabled, hasLoadedNetworkAliases, fetchNetworkAliases]);
 
   // Initial fetch for network groups (after VPN/mapping data is ready)
   useEffect(() => {
@@ -391,6 +440,8 @@ export default function AdminPage() {
     } else if (value === 'network-aliases') {
       if (!hasLoadedNetworkAliases) {
         setHasLoadedNetworkAliases(true);
+      } else {
+        fetchNetworkAliases(true);
       }
     } else if (value === 'host-aliases') {
       if (!hasLoadedHostAliases) {
@@ -575,7 +626,23 @@ export default function AdminPage() {
 
             {activeTab === 'network-aliases' && manageNetworkAliasesEnabled && (
               <NetworkAliasesTab
-                onConnectionError={() => setShowConnectionErrorModal(true)}
+                networkAliases={networkAliases}
+                isLoadingInitialData={!hasLoadedNetworkAliases}
+                isRefreshing={isRefreshingNetworkAliases}
+                networkAliasesError={networkAliasesError}
+                onRefreshNetworkAliases={() => fetchNetworkAliases(true)}
+                sortBy={networkAliasesSort.sortBy}
+                sortDirection={networkAliasesSort.sortDirection}
+                onSortChange={(sortBy, sortDirection) => setNetworkAliasesSort({ sortBy, sortDirection })}
+                currentPage={networkAliasesCurrentPage}
+                pageSize={networkAliasesPageSize}
+                onPageChange={setNetworkAliasesCurrentPage}
+                onPageSizeChange={(pageSize) => {
+                  setNetworkAliasesPageSize(pageSize);
+                  setNetworkAliasesCurrentPage(1);
+                }}
+                searchTerm={networkAliasesSearchTerm}
+                onSearchTermChange={setNetworkAliasesSearchTerm}
               />
             )}
 

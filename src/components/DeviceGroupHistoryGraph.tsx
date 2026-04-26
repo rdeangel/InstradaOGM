@@ -307,12 +307,12 @@ export const DeviceGroupHistoryGraph = React.forwardRef<DeviceGroupHistoryGraphH
         // Add visualChange to all data points
         return processedData.map(event => ({
             ...event,
-            visualChange: (event.details.moveOperation?.isMove || event.action === 'OPNSENSE_GROUP_IP_MOVE_SUCCESS') ? 0.5 : event.change
+            visualChange: (event.details.moveOperation?.isMove || event.action === 'OPNSENSE_GROUP_IP_MOVE_SUCCESS' || event.action === 'NETWORK_ALIAS_GROUP_ASSIGN_MOVE') ? 0.5 : event.change
         }));
     }, [data, timePeriod]);
 
     const getBarColor = (event: HistoryEvent) => {
-        if (event.details.moveOperation?.isMove || event.action === 'OPNSENSE_GROUP_IP_MOVE_SUCCESS') {
+        if (event.details.moveOperation?.isMove || event.action === 'OPNSENSE_GROUP_IP_MOVE_SUCCESS' || event.action === 'NETWORK_ALIAS_GROUP_ASSIGN_MOVE') {
             return "hsl(var(--info, 217 91% 60%))"; // Blue for moves
         }
         return event.change > 0 ? "hsl(142, 76%, 28%)" : "hsl(262, 83%, 58%)"; // Purple for unassignments
@@ -405,6 +405,8 @@ export const DeviceGroupHistoryGraph = React.forwardRef<DeviceGroupHistoryGraphH
             switch (event.action) {
                 case 'OPNSENSE_GROUP_IP_ASSIGN_SUCCESS':
                 case 'OPNSENSE_GROUP_IP_ADD_SUCCESS':
+                case 'NETWORK_ALIAS_GROUP_ASSIGN_SUCCESS':
+                case 'OPNSENSE_NETWORK_GROUP_NETWORK_ALIAS_ADD_SUCCESS':
                     if (isBatch) {
                         const batchGroupName = resolveFriendlyName(event.details.targetGroup || event.details.groupName || 'Group');
                         actionText = `Batch assigned to ${batchGroupName} by ${userName} - ${timeAgo}`;
@@ -415,6 +417,8 @@ export const DeviceGroupHistoryGraph = React.forwardRef<DeviceGroupHistoryGraphH
                     break;
                 case 'OPNSENSE_GROUP_IP_UNASSIGN_SUCCESS':
                 case 'OPNSENSE_GROUP_IP_REMOVE_SUCCESS':
+                case 'NETWORK_ALIAS_GROUP_UNASSIGN_SUCCESS':
+                case 'OPNSENSE_NETWORK_GROUP_NETWORK_ALIAS_REMOVE_SUCCESS':
                     if (isBatch) {
                         const batchUnassignGroupName = resolveFriendlyName(event.details.groupName || 'Group');
                         actionText = `Batch unassigned from ${batchUnassignGroupName} by ${userName} - ${timeAgo}`;
@@ -424,6 +428,7 @@ export const DeviceGroupHistoryGraph = React.forwardRef<DeviceGroupHistoryGraphH
                     }
                     break;
                 case 'OPNSENSE_GROUP_IP_MOVE_SUCCESS':
+                case 'NETWORK_ALIAS_GROUP_ASSIGN_MOVE':
                     const moveTargetGroup = resolveFriendlyName(event.details.targetGroup || 'Group');
                     actionText = `Moved to ${moveTargetGroup} (Removed from ${event.details.removedGroups} others) by ${userName} - ${timeAgo}`;
                     break;

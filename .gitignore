@@ -57,8 +57,10 @@ data/db/dev.db-journal
 .vscode/settings.json
 .vscode/tasks.json
 .kilocode/*
+.kilo/*
 .augment/*
 .mcp-cache/
+
 
 # MCP / development-only files
 workspace/

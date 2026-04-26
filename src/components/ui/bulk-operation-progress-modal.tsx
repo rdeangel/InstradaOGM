@@ -67,7 +67,8 @@ export function BulkOperationProgressModal({
   const isCompleted = progress.state === 'success';
   const hasError = progress.state === 'error';
   const operationLabel = getOperationTypeLabel(progress.operationType);
-  const operationDescription = getOperationTypeDescription(progress.operationType);
+  const operationDescription = getOperationTypeDescription(progress.operationType, progress.itemLabel);
+  const itemPlural = progress.itemLabel !== 'host' ? `${progress.itemLabel}es` : `${progress.itemLabel}s`;
 
   return (
     <Dialog
@@ -149,7 +150,7 @@ export function BulkOperationProgressModal({
               </span>
             </div>
             <div className="text-xs text-muted-foreground">
-              Processing {progress.totalHosts} host{progress.totalHosts !== 1 ? 's' : ''}
+              Processing {progress.totalHosts} {progress.totalHosts !== 1 ? itemPlural : progress.itemLabel}
             </div>
           </div>
 
@@ -173,7 +174,7 @@ export function BulkOperationProgressModal({
 
           {/* Host Count Info */}
           <div className="text-sm text-muted-foreground">
-            Processing {progress.totalHosts} host{progress.totalHosts !== 1 ? 's' : ''}
+            Processing {progress.totalHosts} {progress.totalHosts !== 1 ? itemPlural : progress.itemLabel}
           </div>
 
           {/* Operation Steps */}
@@ -181,8 +182,8 @@ export function BulkOperationProgressModal({
             <div className="text-sm font-medium text-muted-foreground">Steps</div>
             <div className="flex flex-col gap-2">
               {[
-                { state: 'validating', label: 'Validating hosts', icon: AlertCircle },
-                { state: 'processing', label: 'Processing hosts', icon: Zap },
+                { state: 'validating', label: `Validating ${itemPlural}`, icon: AlertCircle },
+                { state: 'processing', label: `Processing ${itemPlural}`, icon: Zap },
                 { state: 'reconfiguring', label: 'Reconfiguring network', icon: RefreshCw },
                 { state: 'refreshing', label: 'Refreshing data', icon: Database },
               ].map(({ state, label, icon: Icon }) => {
@@ -286,6 +287,7 @@ export function useBulkOperationProgressModal() {
     state: 'idle',
     operationType: 'assign',
     totalHosts: 0,
+    itemLabel: 'host',
     currentStep: 0,
     totalSteps: 0,
     stepMessage: 'Ready',

@@ -27,6 +27,7 @@ export interface BulkOperationProgress {
   state: BulkOperationState;
   operationType: BulkOperationType;
   totalHosts: number;
+  itemLabel: string;
   currentStep: number;
   totalSteps: number;
   stepMessage: string;
@@ -43,8 +44,9 @@ export interface BulkOperationConfig {
   hostNames: string[];
   groupName: string;
   groupFriendlyName?: string;
-  targetGroupName?: string; // For move operations
-  targetGroupFriendlyName?: string; // For move operations
+  targetGroupName?: string;
+  targetGroupFriendlyName?: string;
+  itemLabel?: string;
 }
 
 /**
@@ -63,12 +65,12 @@ export const BULK_OPERATION_STATE_MACHINE: Record<BulkOperationState, {
   validating: {
     nextStates: ['processing', 'error'],
     canCancel: true,
-    defaultMessage: 'Validating hosts...',
+    defaultMessage: 'Validating...',
   },
   processing: {
     nextStates: ['reconfiguring', 'error'],
     canCancel: false,
-    defaultMessage: 'Processing hosts...',
+    defaultMessage: 'Processing...',
   },
   reconfiguring: {
     nextStates: ['refreshing', 'error'],
@@ -105,6 +107,7 @@ export function createInitialBulkProgress(config: BulkOperationConfig): BulkOper
     state: 'idle',
     operationType: config.operationType,
     totalHosts,
+    itemLabel: config.itemLabel || 'host',
     currentStep: 0,
     totalSteps,
     stepMessage: BULK_OPERATION_STATE_MACHINE.idle.defaultMessage,
@@ -161,16 +164,16 @@ export function getOperationTypeLabel(operationType: BulkOperationType): string 
 /**
  * Get operation type description
  */
-export function getOperationTypeDescription(operationType: BulkOperationType): string {
+export function getOperationTypeDescription(operationType: BulkOperationType, itemLabel: string = 'host'): string {
   switch (operationType) {
     case 'assign':
-      return 'Assigning hosts to group';
+      return `Assigning ${itemLabel}${itemLabel !== 'host' ? 'es' : 's'} to group`;
     case 'unassign':
-      return 'Removing hosts from group';
+      return `Removing ${itemLabel}${itemLabel !== 'host' ? 'es' : 's'} from group`;
     case 'move':
-      return 'Moving hosts between groups';
+      return `Moving ${itemLabel}${itemLabel !== 'host' ? 'es' : 's'} between groups`;
     default:
-      return 'Processing hosts';
+      return `Processing ${itemLabel}${itemLabel !== 'host' ? 'es' : 's'}`;
   }
 }
 

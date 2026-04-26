@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import type { NetworkGroup, OpnsenseAliasDetailFromExport, NetworkAlias } from '@/types/opnsense';
 import { useNetworkAliasesEnabled } from '@/hooks/useNetworkAliasesEnabled';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -18,7 +18,7 @@ import { logger } from '@/lib/logger';
 
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, AlertCircle, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Trash2, Waypoints } from 'lucide-react';
+import { Loader2, AlertCircle, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Waypoints } from 'lucide-react';
 import { BulkOperationProgressModal, useBulkOperationProgressModal } from '@/components/ui/bulk-operation-progress-modal';
 import {
   createInitialBulkProgress,
@@ -105,16 +105,25 @@ export function NetworkGroupMembersManager({
   // Network alias tab state
   const { manageNetworkAliasesEnabled } = useNetworkAliasesEnabled();
   const [activeDialogTab, setActiveDialogTab] = useState('host-aliases');
-  const [allNetworkAliases, setAllNetworkAliases] = useState<NetworkAlias[]>([]);
-  const [associatedNetworkAliasUuids, setAssociatedNetworkAliasUuids] = useState<string[]>([]);
+  const [associatedNetworkAliases, setAssociatedNetworkAliases] = useState<NetworkAlias[]>([]);
+  const [availableNetworkAliases, setAvailableNetworkAliases] = useState<NetworkAlias[]>([]);
   const [originalAssociatedNetworkAliasUuids, setOriginalAssociatedNetworkAliasUuids] = useState<string[]>([]);
-  const [networkAliasSearch, setNetworkAliasSearch] = useState('');
+  const [selectedAvailableNetAliases, setSelectedAvailableNetAliases] = useState<string[]>([]);
+  const [selectedAssociatedNetAliases, setSelectedAssociatedNetAliases] = useState<string[]>([]);
+  const [availableNetAliasSearchTerm, setAvailableNetAliasSearchTerm] = useState("");
+  const [associatedNetAliasSearchTerm, setAssociatedNetAliasSearchTerm] = useState("");
+  const [lastSelectedAvailableNetAliasAnchor, setLastSelectedAvailableNetAliasAnchor] = useState<string | null>(null);
+  const [lastSelectedAssociatedNetAliasAnchor, setLastSelectedAssociatedNetAliasAnchor] = useState<string | null>(null);
   const [isLoadingNetworkAliases, setIsLoadingNetworkAliases] = useState(false);
 
   // New state for host migration feature
   const [allowHostMigration, setAllowHostMigration] = useState(false);
   const [showMigrationConfirmDialog, setShowMigrationConfirmDialog] = useState(false);
   const [confirmInput, setConfirmInput] = useState("");
+
+  const [allowNetAliasMigration, setAllowNetAliasMigration] = useState(false);
+  const [showNetAliasMigrationConfirmDialog, setShowNetAliasMigrationConfirmDialog] = useState(false);
+  const [netAliasConfirmInput, setNetAliasConfirmInput] = useState("");
 
   // State to track original values for change detection
   const [originalAssociatedHostNames, setOriginalAssociatedHostNames] = useState<Set<string>>(new Set());
@@ -334,36 +343,110 @@ export function NetworkGroupMembersManager({
     }
   }, [toast, enableGroupTypes, isMultiSelectGroup, opnsenseGroupDisplays]);
 
-  const fetchNetworkAliasesForDialog = useCallback(async (group: NetworkGroup) => {
+  const fetchNetworkAliasesForDialog = useCallback(async (group: NetworkGroup, currentAllowNetAliasMigration: boolean) => {
     if (!manageNetworkAliasesEnabled) return;
     setIsLoadingNetworkAliases(true);
     try {
       const resp = await fetch('/api/opnsense/network-aliases', { cache: 'no-store' });
       if (!resp.ok) throw new Error('Failed to fetch network aliases');
       const data: NetworkAlias[] = await resp.json();
-      setAllNetworkAliases(data);
 
-      // Determine which are currently members of this group by name match in rawContent
       const memberNames = new Set((group.rawContent || '').split('\n').map(n => n.trim()).filter(Boolean));
-      const currentAssociated = data.filter(a => memberNames.has(a.name)).map(a => a.uuid);
-      setAssociatedNetworkAliasUuids(currentAssociated);
-      setOriginalAssociatedNetworkAliasUuids(currentAssociated);
+      const currentAssociated = data.filter(a => memberNames.has(a.name)).sort((a, b) => a.name.localeCompare(b.name));
+      const potentialAvailable = data.filter(a => !memberNames.has(a.name)).sort((a, b) => a.name.localeCompare(b.name));
+
+      let trulyAvailable: NetworkAlias[];
+
+      if (!enableGroupTypes) {
+        if (currentAllowNetAliasMigration) {
+          trulyAvailable = potentialAvailable;
+        } else {
+          const allGroupsResp = await fetch('/api/opnsense/network-groups', { cache: 'no-store' });
+          const allGroupsData = allGroupsResp.ok ? await allGroupsResp.json() : { networkGroups: [] };
+          const allGroups: NetworkGroup[] = Array.isArray(allGroupsData.networkGroups) ? allGroupsData.networkGroups : [];
+          const aliasInGroups = new Map<string, string[]>();
+          allGroups.forEach((g: NetworkGroup) => {
+            const members = (g.rawContent || '').split('\n').map((s: string) => s.trim()).filter(Boolean);
+            members.forEach((memberName: string) => {
+              if (!aliasInGroups.has(memberName)) aliasInGroups.set(memberName, []);
+              aliasInGroups.get(memberName)?.push(g.uuid);
+            });
+          });
+          trulyAvailable = potentialAvailable.filter(a => {
+            const groups = aliasInGroups.get(a.name) || [];
+            return groups.length === 0;
+          });
+        }
+      } else if (isMultiSelectGroup) {
+        trulyAvailable = potentialAvailable;
+      } else {
+        const allGroupsResp = await fetch('/api/opnsense/network-groups', { cache: 'no-store' });
+        const allGroupsData = allGroupsResp.ok ? await allGroupsResp.json() : { networkGroups: [] };
+        const allGroups: NetworkGroup[] = Array.isArray(allGroupsData.networkGroups) ? allGroupsData.networkGroups : [];
+
+        const aliasInGroups = new Map<string, string[]>();
+        allGroups.forEach((g: NetworkGroup) => {
+          const members = (g.rawContent || '').split('\n').map((s: string) => s.trim()).filter(Boolean);
+          members.forEach((memberName: string) => {
+            if (!aliasInGroups.has(memberName)) aliasInGroups.set(memberName, []);
+            aliasInGroups.get(memberName)?.push(g.uuid);
+          });
+        });
+
+        const groupTypeById = new Map<string, 'SingleSelect' | 'MultiSelect'>();
+        allGroups.forEach((g: NetworkGroup) => {
+          if (g?.uuid) {
+            const val = (g.groupType === 'MultiSelect') ? 'MultiSelect' : (g.groupType === 'SingleSelect' ? 'SingleSelect' : undefined);
+            if (val) groupTypeById.set(String(g.uuid).toLowerCase(), val);
+          }
+        });
+        opnsenseGroupDisplays.forEach((d: OpnsenseGroupDisplay) => {
+          if (d?.opnsenseUuid) {
+            const val = (d.groupType === 'MultiSelect') ? 'MultiSelect' : (d.groupType === 'SingleSelect' ? 'SingleSelect' : undefined);
+            if (val) groupTypeById.set(String(d.opnsenseUuid).toLowerCase(), val);
+          }
+        });
+
+        if (currentAllowNetAliasMigration) {
+          trulyAvailable = potentialAvailable;
+        } else {
+          trulyAvailable = potentialAvailable.filter(a => {
+            const groups = aliasInGroups.get(a.name) || [];
+            const inAnySingleSelect = groups.some(uuid => {
+              const t = groupTypeById.get(String(uuid || '').toLowerCase());
+              return t === 'SingleSelect';
+            });
+            return !inAnySingleSelect;
+          });
+        }
+      }
+
+      setAssociatedNetworkAliases(currentAssociated);
+      setAvailableNetworkAliases(trulyAvailable);
+      setOriginalAssociatedNetworkAliasUuids(currentAssociated.map(a => a.uuid));
     } catch (err) {
       logger.error('Error fetching network aliases for dialog:', err);
     } finally {
       setIsLoadingNetworkAliases(false);
+      setSelectedAvailableNetAliases([]);
+      setSelectedAssociatedNetAliases([]);
+      setAvailableNetAliasSearchTerm("");
+      setAssociatedNetAliasSearchTerm("");
+      setLastSelectedAvailableNetAliasAnchor(null);
+      setLastSelectedAssociatedNetAliasAnchor(null);
     }
-  }, [manageNetworkAliasesEnabled]);
+  }, [manageNetworkAliasesEnabled, enableGroupTypes, isMultiSelectGroup, opnsenseGroupDisplays]);
 
   useEffect(() => {
     if (isOpen && editingAlias) {
-      // For MultiSelect groups, enable "migration" (additive assignment) by default
-      // For SingleSelect groups, reset to false when dialog opens
       const shouldEnableMigration = isMultiSelectGroup;
       setAllowHostMigration(shouldEnableMigration);
       setActiveDialogTab('host-aliases');
       fetchHostAliasesForDialog(editingAlias, shouldEnableMigration);
-      fetchNetworkAliasesForDialog(editingAlias);
+
+      const shouldEnableNetAliasMigration = isMultiSelectGroup;
+      setAllowNetAliasMigration(shouldEnableNetAliasMigration);
+      fetchNetworkAliasesForDialog(editingAlias, shouldEnableNetAliasMigration);
     }
   }, [isOpen, editingAlias, fetchHostAliasesForDialog, fetchNetworkAliasesForDialog, isMultiSelectGroup]);
 
@@ -620,6 +703,209 @@ export function NetworkGroupMembersManager({
     }
   };
 
+  const handleNetworkAliasBatchOperations = async (
+    aliasesToAdd: NetworkAlias[],
+    aliasesToRemove: NetworkAlias[],
+    failedOperations: string[],
+    forceMoveFromExisting: boolean = false,
+  ) => {
+    const hasAdds = aliasesToAdd.length > 0;
+    const hasRemoves = aliasesToRemove.length > 0;
+
+    let progress = createInitialBulkProgress({
+      operationType: hasAdds && hasRemoves ? 'move' : (hasAdds ? 'assign' : 'unassign'),
+      hostNames: [...aliasesToAdd.map(a => a.name), ...aliasesToRemove.map(a => a.name)],
+      groupName: editingAlias?.name || 'Unknown',
+      groupFriendlyName: editingAlias?.friendlyName,
+      itemLabel: 'network alias',
+    });
+
+    progressModal.openModal();
+    progressModal.updateProgress(progress);
+    setBulkProgress(progress);
+
+    progress = updateBulkProgress(progress, 'validating', 'Validating network aliases...');
+    progressModal.updateProgress(progress);
+    setBulkProgress(progress);
+
+    if (forceMoveFromExisting && hasAdds && !isMultiSelectGroup) {
+      for (const alias of aliasesToAdd) {
+        try {
+          progress = updateBulkProgress(progress, 'processing', `Migrating ${alias.name}...`);
+          progressModal.updateProgress(progress);
+          setBulkProgress(progress);
+
+          const resp = await fetch('/api/opnsense/network-alias-group-management', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ operation: 'assign', aliasUuid: alias.uuid, groupId: editingAlias!.uuid }),
+          });
+          const result = await resp.json();
+          if (!resp.ok || !result.success) {
+            failedOperations.push(`Assign ${alias.name}: ${result.error || 'Unknown error'}`);
+          }
+        } catch (err) {
+          failedOperations.push(`Assign ${alias.name}: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        }
+      }
+    } else {
+      if (hasAdds || hasRemoves) {
+        progress = updateBulkProgress(progress, 'processing', `Processing ${aliasesToAdd.length + aliasesToRemove.length} network alias${(aliasesToAdd.length + aliasesToRemove.length) !== 1 ? 'es' : ''}...`);
+        progressModal.updateProgress(progress);
+        setBulkProgress(progress);
+
+        try {
+          const resp = await fetch(`/api/opnsense/network-groups/${editingAlias!.uuid}/network-alias-members`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              add: aliasesToAdd.map(a => a.uuid),
+              remove: aliasesToRemove.map(a => a.uuid),
+            }),
+          });
+          const result = await resp.json();
+          if (!resp.ok) {
+            failedOperations.push(`Network aliases batch: ${result.error || 'Failed to update'}`);
+          }
+          if (result.skipped?.length > 0) {
+            for (const s of result.skipped) {
+              failedOperations.push(`Skipped ${s.uuid}: ${s.reason}`);
+            }
+          }
+        } catch (err) {
+          failedOperations.push(`Network aliases batch: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        }
+      }
+    }
+
+    if (hasRemoves && forceMoveFromExisting && !isMultiSelectGroup) {
+      progress = updateBulkProgress(progress, 'processing', `Removing ${aliasesToRemove.length} network alias${aliasesToRemove.length !== 1 ? 'es' : ''}...`);
+      progressModal.updateProgress(progress);
+      setBulkProgress(progress);
+      try {
+        const resp = await fetch(`/api/opnsense/network-groups/${editingAlias!.uuid}/network-alias-members`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ remove: aliasesToRemove.map(a => a.uuid) }),
+        });
+        const result = await resp.json();
+        if (!resp.ok) {
+          failedOperations.push(`Network alias removal: ${result.error || 'Failed to update'}`);
+        }
+      } catch (err) {
+        failedOperations.push(`Network alias removal: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      }
+    }
+
+    progress = updateBulkProgress(progress, 'reconfiguring', 'Reconfiguring network...');
+    progressModal.updateProgress(progress);
+    setBulkProgress(progress);
+
+    progress = updateBulkProgress(progress, 'refreshing', 'Refreshing data...');
+    progressModal.updateProgress(progress);
+    setBulkProgress(progress);
+
+    progress = updateBulkProgress(progress, 'success', 'Operation completed successfully');
+    progressModal.updateProgress(progress);
+    setBulkProgress(progress);
+  };
+
+  const handleNetworkAliasBatchOperationsWithRestrictSingleSelect = async (
+    aliasesToAdd: NetworkAlias[],
+    failedOperations: string[],
+  ): Promise<{ removedFromGroupIds: string[] }> => {
+    const removedGroupIdSet = new Set<string>();
+
+    let progress = createInitialBulkProgress({
+      operationType: 'move',
+      hostNames: aliasesToAdd.map(a => a.name),
+      groupName: editingAlias?.name || 'Unknown',
+      groupFriendlyName: editingAlias?.friendlyName,
+      itemLabel: 'network alias',
+    });
+
+    progressModal.openModal();
+    progressModal.updateProgress(progress);
+    setBulkProgress(progress);
+
+    progress = updateBulkProgress(progress, 'validating', 'Validating network aliases...');
+    progressModal.updateProgress(progress);
+    setBulkProgress(progress);
+
+    try {
+      const allGroupsResp = await fetch('/api/opnsense/network-groups', { cache: 'no-store' });
+      if (allGroupsResp.ok) {
+        const allGroupsJson = await allGroupsResp.json();
+        const allGroups: NetworkGroup[] = Array.isArray(allGroupsJson.networkGroups) ? allGroupsJson.networkGroups : [];
+        const groupTypeById = new Map<string, 'SingleSelect' | 'MultiSelect'>();
+        allGroups.forEach((g: NetworkGroup) => {
+          if (g?.uuid) {
+            const val = (g.groupType === 'MultiSelect') ? 'MultiSelect' : (g.groupType === 'SingleSelect' ? 'SingleSelect' : undefined);
+            if (val) groupTypeById.set(String(g.uuid).toLowerCase(), val);
+          }
+        });
+        opnsenseGroupDisplays.forEach(d => {
+          if (d?.opnsenseUuid) {
+            const val = (d.groupType === 'MultiSelect') ? 'MultiSelect' : (d.groupType === 'SingleSelect' ? 'SingleSelect' : undefined);
+            if (val) groupTypeById.set(String(d.opnsenseUuid).toLowerCase(), val);
+          }
+        });
+        const targetIdLc = String(editingAlias!.uuid).toLowerCase();
+        for (const alias of aliasesToAdd) {
+          for (const g of allGroups) {
+            const content = (g.rawContent || '').split('\n').map((s: string) => s.trim()).filter(Boolean);
+            if (content.includes(alias.name)) {
+              const type = groupTypeById.get(String(g.uuid).toLowerCase());
+              if (type === 'SingleSelect' && String(g.uuid).toLowerCase() !== targetIdLc) {
+                removedGroupIdSet.add(g.uuid);
+              }
+            }
+          }
+        }
+      }
+    } catch {
+      // proceed without pre-computed removedFromGroupIds
+    }
+
+    progress = updateBulkProgress(progress, 'processing', `Migrating ${aliasesToAdd.length} network alias${aliasesToAdd.length !== 1 ? 'es' : ''}...`);
+    progressModal.updateProgress(progress);
+    setBulkProgress(progress);
+
+    for (const alias of aliasesToAdd) {
+      try {
+        const resp = await fetch('/api/opnsense/network-alias-group-management', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ operation: 'assign', aliasUuid: alias.uuid, groupId: editingAlias!.uuid }),
+        });
+        const result = await resp.json();
+        if (!resp.ok || !result.success) {
+          failedOperations.push(`Assign ${alias.name}: ${result.error || 'Unknown error'}`);
+        }
+      } catch (err) {
+        failedOperations.push(`Assign ${alias.name}: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      }
+    }
+
+    progress = updateBulkProgress(progress, 'reconfiguring', 'Reconfiguring network...');
+    progressModal.updateProgress(progress);
+    setBulkProgress(progress);
+
+    if (failedOperations.length > 0) {
+      return { removedFromGroupIds: Array.from(removedGroupIdSet) };
+    }
+
+    progress = updateBulkProgress(progress, 'refreshing', 'Refreshing data...');
+    progressModal.updateProgress(progress);
+    setBulkProgress(progress);
+
+    progress = updateBulkProgress(progress, 'success', 'Operation completed successfully');
+    progressModal.updateProgress(progress);
+    setBulkProgress(progress);
+
+    return { removedFromGroupIds: Array.from(removedGroupIdSet) };
+  };
+
 
 
 
@@ -658,7 +944,7 @@ export function NetworkGroupMembersManager({
     }
 
     // Check if network alias associated set has changed
-    const currentNetUuids = new Set(associatedNetworkAliasUuids);
+    const currentNetUuids = new Set(associatedNetworkAliases.map(a => a.uuid));
     const originalNetUuids = new Set(originalAssociatedNetworkAliasUuids);
     if (currentNetUuids.size !== originalNetUuids.size) return true;
     for (const uuid of currentNetUuids) {
@@ -675,6 +961,7 @@ export function NetworkGroupMembersManager({
       editingAlias: editingAlias.name,
       groupType: editingAlias.groupType,
       allowHostMigration,
+      allowNetAliasMigration,
       enableGroupTypes,
       isMultiSelectGroup
     });
@@ -684,91 +971,113 @@ export function NetworkGroupMembersManager({
       const originalMemberNames = new Set((editingAlias.rawContent || '').split('\n').filter(name => name.trim() !== ''));
       const currentMemberNames = new Set(associatedHostAliases.map(alias => alias.name));
 
-      // Determine which hosts to add and remove
       const hostsToAdd = associatedHostAliases.filter(alias => !originalMemberNames.has(alias.name));
       const hostsToRemove = Array.from(originalMemberNames).filter(name => !currentMemberNames.has(name));
 
-      logger.debug('Hosts to modify:', {
+      const originalNetSet = new Set(originalAssociatedNetworkAliasUuids);
+      const currentNetUuids = associatedNetworkAliases.map(a => a.uuid);
+      const currentNetSet = new Set(currentNetUuids);
+      const netAliasesToAdd = associatedNetworkAliases.filter(a => !originalNetSet.has(a.uuid));
+      const netAliasesToRemove = originalAssociatedNetworkAliasUuids
+        .filter(u => !currentNetSet.has(u))
+        .map(u => associatedNetworkAliases.find(a => a.uuid === u) || availableNetworkAliases.find(a => a.uuid === u))
+        .filter((a): a is NetworkAlias => a !== undefined);
+
+      const hasHostChanges = hostsToAdd.length > 0 || hostsToRemove.length > 0;
+      const hasNetAliasChanges = netAliasesToAdd.length > 0 || netAliasesToRemove.length > 0;
+
+      if (!hasHostChanges && !hasNetAliasChanges) {
+        onSaveSuccess(editingAlias!, false, undefined);
+        onClose();
+        return;
+      }
+
+      logger.debug('Changes to apply:', {
         hostsToAdd: hostsToAdd.map(h => h.name),
-        hostsToRemove
+        hostsToRemove,
+        netAliasesToAdd: netAliasesToAdd.map(a => a.name),
+        netAliasesToRemove: netAliasesToRemove.map(a => a.name),
       });
 
-      let allOperationsSuccessful = true;
       const failedOperations: string[] = [];
-
-      // Create a combined list of all host aliases for lookup
       const allHostAliases = [...availableHostAliases, ...associatedHostAliases];
 
-      if (!enableGroupTypes && allowHostMigration && hostsToAdd.length > 0) {
-        // Group Types OFF + Migration ON: use moveFromExisting (single step move)
-        await handleStandardBatchOperations(hostsToAdd, hostsToRemove, failedOperations, true, allHostAliases);
-      } else if (enableGroupTypes && allowHostMigration && !isMultiSelectGroup && hostsToAdd.length > 0) {
-        // Group Types ON + SingleSelect target + Migration ON: use backend moveFromExisting restricted to SingleSelect
-        const moveInfo = await handleStandardBatchOperationsWithRestrictSingleSelect(hostsToAdd, failedOperations);
-        const affectedGroupIds = [editingAlias!.uuid, ...(moveInfo?.removedFromGroupIds || [])];
+      // --- Route host changes ---
+      if (hasHostChanges) {
+        if (!enableGroupTypes && allowHostMigration && hostsToAdd.length > 0) {
+          await handleStandardBatchOperations(hostsToAdd, hostsToRemove, failedOperations, true, allHostAliases);
+        } else if (enableGroupTypes && allowHostMigration && !isMultiSelectGroup && hostsToAdd.length > 0) {
+          const moveInfo = await handleStandardBatchOperationsWithRestrictSingleSelect(hostsToAdd, failedOperations);
+          const affectedGroupIds = [editingAlias!.uuid, ...(moveInfo?.removedFromGroupIds || [])];
 
-        // Close progress modal after a delay to let user see completion (3 seconds)
-        setTimeout(() => {
-          progressModal.closeModal();
-          setBulkProgress(null);
-        }, 3000);
-
-        // Close the main dialog after progress modal closes
-        setTimeout(() => {
-          onSaveSuccess({
-            ...editingAlias!,
-            rawContent: associatedHostAliases.map(a => a.name).join('\n'),
-            itemCount: associatedHostAliases.length,
-            lastUpdated: new Date().toISOString(),
-          }, true, affectedGroupIds);
-          onClose();
-        }, 3000);
-        return;
-      } else {
-        // All other cases = standard batch operations without migration
-        await handleStandardBatchOperations(hostsToAdd, hostsToRemove, failedOperations, false, allHostAliases);
-      }
-
-      // Save network alias members if changed and feature enabled
-      if (manageNetworkAliasesEnabled && editingAlias) {
-        const originalNetSet = new Set(originalAssociatedNetworkAliasUuids);
-        const currentNetSet = new Set(associatedNetworkAliasUuids);
-        const netAliasesToAdd = associatedNetworkAliasUuids.filter(u => !originalNetSet.has(u));
-        const netAliasesToRemove = originalAssociatedNetworkAliasUuids.filter(u => !currentNetSet.has(u));
-        if (netAliasesToAdd.length > 0 || netAliasesToRemove.length > 0) {
-          try {
-            const netResp = await fetch(`/api/opnsense/network-groups/${editingAlias.uuid}/network-alias-members`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ add: netAliasesToAdd, remove: netAliasesToRemove }),
-            });
-            if (!netResp.ok) {
-              const netErr = await netResp.json().catch(() => ({}));
-              failedOperations.push(`Network Ranges: ${netErr.message || 'Failed to update'}`);
-            }
-          } catch (netErr) {
-            failedOperations.push(`Network Ranges: ${netErr instanceof Error ? netErr.message : 'Unknown error'}`);
+          // If no network alias changes, close and return now (progress modal is already shown)
+          if (!hasNetAliasChanges) {
+            setTimeout(() => { progressModal.closeModal(); setBulkProgress(null); }, 3000);
+            setTimeout(() => {
+              onSaveSuccess({
+                ...editingAlias!,
+                rawContent: associatedHostAliases.map(a => a.name).join('\n'),
+                itemCount: associatedHostAliases.length,
+                lastUpdated: new Date().toISOString(),
+              }, true, affectedGroupIds);
+              onClose();
+            }, 3000);
+            return;
           }
+          // Host migration done, continue to network alias changes below
+        } else {
+          await handleStandardBatchOperations(hostsToAdd, hostsToRemove, failedOperations, false, allHostAliases);
         }
       }
 
-      allOperationsSuccessful = failedOperations.length === 0;
+      // --- Route network alias changes ---
+      if (hasNetAliasChanges && manageNetworkAliasesEnabled) {
+        const netMigrationActive = allowNetAliasMigration || (!enableGroupTypes && allowHostMigration);
 
-      // Show appropriate success/error messages
-      if (allOperationsSuccessful) {
-        const operationCount = hostsToAdd.length + hostsToRemove.length;
-        if (operationCount === 0) {
-          progressModal.closeModal();
-          setBulkProgress(null);
+        if (enableGroupTypes && netMigrationActive && !isMultiSelectGroup && netAliasesToAdd.length > 0) {
+          const netMoveInfo = await handleNetworkAliasBatchOperationsWithRestrictSingleSelect(netAliasesToAdd, failedOperations);
+          if (netAliasesToRemove.length > 0) {
+            for (const alias of netAliasesToRemove) {
+              try {
+                const resp = await fetch('/api/opnsense/network-alias-group-management', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ operation: 'unassign', aliasUuid: alias.uuid, groupId: editingAlias!.uuid }),
+                });
+                const result = await resp.json();
+                if (!resp.ok || !result.success) {
+                  failedOperations.push(`Unassign ${alias.name}: ${result.error || 'Unknown error'}`);
+                }
+              } catch (err) {
+                failedOperations.push(`Unassign ${alias.name}: ${err instanceof Error ? err.message : 'Unknown error'}`);
+              }
+            }
+          }
+          const affectedGroupIds = [editingAlias!.uuid, ...(netMoveInfo?.removedFromGroupIds || [])];
+
+          if (!hasHostChanges) {
+            setTimeout(() => { progressModal.closeModal(); setBulkProgress(null); }, 3000);
+            setTimeout(() => {
+              onSaveSuccess({
+                ...editingAlias!,
+                rawContent: associatedHostAliases.map(a => a.name).join('\n'),
+                itemCount: associatedHostAliases.length,
+                lastUpdated: new Date().toISOString(),
+              }, true, affectedGroupIds);
+              onClose();
+            }, 3000);
+            return;
+          }
         } else {
-          // Close progress modal after a delay to let user see completion (3 seconds)
-          setTimeout(() => {
-            progressModal.closeModal();
-            setBulkProgress(null);
-          }, 3000);
+          await handleNetworkAliasBatchOperations(netAliasesToAdd, netAliasesToRemove, failedOperations, netMigrationActive);
         }
+      }
 
-        // Construct the updated group object to pass back to the parent
+      const allOperationsSuccessful = failedOperations.length === 0;
+
+      if (allOperationsSuccessful) {
+        setTimeout(() => { progressModal.closeModal(); setBulkProgress(null); }, 3000);
+
         const updatedGroup: NetworkGroup = {
           ...editingAlias,
           rawContent: associatedHostAliases.map(alias => alias.name).join('\n'),
@@ -776,17 +1085,15 @@ export function NetworkGroupMembersManager({
           lastUpdated: new Date().toISOString(),
         };
 
-        // Determine if this operation could have affected other groups
-        const migrationAffectedOtherGroups = allowHostMigration && (!enableGroupTypes || (enableGroupTypes && !isMultiSelectGroup));
+        const migrationAffectedOtherGroups = (allowHostMigration || allowNetAliasMigration) && (!enableGroupTypes || (enableGroupTypes && !isMultiSelectGroup));
 
-        // Close the main dialog after progress modal closes
         setTimeout(() => {
           onSaveSuccess(updatedGroup, migrationAffectedOtherGroups, undefined);
           onClose();
         }, 3000);
       } else {
-        // Show partial failure in progress modal
-        const successCount = (hostsToAdd.length + hostsToRemove.length) - failedOperations.length;
+        const totalOps = hostsToAdd.length + hostsToRemove.length + netAliasesToAdd.length + netAliasesToRemove.length;
+        const successCount = totalOps - failedOperations.length;
         const errorProgress = updateBulkProgress(
           bulkProgress!,
           'error',
@@ -800,23 +1107,15 @@ export function NetworkGroupMembersManager({
         progressModal.updateProgress(errorProgress);
         setBulkProgress(errorProgress);
 
-        // Close progress modal after a delay to let user see the error (3 seconds)
+        setTimeout(() => { progressModal.closeModal(); setBulkProgress(null); }, 3000);
         setTimeout(() => {
-          progressModal.closeModal();
-          setBulkProgress(null);
-        }, 3000);
-
-        // Still close the dialog and refresh, as some operations may have succeeded
-        // The parent will refresh the data to show the current state
-        setTimeout(() => {
-          onSaveSuccess(editingAlias!, allowHostMigration, undefined);
+          onSaveSuccess(editingAlias!, allowHostMigration || allowNetAliasMigration, undefined);
           onClose();
         }, 3000);
       }
     } catch (error) {
       logger.error('Error during save operation:', error);
 
-      // Show error in progress modal if it's open
       if (bulkProgress) {
         const errorProgress = updateBulkProgress(
           bulkProgress,
@@ -831,11 +1130,7 @@ export function NetworkGroupMembersManager({
         progressModal.updateProgress(errorProgress);
         setBulkProgress(errorProgress);
 
-        // Close progress modal after a delay to let user see the error
-        setTimeout(() => {
-          progressModal.closeModal();
-          setBulkProgress(null);
-        }, 3000);
+        setTimeout(() => { progressModal.closeModal(); setBulkProgress(null); }, 3000);
       } else {
         progressModal.closeModal();
         setBulkProgress(null);
@@ -905,6 +1200,78 @@ export function NetworkGroupMembersManager({
     setSelectedAssociated([]);
   };
 
+  const filterNetworkAliases = (list: NetworkAlias[], term: string) =>
+    list.filter(a =>
+      a.name.toLowerCase().includes(term.toLowerCase()) ||
+      a.content.toLowerCase().includes(term.toLowerCase()) ||
+      (a.description && a.description.toLowerCase().includes(term.toLowerCase()))
+    );
+
+  const filteredAvailableNetAliases = useMemo(() =>
+    filterNetworkAliases(availableNetworkAliases, availableNetAliasSearchTerm),
+    [availableNetworkAliases, availableNetAliasSearchTerm]
+  );
+
+  const filteredAssociatedNetAliases = useMemo(() =>
+    filterNetworkAliases(associatedNetworkAliases, associatedNetAliasSearchTerm),
+    [associatedNetworkAliases, associatedNetAliasSearchTerm]
+  );
+
+  const toggleNetworkAliasSelection = (listType: 'available' | 'associated', uuid: string, event?: React.MouseEvent<HTMLLIElement>) => {
+    const currentFullList = listType === 'available' ? availableNetworkAliases : associatedNetworkAliases;
+    const currentSearchTerm = listType === 'available' ? availableNetAliasSearchTerm : associatedNetAliasSearchTerm;
+
+    const displayedList = currentFullList.filter(a =>
+      a.name.toLowerCase().includes(currentSearchTerm.toLowerCase()) ||
+      a.content.toLowerCase().includes(currentSearchTerm.toLowerCase()) ||
+      (a.description && a.description.toLowerCase().includes(currentSearchTerm.toLowerCase()))
+    );
+
+    const setSelection = listType === 'available' ? setSelectedAvailableNetAliases : setSelectedAssociatedNetAliases;
+    const setAnchor = listType === 'available' ? setLastSelectedAvailableNetAliasAnchor : setLastSelectedAssociatedNetAliasAnchor;
+    const currentAnchor = listType === 'available' ? lastSelectedAvailableNetAliasAnchor : lastSelectedAssociatedNetAliasAnchor;
+
+    if (event?.shiftKey && currentAnchor) {
+      const anchorIndex = displayedList.findIndex(item => item.uuid === currentAnchor);
+      const currentIndex = displayedList.findIndex(item => item.uuid === uuid);
+      if (anchorIndex !== -1 && currentIndex !== -1) {
+        const start = Math.min(anchorIndex, currentIndex);
+        const end = Math.max(anchorIndex, currentIndex);
+        const rangeUuids = displayedList.slice(start, end + 1).map(item => item.uuid);
+        if (event.ctrlKey) {
+          setSelection(prev => Array.from(new Set([...prev, ...rangeUuids])));
+        } else {
+          setSelection(rangeUuids);
+        }
+      } else {
+        setSelection([uuid]);
+        setAnchor(uuid);
+      }
+    } else if (event?.ctrlKey) {
+      setSelection(prev =>
+        prev.includes(uuid) ? prev.filter(id => id !== uuid) : [...prev, uuid]
+      );
+      setAnchor(uuid);
+    } else {
+      setSelection([uuid]);
+      setAnchor(uuid);
+    }
+  };
+
+  const moveSelectedNetAliasToAssociated = () => {
+    const toMove = availableNetworkAliases.filter(a => selectedAvailableNetAliases.includes(a.uuid));
+    setAssociatedNetworkAliases(prev => [...prev, ...toMove].sort((a, b) => a.name.localeCompare(b.name)));
+    setAvailableNetworkAliases(prev => prev.filter(a => !selectedAvailableNetAliases.includes(a.uuid)));
+    setSelectedAvailableNetAliases([]);
+  };
+
+  const moveSelectedNetAliasToAvailable = () => {
+    const toMove = associatedNetworkAliases.filter(a => selectedAssociatedNetAliases.includes(a.uuid));
+    setAvailableNetworkAliases(prev => [...prev, ...toMove].sort((a, b) => a.name.localeCompare(b.name)));
+    setAssociatedNetworkAliases(prev => prev.filter(a => !selectedAssociatedNetAliases.includes(a.uuid)));
+    setSelectedAssociatedNetAliases([]);
+  };
+
 
   return (
     <>
@@ -919,14 +1286,14 @@ export function NetworkGroupMembersManager({
               <StatusDotLegend className="ml-auto" />
             </DialogTitle>
             <DialogDescription>
-              Add or remove host aliases association to this network group.
+              Add or remove host and/or network aliases association to this network group.
               {enableGroupTypes && (
                 <>
                   <br />
                   <span className="text-sm text-blue-600 font-medium">
                     {isMultiSelectGroup
-                      ? `${groupTypeName}: Devices can be in multiple groups simultaneously (additive assignment).`
-                      : `${groupTypeName}: Devices can only be in one SingleSelect group at a time.`
+                      ? `${groupTypeName}: Aliases can be in multiple groups simultaneously (additive assignment).`
+                      : `${groupTypeName}: Aliases can only be in one SingleSelect group at a time.`
                     }
                   </span>
                 </>
@@ -941,9 +1308,9 @@ export function NetworkGroupMembersManager({
             <TabsList className="mb-4">
               <TabsTrigger value="host-aliases">Host Aliases (Devices)</TabsTrigger>
               {manageNetworkAliasesEnabled && (
-                <TabsTrigger value="network-ranges">
+                <TabsTrigger value="network-aliases">
                   <Waypoints className="h-3.5 w-3.5 mr-1.5" />
-                  Network Ranges
+                  Network Aliases
                 </TabsTrigger>
               )}
             </TabsList>
@@ -1101,6 +1468,7 @@ export function NetworkGroupMembersManager({
                     <DialogContent className="max-w-md">
                       <DialogHeader>
                         <DialogTitle>Associated Hosts Help</DialogTitle>
+                        <DialogDescription>Selection and keyboard shortcuts for managing associated hosts.</DialogDescription>
                       </DialogHeader>
                       <div className="max-h-96 overflow-y-auto">
                         <p>Click to select, Ctrl+Click to toggle selection, Shift+Click to select a range.</p>
@@ -1160,96 +1528,168 @@ export function NetworkGroupMembersManager({
             </TabsContent>
 
             {manageNetworkAliasesEnabled && (
-              <TabsContent value="network-ranges">
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2">
-                    <Waypoints className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm font-medium">Associated Network Ranges</span>
-                    <span className="text-xs text-muted-foreground">(CIDR aliases in this group)</span>
-                  </div>
-
-                  {/* Add dropdown */}
-                  {isLoadingNetworkAliases ? (
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Loader2 className="h-4 w-4 animate-spin" /> Loading network aliases...
-                    </div>
+              <TabsContent value="network-aliases">
+          <div className="flex items-center space-x-2 mb-4">
+            <Switch
+              id="allow-net-alias-migration"
+              checked={allowNetAliasMigration}
+              disabled={migrationDisabled}
+              onCheckedChange={(checked) => {
+                if (checked) {
+                  if (isMultiSelectGroup) {
+                    setAllowNetAliasMigration(true);
+                    fetchNetworkAliasesForDialog(editingAlias!, true);
+                  } else {
+                    setShowNetAliasMigrationConfirmDialog(true);
+                  }
+                } else {
+                  setAllowNetAliasMigration(false);
+                  fetchNetworkAliasesForDialog(editingAlias!, false);
+                }
+              }}
+            />
+            <Label htmlFor="allow-net-alias-migration" className={migrationDisabled ? 'text-muted-foreground' : ''}>
+              {isMultiSelectGroup ? 'Additive Assignment' : 'Allow Network Alias Migration'}
+            </Label>
+            <TooltipProvider delayDuration={300}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <AlertCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs">
+                  {migrationDisabled ? (
+                    <>
+                      <p>Migration is disabled for {groupTypeName} groups.</p>
+                      <p>{groupTypeName} groups allow network aliases to be in multiple groups simultaneously.</p>
+                    </>
                   ) : (
-                    <div className="space-y-2">
-                      <div className="flex gap-2">
-                        <Input
-                          placeholder="Search and add a network alias..."
-                          value={networkAliasSearch}
-                          onChange={e => setNetworkAliasSearch(e.target.value)}
-                          className="flex-1"
-                        />
-                      </div>
-                      {/* Dropdown suggestions */}
-                      {networkAliasSearch.trim() && (
-                        <div className="border rounded-md max-h-40 overflow-y-auto bg-background shadow-sm">
-                          {allNetworkAliases
-                            .filter(a =>
-                              !associatedNetworkAliasUuids.includes(a.uuid) &&
-                              (a.name.toLowerCase().includes(networkAliasSearch.toLowerCase()) ||
-                               a.content.toLowerCase().includes(networkAliasSearch.toLowerCase()) ||
-                               (a.description && a.description.toLowerCase().includes(networkAliasSearch.toLowerCase())))
-                            )
-                            .map(a => (
-                              <div
-                                key={a.uuid}
-                                className="px-3 py-2 cursor-pointer hover:bg-muted text-sm flex justify-between items-center"
-                                onClick={() => {
-                                  setAssociatedNetworkAliasUuids(prev => [...prev, a.uuid]);
-                                  setNetworkAliasSearch('');
-                                }}
-                              >
-                                <span className="font-medium">{a.name}</span>
-                                <span className="text-muted-foreground font-mono text-xs">{a.content}</span>
-                              </div>
-                            ))}
-                          {allNetworkAliases.filter(a =>
-                            !associatedNetworkAliasUuids.includes(a.uuid) &&
-                            (a.name.toLowerCase().includes(networkAliasSearch.toLowerCase()) ||
-                             a.content.toLowerCase().includes(networkAliasSearch.toLowerCase()))
-                          ).length === 0 && (
-                            <p className="px-3 py-2 text-sm text-muted-foreground">No network aliases match.</p>
-                          )}
-                        </div>
+                    <>
+                      <p>When enabled, network aliases moved to this group will be automatically removed from any other groups they are currently members of.</p>
+                      {enableGroupTypes && !isMultiSelectGroup && (
+                        <p className="mt-1 text-xs">For {groupTypeName} groups, this uses smart 2-step assignment to preserve MultiSelect memberships.</p>
                       )}
-
-                      {/* Associated list */}
-                      <ScrollArea className={`border rounded-md p-2 ${isMobile ? 'h-[200px]' : 'h-[300px]'}`}>
-                        {associatedNetworkAliasUuids.length === 0 ? (
-                          <p className="text-sm text-muted-foreground text-center py-8">No network ranges assigned to this group.</p>
-                        ) : (
-                          <ul className="space-y-1">
-                            {associatedNetworkAliasUuids.map(uuid => {
-                              const alias = allNetworkAliases.find(a => a.uuid === uuid);
-                              return (
-                                <li key={uuid} className="flex items-center justify-between py-1 px-2 rounded-sm hover:bg-muted/50 text-sm">
-                                  <div>
-                                    <span className="font-medium">{alias?.name ?? uuid}</span>
-                                    <span className="ml-2 text-muted-foreground font-mono text-xs">{alias?.content}</span>
-                                    {alias?.description && (
-                                      <div className="text-xs text-muted-foreground mt-0.5">{alias.description}</div>
-                                    )}
-                                  </div>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                                    onClick={() => setAssociatedNetworkAliasUuids(prev => prev.filter(u => u !== uuid))}
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </Button>
-                                </li>
-                              );
-                            })}
-                          </ul>
-                        )}
-                      </ScrollArea>
-                    </div>
+                    </>
                   )}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+          {isLoadingNetworkAliases ? (
+            <div className="text-center py-8">
+              <Loader2 className="h-8 w-8 animate-spin mx-auto" />
+              <p className="mt-2 text-muted-foreground">Loading network aliases...</p>
+            </div>
+          ) : (
+            <div className={`grid ${isMobile ? 'grid-cols-1' : 'grid-cols-3'} gap-2 py-4`}>
+              {/* Available Network Aliases List */}
+              <div className="flex flex-col gap-2">
+                <h3 className="text-lg font-semibold mb-2">Available Network Aliases</h3>
+                <div className="flex items-center space-x-2 mb-2">
+                  <Input
+                    placeholder="Search available..."
+                    value={availableNetAliasSearchTerm}
+                    onChange={(e) => setAvailableNetAliasSearchTerm(e.target.value)}
+                  />
+                  <TooltipProvider delayDuration={300}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <AlertCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-xs">
+                        <p>Click to select, Ctrl+Click to toggle selection, Shift+Click to select a range.</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 </div>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={() => setSelectedAvailableNetAliases(filteredAvailableNetAliases.map(a => a.uuid))} disabled={filteredAvailableNetAliases.length === 0}>Select All</Button>
+                  <Button variant="outline" size="sm" onClick={() => setSelectedAvailableNetAliases([])} disabled={selectedAvailableNetAliases.length === 0}>Deselect All</Button>
+                </div>
+                <ScrollArea className={`border rounded-md p-2 ${isMobile ? 'h-[200px]' : 'h-[300px]'}`}>
+                  <TooltipProvider delayDuration={300}>
+                    <ul>
+                      {filteredAvailableNetAliases.map(a => (
+                        <li
+                          key={a.uuid}
+                          className={`py-1 px-2 text-sm cursor-pointer rounded-sm ${selectedAvailableNetAliases.includes(a.uuid) ? 'bg-blue-500 text-white' : 'hover:bg-gray-100 dark:hover:bg-gray-800'}`}
+                          onClick={(e) => toggleNetworkAliasSelection('available', a.uuid, e)}
+                        >
+                          <div className="flex items-center gap-2">
+                            <Waypoints className="h-3.5 w-3.5 shrink-0 opacity-60" />
+                            <span className="flex-1">
+                              <div>{a.name}</div>
+                              <div className="text-xs opacity-75 mt-0.5 font-mono">{a.content}</div>
+                              {a.description && <div className="text-xs opacity-75 mt-0.5 break-words">{a.description}</div>}
+                            </span>
+                          </div>
+                        </li>
+                      ))}
+                      {filteredAvailableNetAliases.length === 0 && availableNetAliasSearchTerm && (
+                        <p className="text-xs text-muted-foreground text-center py-2">No matches found.</p>
+                      )}
+                      {filteredAvailableNetAliases.length === 0 && !availableNetAliasSearchTerm && (
+                        <p className="text-xs text-muted-foreground text-center py-2">None available.</p>
+                      )}
+                    </ul>
+                  </TooltipProvider>
+                </ScrollArea>
+              </div>
+
+              {/* Move Buttons */}
+              <div className="flex md:flex-col justify-center items-center gap-2 px-1 md:py-4 py-2">
+                <Button variant="outline" size="icon" onClick={moveSelectedNetAliasToAssociated} disabled={selectedAvailableNetAliases.length === 0} title="Add selected to group">
+                  <ChevronRight className="h-4 w-4 hidden md:inline-block" />
+                  <ChevronDown className="h-4 w-4 inline-block md:hidden" />
+                </Button>
+                <Button variant="outline" size="icon" onClick={moveSelectedNetAliasToAvailable} disabled={selectedAssociatedNetAliases.length === 0} title="Remove selected from group">
+                  <ChevronLeft className="h-4 w-4 hidden md:inline-block" />
+                  <ChevronUp className="h-4 w-4 inline-block md:hidden" />
+                </Button>
+              </div>
+
+              {/* Associated Network Aliases List */}
+              <div className="flex flex-col gap-2">
+                <h3 className="text-lg font-semibold mb-2">Associated Network Aliases</h3>
+                <div className="flex items-center space-x-2 mb-2">
+                  <Input
+                    placeholder="Search associated..."
+                    value={associatedNetAliasSearchTerm}
+                    onChange={(e) => setAssociatedNetAliasSearchTerm(e.target.value)}
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={() => setSelectedAssociatedNetAliases(filteredAssociatedNetAliases.map(a => a.uuid))} disabled={filteredAssociatedNetAliases.length === 0}>Select All</Button>
+                  <Button variant="outline" size="sm" onClick={() => setSelectedAssociatedNetAliases([])} disabled={selectedAssociatedNetAliases.length === 0}>Deselect All</Button>
+                </div>
+                <ScrollArea className={`border rounded-md p-2 ${isMobile ? 'h-[200px]' : 'h-[300px]'}`}>
+                  <ul>
+                    {filteredAssociatedNetAliases.map(a => (
+                      <li
+                        key={a.uuid}
+                        className={`py-1 px-2 text-sm cursor-pointer rounded-sm ${selectedAssociatedNetAliases.includes(a.uuid) ? 'bg-blue-500 text-white' : 'hover:bg-gray-100 dark:hover:bg-gray-800'}`}
+                        onClick={(e) => toggleNetworkAliasSelection('associated', a.uuid, e)}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Waypoints className="h-3.5 w-3.5 shrink-0 opacity-60" />
+                          <span className="flex-1">
+                            <div>{a.name}</div>
+                            <div className="text-xs opacity-75 mt-0.5 font-mono">{a.content}</div>
+                            {a.description && <div className="text-xs opacity-75 mt-0.5 break-words">{a.description}</div>}
+                          </span>
+                        </div>
+                      </li>
+                    ))}
+                    {filteredAssociatedNetAliases.length === 0 && associatedNetAliasSearchTerm && (
+                        <p className="text-xs text-muted-foreground text-center py-2">No matches found.</p>
+                      )}
+                    {filteredAssociatedNetAliases.length === 0 && !associatedNetAliasSearchTerm && (
+                        <p className="text-xs text-muted-foreground text-center py-2">None associated.</p>
+                      )}
+                  </ul>
+                </ScrollArea>
+              </div>
+            </div>
+          )}
               </TabsContent>
             )}
           </Tabs>
@@ -1298,6 +1738,45 @@ export function NetworkGroupMembersManager({
                 fetchHostAliasesForDialog(editingAlias!, true);
               }}
               disabled={confirmInput !== "CONFIRM"}
+            >
+              Confirm
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Confirmation Dialog for Network Alias Migration */}
+      <AlertDialog open={showNetAliasMigrationConfirmDialog} onOpenChange={setShowNetAliasMigrationConfirmDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm Network Alias Migration</AlertDialogTitle>
+            <AlertDialogDescription>
+              Enabling &quot;Allow Network Alias Migration&quot; will enable you to select any network aliases even if they are already members of another {groupTypeName} group. When you click save, all associated network aliases will be first removed from any {groupTypeName} network groups they are currently members of and then associated to this new group. This ensures a network alias belongs to only one {groupTypeName} group at a time and allows you to move all selected network aliases to a single {groupTypeName} group even if they are already members of another {groupTypeName} group.
+              <br /><br />
+              To confirm, please type &quot;CONFIRM&quot; in the box below.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <Input
+            type="text"
+            placeholder="Type CONFIRM"
+            value={netAliasConfirmInput}
+            onChange={(e) => setNetAliasConfirmInput(e.target.value)}
+            className="mt-2"
+          />
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => {
+              setNetAliasConfirmInput("");
+              setAllowNetAliasMigration(false);
+              fetchNetworkAliasesForDialog(editingAlias!, false);
+            }}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setAllowNetAliasMigration(true);
+                setShowNetAliasMigrationConfirmDialog(false);
+                setNetAliasConfirmInput("");
+                fetchNetworkAliasesForDialog(editingAlias!, true);
+              }}
+              disabled={netAliasConfirmInput !== "CONFIRM"}
             >
               Confirm
             </AlertDialogAction>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import type { NetworkAlias } from '@/types/opnsense';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -9,14 +9,13 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { PaginationControls } from '@/components/ui/pagination-controls';
 import { SortableTable } from '@/components/ui/sortable-table';
 import { useToast } from '@/hooks/use-toast';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { useLocalStorage } from '@/hooks/use-local-storage';
-import { logger } from '@/lib/logger';
+import { cn } from '@/lib/utils';
 import {
   Waypoints, RefreshCcw, PlusCircle, Edit, Trash2, Loader2, AlertCircle, XCircle,
 } from 'lucide-react';
@@ -71,25 +70,42 @@ function validateForm(form: AliasFormState, existingNames: string[], editingUuid
 }
 
 interface NetworkAliasesTabProps {
-  onConnectionError?: () => void;
+  networkAliases: NetworkAlias[];
+  isLoadingInitialData: boolean;
+  isRefreshing: boolean;
+  networkAliasesError: string | null;
+  onRefreshNetworkAliases: () => Promise<void>;
+  sortBy: string;
+  sortDirection: 'asc' | 'desc';
+  onSortChange: (newSortBy: string, newSortDirection: 'asc' | 'desc') => void;
+  currentPage: number;
+  pageSize: number | 'ALL';
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (pageSize: number | 'ALL') => void;
+  searchTerm: string;
+  onSearchTermChange: (searchTerm: string) => void;
 }
 
-export function NetworkAliasesTab({ onConnectionError }: NetworkAliasesTabProps) {
+export function NetworkAliasesTab({
+  networkAliases,
+  isLoadingInitialData,
+  isRefreshing,
+  networkAliasesError,
+  onRefreshNetworkAliases,
+  sortBy,
+  sortDirection,
+  onSortChange,
+  currentPage,
+  pageSize,
+  onPageChange,
+  onPageSizeChange,
+  searchTerm,
+  onSearchTermChange,
+}: NetworkAliasesTabProps) {
   const { toast } = useToast();
   const isMobile = useIsMobile();
   const { data: session } = useAuth();
   const isSuperAdmin = session?.user?.role === Role.SUPER_ADMIN;
-
-  const [aliases, setAliases] = useState<NetworkAlias[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-
-  const [searchTerm, setSearchTerm] = useState('');
-  const [sortBy, setSortBy] = useState('name');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useLocalStorage<number | 'ALL'>('network-aliases-table-page-size', 10);
 
   // Add dialog
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -110,54 +126,30 @@ export function NetworkAliasesTab({ onConnectionError }: NetworkAliasesTabProps)
   const [deleteConfirm, setDeleteConfirm] = useState('');
   const [isDeleteSubmitting, setIsDeleteSubmitting] = useState(false);
 
-  const fetchAliases = useCallback(async (showRefresh = false) => {
-    if (showRefresh) setIsRefreshing(true);
-    else { setIsLoading(true); setError(null); }
-    try {
-      const resp = await fetch('/api/opnsense/network-aliases', { cache: 'no-store' });
-      if (!resp.ok) {
-        if (resp.status === 403) { setError('Network Aliases Management is disabled. Enable it in Global Settings.'); return; }
-        const data = await resp.json().catch(() => ({}));
-        throw new Error(data.message || `HTTP ${resp.status}`);
-      }
-      const data: NetworkAlias[] = await resp.json();
-      setAliases(data);
-      setError(null);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to load network aliases';
-      setError(msg);
-      if (msg.toLowerCase().includes('connect') || msg.toLowerCase().includes('opnsense')) {
-        onConnectionError?.();
-      }
-      logger.error('[NetworkAliasesTab] fetch error:', err);
-    } finally {
-      setIsLoading(false);
-      setIsRefreshing(false);
-    }
-  }, [onConnectionError]);
-
-  useEffect(() => { fetchAliases(); }, [fetchAliases]);
-
   // ── Filtering + sorting ──────────────────────────────────────────────────
 
-  const filtered = aliases.filter(a => {
-    if (!searchTerm.trim()) return true;
-    const q = searchTerm.toLowerCase();
-    return (
-      a.name.toLowerCase().includes(q) ||
-      a.content.toLowerCase().includes(q) ||
-      (a.description && a.description.toLowerCase().includes(q))
-    );
-  });
+  const filtered = useMemo(() => {
+    return networkAliases.filter(a => {
+      if (!searchTerm.trim()) return true;
+      const q = searchTerm.toLowerCase();
+      return (
+        a.name.toLowerCase().includes(q) ||
+        a.content.toLowerCase().includes(q) ||
+        (a.description && a.description.toLowerCase().includes(q))
+      );
+    });
+  }, [networkAliases, searchTerm]);
 
-  const sorted = [...filtered].sort((a, b) => {
-    let cmp = 0;
-    if (sortBy === 'name') cmp = a.name.localeCompare(b.name);
-    else if (sortBy === 'content') cmp = a.content.localeCompare(b.content);
-    else if (sortBy === 'description') cmp = (a.description ?? '').localeCompare(b.description ?? '');
-    else if (sortBy === 'enabled') cmp = a.enabled.localeCompare(b.enabled);
-    return sortDirection === 'asc' ? cmp : -cmp;
-  });
+  const sorted = useMemo(() => {
+    return [...filtered].sort((a, b) => {
+      let cmp = 0;
+      if (sortBy === 'name') cmp = a.name.localeCompare(b.name);
+      else if (sortBy === 'content') cmp = a.content.localeCompare(b.content);
+      else if (sortBy === 'description') cmp = (a.description ?? '').localeCompare(b.description ?? '');
+      else if (sortBy === 'enabled') cmp = a.enabled.localeCompare(b.enabled);
+      return sortDirection === 'asc' ? cmp : -cmp;
+    });
+  }, [filtered, sortBy, sortDirection]);
 
   const totalItems = sorted.length;
   const paginated = pageSize === 'ALL' ? sorted : sorted.slice((currentPage - 1) * pageSize, currentPage * pageSize);
@@ -171,7 +163,7 @@ export function NetworkAliasesTab({ onConnectionError }: NetworkAliasesTabProps)
   };
 
   const handleSubmitAdd = async () => {
-    const errs = validateForm(addForm, [], undefined, aliases);
+    const errs = validateForm(addForm, [], undefined, networkAliases);
     if (Object.keys(errs).length > 0) { setAddErrors(errs); return; }
     setIsAddSubmitting(true);
     try {
@@ -192,7 +184,7 @@ export function NetworkAliasesTab({ onConnectionError }: NetworkAliasesTabProps)
       }
       toast({ title: 'Network alias created' });
       setIsAddOpen(false);
-      fetchAliases(true);
+      onRefreshNetworkAliases();
     } catch (err) {
       toast({ title: 'Error', description: err instanceof Error ? err.message : 'Unknown error', variant: 'destructive' });
     } finally {
@@ -211,7 +203,7 @@ export function NetworkAliasesTab({ onConnectionError }: NetworkAliasesTabProps)
 
   const handleSubmitEdit = async () => {
     if (!editingAlias) return;
-    const errs = validateForm(editForm, [], editingAlias.uuid, aliases);
+    const errs = validateForm(editForm, [], editingAlias.uuid, networkAliases);
     if (Object.keys(errs).length > 0) { setEditErrors(errs); return; }
     setIsEditSubmitting(true);
     try {
@@ -233,7 +225,7 @@ export function NetworkAliasesTab({ onConnectionError }: NetworkAliasesTabProps)
       toast({ title: 'Network alias updated' });
       setIsEditOpen(false);
       setEditingAlias(null);
-      fetchAliases(true);
+      onRefreshNetworkAliases();
     } catch (err) {
       toast({ title: 'Error', description: err instanceof Error ? err.message : 'Unknown error', variant: 'destructive' });
     } finally {
@@ -262,7 +254,7 @@ export function NetworkAliasesTab({ onConnectionError }: NetworkAliasesTabProps)
       toast({ title: 'Network alias deleted' });
       setIsDeleteOpen(false);
       setDeletingAlias(null);
-      fetchAliases(true);
+      onRefreshNetworkAliases();
     } catch (err) {
       toast({ title: 'Error', description: err instanceof Error ? err.message : 'Unknown error', variant: 'destructive' });
     } finally {
@@ -270,62 +262,68 @@ export function NetworkAliasesTab({ onConnectionError }: NetworkAliasesTabProps)
     }
   };
 
+  const handleRefresh = () => {
+    onRefreshNetworkAliases();
+  };
+
   // ── Render ───────────────────────────────────────────────────────────────
 
   return (
     <>
-      <Card className="flex flex-col flex-grow min-h-0">
-        <CardHeader className="pb-3 flex-shrink-0">
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <ClientOnly><Waypoints className="h-5 w-5" /></ClientOnly>
-                Network Alias Management
-              </CardTitle>
-              <CardDescription className="mt-1">View and manage OPNsense network (CIDR) aliases</CardDescription>
-            </div>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={() => fetchAliases(true)} disabled={isRefreshing}>
-                <ClientOnly>{isRefreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}</ClientOnly>
+      <Card className="shadow-lg w-full flex flex-col flex-1 mb-0 min-h-0">
+        <CardHeader className="flex flex-col md:flex-row md:items-center md:justify-between space-y-3 md:space-y-0 pb-4">
+          <div>
+            <CardTitle className={`flex items-center ${isMobile ? 'text-xl' : 'text-2xl'}`}>
+              <ClientOnly><Waypoints size={28} className="mr-2 text-primary" /></ClientOnly> Network Alias Management
+            </CardTitle>
+            {!isMobile && <CardDescription>View and manage OPNsense network (CIDR) aliases.</CardDescription>}
+          </div>
+          <div className="flex w-full items-center justify-between md:w-auto md:gap-4">
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={handleRefresh}
+                variant="outline"
+                className={cn(isMobile && "size-9 p-0")}
+                disabled={isLoadingInitialData || isRefreshing}
+              >
+                <ClientOnly>
+                  {isRefreshing ? (
+                    <Loader2 className={cn("h-4 w-4 animate-spin", !isMobile && "mr-2")} />
+                  ) : (
+                    <RefreshCcw className={cn("h-4 w-4", !isMobile && "mr-2")} />
+                  )}
+                </ClientOnly>
+                {!isMobile && "Refresh"}
               </Button>
               {isSuperAdmin && (
-                <Button size="sm" onClick={handleOpenAdd}>
-                  <ClientOnly><PlusCircle className="h-4 w-4 mr-1" /></ClientOnly>
-                  Add Network Alias
+                <Button onClick={handleOpenAdd} className={cn(isMobile && "size-9 p-0")}>
+                  <ClientOnly>
+                    <PlusCircle className={cn("h-4 w-4", !isMobile && "mr-2")} />
+                  </ClientOnly>
+                  {!isMobile && "Add Network Alias"}
                 </Button>
               )}
             </div>
           </div>
-
-          <div className="flex items-center gap-2 mt-3">
-            <Input
-              placeholder="Search by name, CIDR, description..."
-              value={searchTerm}
-              onChange={e => { setSearchTerm(e.target.value); setCurrentPage(1); }}
-              className="max-w-sm"
-            />
-            {searchTerm && (
-              <Button variant="ghost" size="icon" onClick={() => setSearchTerm('')}>
-                <XCircle className="h-4 w-4" />
-              </Button>
-            )}
-          </div>
         </CardHeader>
 
-        <CardContent className="flex flex-col flex-grow min-h-0 pb-2">
-          {isLoading ? (
-            <div className="space-y-2">
-              {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
+        <CardContent className="space-y-4 p-4 md:p-6 relative flex-1 overflow-hidden flex flex-col">
+          {isLoadingInitialData ? (
+            <div className="space-y-2 mt-4">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
             </div>
-          ) : error ? (
-            <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
+          ) : networkAliasesError ? (
+            <Alert variant="destructive" className="mt-4">
+              <ClientOnly><AlertCircle className="h-4 w-4" /></ClientOnly>
+              <AlertTitle>Error</AlertTitle>
               <AlertDescription>
-                {error}{' '}
-                <Button variant="link" size="sm" className="p-0 h-auto" onClick={() => fetchAliases()}>Retry</Button>
+                {networkAliasesError}{' '}
+                <Button variant="link" size="sm" className="p-0 h-auto" onClick={handleRefresh}>Retry</Button>
               </AlertDescription>
             </Alert>
-          ) : aliases.length === 0 ? (
+          ) : networkAliases.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center gap-3">
               <Waypoints className="h-10 w-10 text-muted-foreground/40" />
               <p className="text-muted-foreground font-medium">No managed network ranges</p>
@@ -341,8 +339,33 @@ export function NetworkAliasesTab({ onConnectionError }: NetworkAliasesTabProps)
             </div>
           ) : (
             <>
+              {/* Search Input */}
+              <div className="mb-4 relative max-w-sm">
+                <div className="relative">
+                  <Input
+                    type="search"
+                    placeholder="Search by name, CIDR, description..."
+                    value={searchTerm}
+                    onChange={e => onSearchTermChange(e.target.value)}
+                    className="pr-16"
+                  />
+                  <div className="absolute right-1 top-1/2 transform -translate-y-1/2 flex items-center gap-1">
+                    {searchTerm && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        onClick={() => onSearchTermChange('')}
+                      >
+                        <XCircle className="h-4 w-4 text-muted-foreground" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               {!isMobile ? (
-                <ScrollArea className="flex-grow">
+                <ScrollArea className="flex-1 pr-4 -mr-4">
                   <SortableTable<NetworkAlias>
                     data={paginated}
                     columns={[
@@ -414,18 +437,18 @@ export function NetworkAliasesTab({ onConnectionError }: NetworkAliasesTabProps)
                     ]}
                     sortBy={sortBy}
                     sortDirection={sortDirection}
-                    onSortChange={(col, dir) => { setSortBy(col); setSortDirection(dir); }}
+                    onSortChange={onSortChange}
                   />
                 </ScrollArea>
               ) : (
                 // Mobile card list
-                <ScrollArea className="flex-grow">
+                <ScrollArea className="flex-1 pr-4 -mr-4">
                   {paginated.length === 0 ? (
                     <p className="text-sm text-muted-foreground text-center py-8">
                       {searchTerm ? 'No results match your search.' : "No network aliases found."}
                     </p>
                   ) : (
-                    <div className="space-y-2">
+                    <div className="space-y-4">
                       {paginated.map(a => (
                         <Card key={a.uuid} className="p-3">
                           <div className="flex justify-between items-start">
@@ -457,12 +480,12 @@ export function NetworkAliasesTab({ onConnectionError }: NetworkAliasesTabProps)
                 <PaginationControls
                   currentPage={currentPage}
                   pageSize={pageSize}
-                  totalPages={pageSize === 'ALL' ? 1 : Math.max(1, Math.ceil(totalItems / pageSize))}
-                  totalCount={aliases.length}
+                  totalPages={pageSize === 'ALL' ? 1 : Math.max(1, Math.ceil(totalItems / (typeof pageSize === 'number' ? pageSize : 1)))}
+                  totalCount={networkAliases.length}
                   filteredCount={totalItems}
-                  onPageChange={setCurrentPage}
-                  onPageSizeChange={size => { setPageSize(size); setCurrentPage(1); }}
-                  isLoading={isLoading}
+                  onPageChange={onPageChange}
+                  onPageSizeChange={onPageSizeChange}
+                  isLoading={isRefreshing}
                   pageSizeOptions={[5, 10, 50, 100, 500]}
                   showAllOption={true}
                 />
