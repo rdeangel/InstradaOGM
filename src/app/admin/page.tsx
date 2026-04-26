@@ -643,6 +643,10 @@ export default function AdminPage() {
                 }}
                 searchTerm={networkAliasesSearchTerm}
                 onSearchTermChange={setNetworkAliasesSearchTerm}
+                vpnConnectionStatuses={vpnConnectionStatuses}
+                groupVpnMap={groupVpnMap}
+                vpnMappings={vpnMappings}
+                opnsenseGroupDisplays={opnsenseGroupDisplays}
               />
             )}
 

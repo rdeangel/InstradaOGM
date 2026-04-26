@@ -16,6 +16,7 @@ import { cn } from '@/lib/utils';
 import { ClientOnly } from '@/components/util/ClientOnly';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { CidrListDialog } from '@/components/ui/cidr-list-dialog';
 import {
   Dialog,
   DialogContent,
@@ -133,6 +134,7 @@ const NetworkAliasManagementCard = forwardRef<NetworkAliasManagementCardHandles,
     const initialHeight = typeof window !== 'undefined' ? window.innerHeight : 0;
     return calculateCollapsedState(initialWidth, initialHeight);
   });
+  const [isCidrDialogOpen, setIsCidrDialogOpen] = useState(false);
 
   useEffect(() => {
     setIsCollapsed(calculateCollapsedState(windowWidth, windowHeight));
@@ -841,26 +843,45 @@ const NetworkAliasManagementCard = forwardRef<NetworkAliasManagementCardHandles,
                       <>
                         <div className="flex items-center gap-1">
                           <strong className={cn(isMobile ? "text-sm" : "")}>Content:</strong>
-                          <span
-                            className={cn(
-                              "font-mono rounded-md inline-block bg-primary text-primary-foreground hover:bg-primary/90 cursor-copy transition-colors px-2.5 py-0.5",
-                              isMobile ? "text-sm" : "text-base"
-                            )}
-                            onClick={async () => {
-                              if (selectedAlias?.content) {
-                                const { safeClipboardCopy, getClipboardErrorDescription } = await import('@/lib/clipboard-utils');
-                                const success = await safeClipboardCopy(selectedAlias.content);
-                                if (success) {
-                                  toast({ title: "Copied!", description: "Content copied to clipboard.", variant: "success" });
-                                } else {
-                                  toast({ title: "Copy Failed", description: getClipboardErrorDescription(), variant: "destructive" });
-                                }
-                              }
-                            }}
-                            title="Click to copy Content"
-                          >
-                            {selectedAlias.content || 'N/A'}
-                          </span>
+                          {(() => {
+                            const cidrItems = (selectedAlias?.content || '').split('\n').filter(c => c.trim());
+                            if (cidrItems.length <= 1) {
+                              return (
+                                <span
+                                  className={cn(
+                                    "font-mono rounded-md inline-block bg-primary text-primary-foreground hover:bg-primary/90 cursor-copy transition-colors px-2.5 py-0.5",
+                                    isMobile ? "text-sm" : "text-base"
+                                  )}
+                                  onClick={async () => {
+                                    if (selectedAlias?.content) {
+                                      const { safeClipboardCopy, getClipboardErrorDescription } = await import('@/lib/clipboard-utils');
+                                      const success = await safeClipboardCopy(selectedAlias.content);
+                                      if (success) {
+                                        toast({ title: "Copied!", description: "Content copied to clipboard.", variant: "success" });
+                                      } else {
+                                        toast({ title: "Copy Failed", description: getClipboardErrorDescription(), variant: "destructive" });
+                                      }
+                                    }
+                                  }}
+                                  title="Click to copy Content"
+                                >
+                                  {selectedAlias?.content || 'N/A'}
+                                </span>
+                              );
+                            }
+                            return (
+                              <span
+                                className={cn(
+                                  "font-mono rounded-md inline-block bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer transition-colors px-2.5 py-0.5",
+                                  isMobile ? "text-sm" : "text-base"
+                                )}
+                                onClick={() => setIsCidrDialogOpen(true)}
+                                title="Click to view CIDRs"
+                              >
+                                {cidrItems.length} CIDRs
+                              </span>
+                            );
+                          })()}
                         </div>
                         {selectedAlias.description && (
                           <div className="flex items-start gap-1">
@@ -974,6 +995,16 @@ const NetworkAliasManagementCard = forwardRef<NetworkAliasManagementCardHandles,
             </div>
           </DialogContent>
         </Dialog>
+      )}
+
+      {/* CIDR List Dialog */}
+      {selectedAlias && (
+        <CidrListDialog
+          open={isCidrDialogOpen}
+          onOpenChange={setIsCidrDialogOpen}
+          cidrs={(selectedAlias.content || '').split('\n').filter(c => c.trim())}
+          title={`${selectedAlias.name} — CIDR Addresses`}
+        />
       )}
     </>
   );
