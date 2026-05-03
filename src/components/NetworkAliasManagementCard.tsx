@@ -36,6 +36,7 @@ export interface NetworkAliasManagementCardHandles {
   refreshNetworkAliases: () => Promise<void>;
   refreshLastOperationOnly: () => Promise<void>;
   refreshGraphs: () => Promise<void>;
+  updateAliasMembership: (uuid: string, memberOfGroups: NetworkAlias['memberOfGroups']) => void;
 }
 
 interface NetworkAliasManagementCardProps {
@@ -166,6 +167,17 @@ const NetworkAliasManagementCard = forwardRef<NetworkAliasManagementCardHandles,
     }
   }, []);
 
+  const fetchAliasesSilent = useCallback(async () => {
+    try {
+      const resp = await fetch('/api/user/network-aliases', { cache: 'no-store' });
+      if (!resp.ok) return;
+      const data: NetworkAlias[] = await resp.json();
+      setAliases(data);
+    } catch (err) {
+      logger.error('[NetworkAliasManagementCard] silent fetch error:', err);
+    }
+  }, []);
+
   const refreshLastOperationOnly = useCallback(async () => {
     if (layoutMode !== 'side-by-side' || !selectedAlias?.uuid) return;
 
@@ -183,7 +195,7 @@ const NetworkAliasManagementCard = forwardRef<NetworkAliasManagementCardHandles,
 
   const refreshGraphs = useCallback(async () => {
     try {
-      await fetchAliases();
+      await fetchAliasesSilent();
       await Promise.all([
         graphRefCard.current?.refresh(),
         graphRefModal.current?.refresh()
@@ -191,7 +203,7 @@ const NetworkAliasManagementCard = forwardRef<NetworkAliasManagementCardHandles,
     } catch (error) {
       logger.error('Error refreshing graphs:', error);
     }
-  }, [fetchAliases]);
+  }, [fetchAliasesSilent]);
 
   const fetchExtendedDetails = useCallback(async (forceRefresh = false) => {
     if (isFetchingRef.current) return;
@@ -245,6 +257,11 @@ const NetworkAliasManagementCard = forwardRef<NetworkAliasManagementCardHandles,
     refreshNetworkAliases: () => fetchAliases(),
     refreshLastOperationOnly,
     refreshGraphs,
+    updateAliasMembership: (uuid, memberOfGroups) => {
+      setAliases(prev => prev.map(a =>
+        a.uuid === uuid ? { ...a, memberOfGroups: memberOfGroups ?? [] } : a
+      ));
+    },
   }), [fetchAliases, refreshLastOperationOnly, refreshGraphs]);
 
   useEffect(() => { fetchAliases(); }, [fetchAliases]);

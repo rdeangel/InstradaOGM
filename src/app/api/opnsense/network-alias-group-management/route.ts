@@ -174,10 +174,6 @@ export async function POST(request: Request) {
             }
           }
 
-          await logApiAccess(auth, 'NETWORK_ALIAS_GROUP_ASSIGN_MOVE', {
-            aliasUuid: body.aliasUuid, aliasName: alias.name, groupUuid: body.groupId, groupName: group.name,
-            removedFromGroups: removedFromGroups.map(g => ({ uuid: g.uuid, name: g.name })),
-          }, request);
         }
 
         const currentContent = new Set(parseGroupContent(group.content, group.name));
@@ -207,6 +203,13 @@ export async function POST(request: Request) {
           await batchAliasOperations(batchOperations);
           await reconfigureAliases();
         }
+
+        if (removedFromGroups.length > 0) {
+          await logApiAccess(auth, 'NETWORK_ALIAS_GROUP_ASSIGN_MOVE', {
+            aliasUuid: body.aliasUuid, aliasName: alias.name, groupUuid: body.groupId, groupName: group.name,
+            removedFromGroups: removedFromGroups.map(g => ({ uuid: g.uuid, name: g.name, friendlyName: g.friendlyName })),
+          }, request);
+        }
       } else {
         const currentContent = new Set(parseGroupContent(group.content, group.name));
         if (currentContent.has(alias.name)) {
@@ -234,9 +237,11 @@ export async function POST(request: Request) {
         }
       }
 
-      await logApiAccess(auth, `NETWORK_ALIAS_GROUP_${body.operation.toUpperCase()}_SUCCESS`, {
-        aliasUuid: body.aliasUuid, aliasName: alias.name, groupUuid: body.groupId, groupName: group.name,
-      }, request);
+      if (!(body.operation === 'assign' && removedFromGroups.length > 0)) {
+        await logApiAccess(auth, `NETWORK_ALIAS_GROUP_${body.operation.toUpperCase()}_SUCCESS`, {
+          aliasUuid: body.aliasUuid, aliasName: alias.name, groupUuid: body.groupId, groupName: group.name,
+        }, request);
+      }
 
       const groupDisplays = await prisma.opnsenseGroupDisplay.findMany({
         select: { opnsenseUuid: true, friendlyName: true, iconIdentifier: true, groupType: true },

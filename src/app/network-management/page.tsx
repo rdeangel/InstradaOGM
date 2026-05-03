@@ -188,8 +188,13 @@ export default function NetworkManagementPage() {
 
       if (data.memberOfGroups) {
         setSelectedAlias(prev => prev ? { ...prev, memberOfGroups: data.memberOfGroups } : prev);
+        aliasCardRef.current?.updateAliasMembership(selectedAlias.uuid, data.memberOfGroups);
       }
-      await Promise.all([refreshGroups(true), aliasCardRef.current?.refreshNetworkAliases()]);
+      await Promise.all([
+        refreshGroups(true),
+        aliasCardRef.current?.refreshLastOperationOnly(),
+        aliasCardRef.current?.refreshGraphs(),
+      ]);
     } catch (err) {
       toast({ title: 'Error', description: err instanceof Error ? err.message : 'Unknown error', variant: 'destructive' });
     } finally {
@@ -211,8 +216,13 @@ export default function NetworkManagementPage() {
       toast({ title: 'Alias removed from group', variant: 'success' });
       if (data.memberOfGroups) {
         setSelectedAlias(prev => prev ? { ...prev, memberOfGroups: data.memberOfGroups } : prev);
+        aliasCardRef.current?.updateAliasMembership(selectedAlias.uuid, data.memberOfGroups);
       }
-      await Promise.all([refreshGroups(true), aliasCardRef.current?.refreshNetworkAliases()]);
+      await Promise.all([
+        refreshGroups(true),
+        aliasCardRef.current?.refreshLastOperationOnly(),
+        aliasCardRef.current?.refreshGraphs(),
+      ]);
     } catch (err) {
       toast({ title: 'Error', description: err instanceof Error ? err.message : 'Unknown error', variant: 'destructive' });
     } finally {
@@ -240,7 +250,12 @@ export default function NetworkManagementPage() {
         toast({ title: 'Alias removed from all groups', variant: 'success' });
       }
       setSelectedAlias(prev => prev ? { ...prev, memberOfGroups: [] } : prev);
-      await Promise.all([refreshGroups(true), aliasCardRef.current?.refreshNetworkAliases()]);
+      aliasCardRef.current?.updateAliasMembership(selectedAlias.uuid, []);
+      await Promise.all([
+        refreshGroups(true),
+        aliasCardRef.current?.refreshLastOperationOnly(),
+        aliasCardRef.current?.refreshGraphs(),
+      ]);
     } catch (err) {
       toast({ title: 'Error', description: err instanceof Error ? err.message : 'Unknown error', variant: 'destructive' });
     } finally {

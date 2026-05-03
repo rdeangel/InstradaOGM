@@ -186,7 +186,8 @@ export async function GET(request: Request) {
             });
             currentGroupIds.delete(groupInfo.id);
             for (const rg of removedGroups) {
-              currentGroupIds.delete(rg.uuid);
+              currentGroupIds.add(rg.uuid);
+              groupNameMap.set(rg.uuid, rg.friendlyName || rg.name);
             }
           }
         }
