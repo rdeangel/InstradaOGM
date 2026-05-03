@@ -1603,6 +1603,9 @@ class ScheduleExecutionService {
 
     for (const action of sortedActions) {
       const ops: BatchAliasOperation[] = [];
+      // For CLEAR_ALL: track which aliases were removed from which groups so we can emit
+      // one history-compatible audit event per (alias, group) pair after the batch.
+      const clearAllRemovals = new Map<string, string[]>(); // aliasName → [groupUuid, ...]
 
       if (action.operation === 'ASSIGN' && action.targetGroupUuid) {
         const currentContent = groupContentMap.get(action.targetGroupUuid) ?? [];
@@ -1626,10 +1629,15 @@ class ScheduleExecutionService {
         }
       } else if (action.operation === 'CLEAR_ALL') {
         for (const [groupUuid, currentContent] of groupContentMap.entries()) {
-          const newContent = currentContent.filter(n => !aliasNames.includes(n));
-          if (newContent.length !== currentContent.length) {
+          const toRemove = aliasNames.filter(n => currentContent.includes(n));
+          if (toRemove.length > 0) {
+            const newContent = currentContent.filter(n => !aliasNames.includes(n));
             groupContentMap.set(groupUuid, newContent);
             ops.push(makeGroupUpdateOp(groupUuid, newContent));
+            for (const aliasName of toRemove) {
+              if (!clearAllRemovals.has(aliasName)) clearAllRemovals.set(aliasName, []);
+              clearAllRemovals.get(aliasName)!.push(groupUuid);
+            }
           }
         }
         for (const aliasName of aliasNames) {
@@ -1640,6 +1648,8 @@ class ScheduleExecutionService {
       if (ops.length > 0) {
         const batchResult = await batchAliasOperations(ops);
         const success = batchResult.success;
+        const batchError = success ? undefined : (batchResult.error ?? 'Batch operation failed');
+
         for (const aliasName of aliasNames) {
           results.push({
             operation: action.operation,
@@ -1647,10 +1657,53 @@ class ScheduleExecutionService {
             fromGroupUuid: action.fromGroupUuid,
             aliasName,
             success,
-            error: success ? undefined : (batchResult.error ?? 'Batch operation failed'),
+            error: batchError,
           });
-          const auditSuffix = success ? 'SUCCESS' : 'FAILURE';
-          await logAuditEvent({ action: `OPNSENSE_GROUP_NETWORK_ALIAS_${action.operation}_${auditSuffix}`, details: { ...scheduleCtx, targetGroupUuid: action.targetGroupUuid, aliasName } });
+
+          if (!success) {
+            // Keep operational naming for failures so they remain distinguishable in audit logs
+            await logAuditEvent({
+              action: `OPNSENSE_GROUP_NETWORK_ALIAS_${action.operation}_FAILURE`,
+              details: { ...scheduleCtx, targetGroupUuid: action.targetGroupUuid, aliasName },
+            });
+          } else if (action.operation === 'ASSIGN' && action.targetGroupUuid) {
+            const targetGroup = groupMap.get(action.targetGroupUuid);
+            await logAuditEvent({
+              action: 'NETWORK_ALIAS_GROUP_ASSIGN_SUCCESS',
+              details: {
+                ...scheduleCtx,
+                aliasName,
+                groupUuid: action.targetGroupUuid,
+                groupName: targetGroup?.name ?? null,
+              },
+            });
+          } else if (action.operation === 'UNASSIGN' && action.targetGroupUuid) {
+            const targetGroup = groupMap.get(action.targetGroupUuid);
+            await logAuditEvent({
+              action: 'NETWORK_ALIAS_GROUP_UNASSIGN_SUCCESS',
+              details: {
+                ...scheduleCtx,
+                aliasName,
+                groupUuid: action.targetGroupUuid,
+                groupName: targetGroup?.name ?? null,
+              },
+            });
+          } else if (action.operation === 'CLEAR_ALL') {
+            // Emit one history entry per group the alias was removed from
+            const affectedGroups = clearAllRemovals.get(aliasName) ?? [];
+            for (const groupUuid of affectedGroups) {
+              const group = groupMap.get(groupUuid);
+              await logAuditEvent({
+                action: 'NETWORK_ALIAS_GROUP_UNASSIGN_SUCCESS',
+                details: {
+                  ...scheduleCtx,
+                  aliasName,
+                  groupUuid,
+                  groupName: group?.name ?? null,
+                },
+              });
+            }
+          }
         }
       }
     }

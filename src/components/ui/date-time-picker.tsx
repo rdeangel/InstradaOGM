@@ -46,6 +46,7 @@ export function DateTimePicker({ date, setDate, disabled }: DateTimePickerProps)
             newDateTime.setHours(now.getHours())
             newDateTime.setMinutes(now.getMinutes())
         }
+        newDateTime.setSeconds(0, 0)
         setSelectedDateTime(newDateTime)
         setDate(newDateTime)
     }
@@ -60,6 +61,7 @@ export function DateTimePicker({ date, setDate, disabled }: DateTimePickerProps)
         const newDateTime = new Date(selectedDateTime)
         newDateTime.setHours(hours)
         newDateTime.setMinutes(minutes)
+        newDateTime.setSeconds(0, 0)
 
         setSelectedDateTime(newDateTime)
         setDate(newDateTime)

@@ -289,12 +289,78 @@ const NetworkAliasManagementCard = forwardRef<NetworkAliasManagementCardHandles,
   }, [aliases]);
 
   const renderAliasOption = useCallback((option: AliasSelectOption) => {
+    // Collect all unique VPNs from all groups this alias belongs to
+    const allOptionVpns: Array<{ vpnUuid: string; status: 'connected' | 'disconnected' | 'disabled'; type: string; enabled?: string }> = [];
+    for (const group of option.memberOfGroups) {
+      const vpnUuidRaw = groupVpnMap.get(group.uuid);
+      if (vpnUuidRaw) {
+        const vpnUuid = vpnUuidRaw.trim();
+        if (!allOptionVpns.find(v => v.vpnUuid === vpnUuid)) {
+          const info = vpnConnectionStatuses.get(vpnUuid);
+          if (info) allOptionVpns.push({ vpnUuid, status: info.status, type: info.type, enabled: info.enabled });
+        }
+      }
+    }
+
+    const aliasVpnInfo: { status: 'connected' | 'disconnected' | 'disabled'; type: string; enabled?: string; isMultiple?: boolean; connectedCount?: number; totalCount?: number } | null = (() => {
+      if (allOptionVpns.length === 0) return null;
+      if (allOptionVpns.length === 1) return allOptionVpns[0];
+      const connectedCount = allOptionVpns.filter(v => v.status === 'connected').length;
+      const totalCount = allOptionVpns.length;
+      const overallStatus: 'connected' | 'disconnected' | 'disabled' =
+        connectedCount === totalCount ? 'connected' : connectedCount === 0 ? 'disconnected' : 'disabled';
+      return { ...allOptionVpns[0], status: overallStatus, isMultiple: true, connectedCount, totalCount };
+    })();
+
     return (
       <div className="flex items-center justify-between w-full">
         <div className="flex items-center gap-2">
           <span className="break-words whitespace-normal">{option.label}</span>
         </div>
         <div className="flex-grow flex items-center gap-1 mt-1 sm:mt-0 sm:ml-2 flex-wrap max-w-full justify-end">
+          {aliasVpnInfo && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge className={cn(
+                    "h-4 w-auto px-1 text-xs",
+                    aliasVpnInfo.status === 'connected' ? "bg-darker-green hover:bg-darker-green/80 text-white" :
+                      aliasVpnInfo.status === 'disabled' ? (aliasVpnInfo.isMultiple ? "bg-orange-500 hover:bg-orange-600 text-white" : "bg-gray-500 hover:bg-gray-600 text-white") :
+                        "bg-darker-red hover:bg-darker-red/80 text-white"
+                  )}>
+                    {aliasVpnInfo.isMultiple ? `${aliasVpnInfo.totalCount} VPNs` : (
+                      aliasVpnInfo.type === 'openvpn' ? 'OpenVPN' :
+                        aliasVpnInfo.type === 'wireguard' ? 'WireGuard' :
+                          aliasVpnInfo.type === 'ipsec' ? 'IPsec' : aliasVpnInfo.type
+                    )}
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {aliasVpnInfo.isMultiple ? (
+                    <div className="space-y-1">
+                      <p className="font-medium">VPN Status Summary:</p>
+                      <p>✓ {aliasVpnInfo.connectedCount} Connected</p>
+                      <p>✗ {aliasVpnInfo.totalCount! - aliasVpnInfo.connectedCount!} Disconnected/Disabled</p>
+                      <div className="border-t pt-1 mt-2">
+                        <p className="font-medium">VPNs:</p>
+                        {allOptionVpns.map((vpn, index) => (
+                          <p key={index} className="text-sm">
+                            {vpn.type === 'openvpn' ? 'OpenVPN' : vpn.type === 'wireguard' ? 'WireGuard' : vpn.type === 'ipsec' ? 'IPsec' : vpn.type} - {vpn.status === 'connected' ? 'Connected' : vpn.status === 'disabled' ? 'Disabled' : 'Disconnected'}
+                          </p>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      {aliasVpnInfo.type === 'openvpn' && <p>OpenVPN {aliasVpnInfo.status === 'connected' ? 'Connected' : 'Disconnected'}</p>}
+                      {aliasVpnInfo.type === 'wireguard' && <p>WireGuard {aliasVpnInfo.status === 'connected' ? 'Connected' : aliasVpnInfo.status === 'disabled' ? 'Disabled' : 'Disconnected'}</p>}
+                      {aliasVpnInfo.type === 'ipsec' && <p>IPsec {aliasVpnInfo.status === 'connected' ? 'Connected' : 'Disconnected'}</p>}
+                    </>
+                  )}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
           {option.memberOfGroups.length > 0 && (
             <TooltipProvider>
               <Tooltip>
@@ -346,7 +412,7 @@ const NetworkAliasManagementCard = forwardRef<NetworkAliasManagementCardHandles,
         </div>
       </div>
     );
-  }, [enableGroupTypes, singleSelectName, multiSelectName]);
+  }, [enableGroupTypes, singleSelectName, multiSelectName, vpnConnectionStatuses, groupVpnMap]);
 
   const renderSelectedAlias = useCallback((option: AliasSelectOption) => {
     return (

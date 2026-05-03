@@ -94,8 +94,9 @@ function mapToFormValues(schedule: ScheduleDetail): Partial<ScheduleFormValues> 
       targetGroupUuid: a.targetGroupUuid ?? undefined,
       sortOrder: a.sortOrder,
     })),
-    targetType: 'HOST_ALIAS',
+    targetType: (schedule.targetType === 'NETWORK_ALIAS' ? 'NETWORK_ALIAS' : 'HOST_ALIAS') as 'HOST_ALIAS' | 'NETWORK_ALIAS',
     hostAliasUuids: (selector?.hostAliasUuids as string[]) ?? [],
+    networkAliasUuids: (selector?.networkAliasUuids as string[]) ?? [],
   };
 }
 

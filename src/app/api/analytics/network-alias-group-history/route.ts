@@ -61,6 +61,7 @@ export async function GET(request: Request) {
         aliasName?: string;
         groupUuid?: string;
         groupName?: string;
+        targetGroupUuid?: string;
         networkAliasUuid?: string;
         networkAliasName?: string;
         networkGroupUuid?: string;
@@ -72,7 +73,7 @@ export async function GET(request: Request) {
       const normalizeDetails = (details: LogDetails) => ({
         aliasUuid: details.aliasUuid || details.networkAliasUuid,
         aliasName: details.aliasName || details.networkAliasName,
-        groupUuid: details.groupUuid || details.networkGroupUuid,
+        groupUuid: details.groupUuid || details.networkGroupUuid || (details.targetGroupUuid as string | undefined),
         groupName: details.groupName || details.networkGroupName,
       });
 

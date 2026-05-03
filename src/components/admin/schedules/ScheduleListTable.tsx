@@ -69,8 +69,22 @@ function typeLabel(type: string): string {
 
 function formatTargetSummary(item: ScheduleListItem): string {
   const selector = item.targetSelector as Record<string, unknown>;
+  if (item.targetType === 'NETWORK_ALIAS') {
+    const uuids = selector?.networkAliasUuids as string[] | undefined;
+    const count = uuids?.length ?? 0;
+    return `${count} range${count !== 1 ? 's' : ''}`;
+  }
+  if (item.targetType === 'NETWORK_GROUP') {
+    return selector?.networkGroupUuid ? '1 group' : '—';
+  }
+  if (item.targetType === 'IP_LIST') {
+    const ips = selector?.ips as string[] | undefined;
+    const count = ips?.length ?? 0;
+    return `${count} IP${count !== 1 ? 's' : ''}`;
+  }
   const uuids = selector?.hostAliasUuids as string[] | undefined;
-  return `${uuids?.length ?? 0} alias${(uuids?.length ?? 0) !== 1 ? 'es' : ''}`;
+  const count = uuids?.length ?? 0;
+  return `${count} alias${count !== 1 ? 'es' : ''}`;
 }
 
 export function ScheduleListTable({ schedules, onRefresh, onEnabledFilterChange }: ScheduleListTableProps) {

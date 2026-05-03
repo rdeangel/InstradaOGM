@@ -29,7 +29,11 @@ interface PreviewPanelProps {
 }
 
 export function PreviewPanel({ getFormData }: PreviewPanelProps) {
-  const [previewDate, setPreviewDate] = useState<Date | undefined>(new Date());
+  const [previewDate, setPreviewDate] = useState<Date | undefined>(() => {
+    const now = new Date();
+    now.setSeconds(0, 0);
+    return now;
+  });
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<PreviewResult | null>(null);
   const [error, setError] = useState<string | null>(null);
