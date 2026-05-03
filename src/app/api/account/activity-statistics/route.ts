@@ -86,6 +86,10 @@ export async function GET(request: Request) {
         hostCreations: { total: 0, last7Days: 0, last30Days: 0 },
         hostDeletions: { total: 0, last7Days: 0, last30Days: 0 },
         hostModifications: { total: 0, last7Days: 0, last30Days: 0 },
+        networkAliasOperations: { total: 0, last7Days: 0, last30Days: 0 },
+        networkAliasCreations: { total: 0, last7Days: 0, last30Days: 0 },
+        networkAliasModifications: { total: 0, last7Days: 0, last30Days: 0 },
+        networkAliasDeletions: { total: 0, last7Days: 0, last30Days: 0 },
         totalActivities: 0, // Will be calculated as sum of categorized activities
         mostActiveDay: null as string | null,
         topGroups: [] as Array<{ groupName: string; count: number }>,
@@ -103,6 +107,7 @@ export async function GET(request: Request) {
         moves: number;
         unassignments: number;
         hostOperations: number;
+        networkAliasOperations: number;
         total: number;
       }>();
 
@@ -178,11 +183,14 @@ export async function GET(request: Request) {
         // MOVE: Assignment operation that also removed from source groups OR explicit move action
         const isMove = (action === 'OPNSENSE_GROUP_IP_MOVE_SUCCESS' ||
             (action === 'OPNSENSE_GROUP_IP_ASSIGN_SUCCESS' && hasRemovedGroups) ||
-            (action === 'OPNSENSE_GROUP_IP_BATCH_ASSIGN_SUCCESS' && hasRemovedGroups));
+            (action === 'OPNSENSE_GROUP_IP_BATCH_ASSIGN_SUCCESS' && hasRemovedGroups) ||
+            action === 'NETWORK_ALIAS_GROUP_ASSIGN_MOVE');
 
         // PURE ASSIGNMENT: Assignment operation with no source groups removed (and not a move action)
         const isPureAssignment = (action === 'OPNSENSE_GROUP_IP_ASSIGN_SUCCESS' ||
-                               action === 'OPNSENSE_GROUP_IP_BATCH_ASSIGN_SUCCESS') &&
+                               action === 'OPNSENSE_GROUP_IP_BATCH_ASSIGN_SUCCESS' ||
+                               action === 'NETWORK_ALIAS_GROUP_ASSIGN_SUCCESS' ||
+                               action === 'OPNSENSE_NETWORK_GROUP_NETWORK_ALIAS_ADD_SUCCESS') &&
                                !hasRemovedGroups;
         
         if (isMove) {
@@ -203,7 +211,9 @@ export async function GET(request: Request) {
         // 3. UNASSIGNMENTS
         else if (action === 'OPNSENSE_GROUP_IP_UNASSIGN_SUCCESS' ||
                  action === 'OPNSENSE_GROUP_IP_BATCH_UNASSIGN_SUCCESS' ||
-                 action === 'OPNSENSE_GROUP_IP_UNASSIGN_ALL_SUCCESS') {
+                 action === 'OPNSENSE_GROUP_IP_UNASSIGN_ALL_SUCCESS' ||
+                 action === 'NETWORK_ALIAS_GROUP_UNASSIGN_SUCCESS' ||
+                 action === 'OPNSENSE_NETWORK_GROUP_NETWORK_ALIAS_REMOVE_SUCCESS') {
           stats.unassignments.total++;
           if (isLast7Days) stats.unassignments.last7Days++;
           if (isLast30Days) stats.unassignments.last30Days++;
@@ -269,6 +279,32 @@ export async function GET(request: Request) {
             activityCounted = true;
           }
         }
+        // NETWORK ALIAS OPERATIONS (admin only)
+        else if (isAdmin && (action === 'NETWORK_ALIAS_CREATE_SUCCESS' ||
+                             action === 'NETWORK_ALIAS_UPDATE_SUCCESS' ||
+                             action === 'NETWORK_ALIAS_DELETE_SUCCESS')) {
+          stats.networkAliasOperations.total++;
+          if (isLast7Days) stats.networkAliasOperations.last7Days++;
+          if (isLast30Days) stats.networkAliasOperations.last30Days++;
+
+          if (action === 'NETWORK_ALIAS_CREATE_SUCCESS') {
+            stats.networkAliasCreations.total++;
+            if (isLast7Days) stats.networkAliasCreations.last7Days++;
+            if (isLast30Days) stats.networkAliasCreations.last30Days++;
+          } else if (action === 'NETWORK_ALIAS_UPDATE_SUCCESS') {
+            stats.networkAliasModifications.total++;
+            if (isLast7Days) stats.networkAliasModifications.last7Days++;
+            if (isLast30Days) stats.networkAliasModifications.last30Days++;
+          } else if (action === 'NETWORK_ALIAS_DELETE_SUCCESS') {
+            stats.networkAliasDeletions.total++;
+            if (isLast7Days) stats.networkAliasDeletions.last7Days++;
+            if (isLast30Days) stats.networkAliasDeletions.last30Days++;
+          }
+
+          if (!activityCounted) {
+            activityCounted = true;
+          }
+        }
 
         // Count towards total activities only if it was categorized
         if (activityCounted) {
@@ -284,6 +320,7 @@ export async function GET(request: Request) {
             moves: 0,
             unassignments: 0,
             hostOperations: 0,
+            networkAliasOperations: 0,
             total: 0,
           };
 
@@ -299,6 +336,10 @@ export async function GET(request: Request) {
           } else if (action.includes('HOST_ALIAS_') || action.includes('DHCP_RESERVATION_') ||
                      action === 'OPNSENSE_ALIAS_UPDATE_SUCCESS') {
             dayBreakdown.hostOperations++;
+          } else if (action === 'NETWORK_ALIAS_CREATE_SUCCESS' ||
+                     action === 'NETWORK_ALIAS_UPDATE_SUCCESS' ||
+                     action === 'NETWORK_ALIAS_DELETE_SUCCESS') {
+            dayBreakdown.networkAliasOperations++;
           }
 
           dayBreakdown.total++;

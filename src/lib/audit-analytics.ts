@@ -76,6 +76,36 @@ export interface HostAliasChangeAnalytics {
   authMethods: Record<string, number>;
 }
 
+export interface NetworkAliasChangeAnalytics {
+  summary: {
+    totalOperations: number;
+    creations: number;
+    modifications: number;
+    deletions: number;
+    successRate: number;
+    uniqueUsers: number;
+    uniqueNetworkAliases: number;
+  };
+  dailyStats: Array<{
+    date: string;
+    creations: number;
+    modifications: number;
+    deletions: number;
+    successfulOperations: number;
+    failedOperations: number;
+    uniqueUsers: number;
+  }>;
+  topUsers: Array<{
+    userId: string;
+    userName: string | null;
+    userEmail: string | null;
+    operations: number;
+    successRate: number;
+  }>;
+  operationTypes: Record<string, number>;
+  authMethods: Record<string, number>;
+}
+
 export interface DhcpReservationAnalytics {
   summary: {
     totalOperations: number;
@@ -150,6 +180,12 @@ export async function getGroupChangeAnalytics(
             'OPNSENSE_GROUP_IP_UNASSIGN_ALL_PARTIAL',
             'OPNSENSE_GROUP_IP_MOVE_SUCCESS',
             // Note: OPNSENSE_GROUP_IP_MOVE_REMOVE is excluded as it's part of move operation, not separate unassignment
+            // Network alias group operations
+            'NETWORK_ALIAS_GROUP_ASSIGN_SUCCESS',
+            'NETWORK_ALIAS_GROUP_ASSIGN_MOVE',
+            'NETWORK_ALIAS_GROUP_UNASSIGN_SUCCESS',
+            'OPNSENSE_NETWORK_GROUP_NETWORK_ALIAS_ADD_SUCCESS',
+            'OPNSENSE_NETWORK_GROUP_NETWORK_ALIAS_REMOVE_SUCCESS',
           ],
         },
       },
@@ -274,6 +310,69 @@ export async function getHostAliasChangeAnalytics(
     return analytics;
   } catch (error) {
     logger.error('Failed to get host alias change analytics:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get network alias change analytics from audit logs
+ */
+export async function getNetworkAliasChangeAnalytics(
+  daysOrStartDate: number | Date = 30,
+  endDate?: Date
+): Promise<NetworkAliasChangeAnalytics> {
+  try {
+    let startDate: Date;
+    let actualEndDate: Date;
+
+    if (typeof daysOrStartDate === 'number') {
+      actualEndDate = new Date();
+      startDate = new Date(actualEndDate.getTime() - daysOrStartDate * 24 * 60 * 60 * 1000);
+    } else {
+      startDate = daysOrStartDate;
+      actualEndDate = endDate || new Date();
+
+      if (actualEndDate.getHours() === 0 && actualEndDate.getMinutes() === 0 &&
+          actualEndDate.getSeconds() === 0 && actualEndDate.getMilliseconds() === 0) {
+        actualEndDate.setHours(23, 59, 59, 999);
+      }
+    }
+
+    const networkAliasLogs = await prisma.auditLog.findMany({
+      where: {
+        timestamp: {
+          gte: startDate,
+          lte: actualEndDate,
+        },
+        action: {
+          in: [
+            'NETWORK_ALIAS_CREATE_SUCCESS',
+            'NETWORK_ALIAS_UPDATE_SUCCESS',
+            'NETWORK_ALIAS_DELETE_SUCCESS',
+          ],
+        },
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+      },
+      orderBy: {
+        timestamp: 'desc',
+      },
+    });
+
+    const analytics = analyzeNetworkAliasChangeLogs(networkAliasLogs);
+
+    const daysDiff = Math.ceil((actualEndDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000));
+    logger.debug(`Analyzed ${networkAliasLogs.length} network alias change audit logs for ${daysDiff} days (${startDate.toISOString()} to ${actualEndDate.toISOString()})`);
+    return analytics;
+  } catch (error) {
+    logger.error('Failed to get network alias change analytics:', error);
     throw error;
   }
 }
@@ -550,8 +649,8 @@ function analyzeGroupChangeLogs(logs: AuditLogWithUser[], groupDisplayMap?: Map<
 
   logs.forEach(log => {
     const dateKey = log.timestamp.toISOString().split('T')[0];
-    const isAssign = log.action.includes('_ASSIGN_') || log.action === 'OPNSENSE_GROUP_IP_MOVE_SUCCESS';
-    const isUnassign = log.action.includes('_UNASSIGN_');
+    const isAssign = log.action.includes('_ASSIGN_') || log.action === 'OPNSENSE_GROUP_IP_MOVE_SUCCESS' || log.action === 'NETWORK_ALIAS_GROUP_ASSIGN_SUCCESS' || log.action === 'NETWORK_ALIAS_GROUP_ASSIGN_MOVE' || log.action === 'OPNSENSE_NETWORK_GROUP_NETWORK_ALIAS_ADD_SUCCESS';
+    const isUnassign = log.action.includes('_UNASSIGN_') || log.action === 'OPNSENSE_NETWORK_GROUP_NETWORK_ALIAS_REMOVE_SUCCESS';
 
     // Parse details to check for batch operations and moves
     const details = typeof log.details === 'string' ? JSON.parse(log.details) : log.details || {};
@@ -591,10 +690,10 @@ function analyzeGroupChangeLogs(logs: AuditLogWithUser[], groupDisplayMap?: Map<
                             (typeof removedGroupsByHost === 'object' && Object.keys(removedGroupsByHost).length > 0);
 
     // MOVE: Assignment operation that also removed from source groups OR explicit move action
-    const isMove = (isAssign && hasRemovedGroups) || log.action === 'OPNSENSE_GROUP_IP_MOVE_SUCCESS';
+    const isMove = (isAssign && hasRemovedGroups) || log.action === 'OPNSENSE_GROUP_IP_MOVE_SUCCESS' || log.action === 'NETWORK_ALIAS_GROUP_ASSIGN_MOVE';
 
     // PURE ASSIGNMENT: Assignment operation with no source groups removed (and not a move action)
-    const isPureAssignment = isAssign && !hasRemovedGroups && log.action !== 'OPNSENSE_GROUP_IP_MOVE_SUCCESS';
+    const isPureAssignment = isAssign && !hasRemovedGroups && log.action !== 'OPNSENSE_GROUP_IP_MOVE_SUCCESS' && log.action !== 'NETWORK_ALIAS_GROUP_ASSIGN_MOVE';
 
     // Track users
     if (log.userId) {
@@ -891,6 +990,132 @@ function analyzeHostAliasChangeLogs(logs: AuditLogWithUser[]): HostAliasChangeAn
       ...summary,
       uniqueUsers: summary.uniqueUsers.size,
       uniqueHostAliases: summary.uniqueHostAliases.size,
+    },
+    dailyStats,
+    topUsers,
+    operationTypes,
+    authMethods,
+  };
+}
+
+function analyzeNetworkAliasChangeLogs(logs: AuditLogWithUser[]): NetworkAliasChangeAnalytics {
+  const summary = {
+    totalOperations: 0,
+    creations: 0,
+    modifications: 0,
+    deletions: 0,
+    successRate: 0,
+    uniqueUsers: new Set<string>(),
+    uniqueNetworkAliases: new Set<string>(),
+  };
+
+  const dailyStatsMap = new Map<string, {
+    creations: number;
+    modifications: number;
+    deletions: number;
+    successfulOperations: number;
+    failedOperations: number;
+    uniqueUsers: Set<string>;
+  }>();
+
+  const userStatsMap = new Map<string, {
+    user: {
+      id: string;
+      name: string | null;
+      email: string | null;
+    } | null;
+    operations: number;
+    successful: number;
+  }>();
+
+  const operationTypes: Record<string, number> = {};
+  const authMethods: Record<string, number> = {};
+
+  let successfulOperations = 0;
+
+  logs.forEach(log => {
+    const dateKey = log.timestamp.toISOString().split('T')[0];
+    const isCreate = log.action.includes('_CREATE_');
+    const isUpdate = log.action.includes('_UPDATE_');
+    const isDelete = log.action.includes('_DELETE_');
+
+    successfulOperations++;
+
+    operationTypes[log.action] = (operationTypes[log.action] || 0) + 1;
+
+    const details = typeof log.details === 'string' ? JSON.parse(log.details) : log.details || {};
+    const authMethod = details.authMethod || 'unknown';
+    authMethods[authMethod] = (authMethods[authMethod] || 0) + 1;
+
+    if (log.userId) {
+      summary.uniqueUsers.add(log.userId);
+
+      const userStats = userStatsMap.get(log.userId);
+      if (userStats) {
+        userStats.operations++;
+        userStats.successful++;
+      } else {
+        userStatsMap.set(log.userId, {
+          user: log.user,
+          operations: 1,
+          successful: 1,
+        });
+      }
+    }
+
+    if (details.aliasName || details.networkAliasName) {
+      summary.uniqueNetworkAliases.add(details.aliasName || details.networkAliasName);
+    }
+
+    if (isCreate) summary.creations++;
+    if (isUpdate) summary.modifications++;
+    if (isDelete) summary.deletions++;
+
+    const dailyStats = dailyStatsMap.get(dateKey);
+    if (dailyStats) {
+      if (isCreate) dailyStats.creations++;
+      if (isUpdate) dailyStats.modifications++;
+      if (isDelete) dailyStats.deletions++;
+      dailyStats.successfulOperations++;
+      if (log.userId) dailyStats.uniqueUsers.add(log.userId);
+    } else {
+      dailyStatsMap.set(dateKey, {
+        creations: isCreate ? 1 : 0,
+        modifications: isUpdate ? 1 : 0,
+        deletions: isDelete ? 1 : 0,
+        successfulOperations: 1,
+        failedOperations: 0,
+        uniqueUsers: new Set(log.userId ? [log.userId] : []),
+      });
+    }
+  });
+
+  summary.totalOperations = successfulOperations;
+  summary.successRate = 100;
+
+  const dailyStats = Array.from(dailyStatsMap.entries()).map(([date, stats]) => ({
+    date,
+    creations: stats.creations,
+    modifications: stats.modifications,
+    deletions: stats.deletions,
+    successfulOperations: stats.successfulOperations,
+    failedOperations: stats.failedOperations,
+    uniqueUsers: stats.uniqueUsers.size,
+  })).sort((a, b) => a.date.localeCompare(b.date));
+
+  const topUsers = Array.from(userStatsMap.entries()).map(([userId, stats]) => ({
+    userId,
+    userName: stats.user?.name || null,
+    userEmail: stats.user?.email || null,
+    operations: stats.operations,
+    successRate: stats.operations > 0 ? (stats.successful / stats.operations) * 100 : 0,
+  })).sort((a, b) => b.operations - a.operations).slice(0, 10);
+
+  return {
+    summary: {
+      ...summary,
+      uniqueUsers: summary.uniqueUsers.size,
+      uniqueNetworkAliases: summary.uniqueNetworkAliases.size,
     },
     dailyStats,
     topUsers,

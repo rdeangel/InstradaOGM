@@ -17,6 +17,7 @@ import {
   HardDriveUpload,
   Edit,
   Trash2,
+  Globe,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { DateRange } from 'react-day-picker';
@@ -102,12 +103,43 @@ interface HostAliasChangeAnalytics {
   authMethods: Record<string, number>;
 }
 
+interface NetworkAliasChangeAnalytics {
+  summary: {
+    totalOperations: number;
+    creations: number;
+    modifications: number;
+    deletions: number;
+    successRate: number;
+    uniqueUsers: number;
+    uniqueNetworkAliases: number;
+  };
+  dailyStats: Array<{
+    date: string;
+    creations: number;
+    modifications: number;
+    deletions: number;
+    successfulOperations: number;
+    failedOperations: number;
+    uniqueUsers: number;
+  }>;
+  topUsers: Array<{
+    userId: string;
+    userName: string | null;
+    userEmail: string | null;
+    operations: number;
+    successRate: number;
+  }>;
+  operationTypes: Record<string, number>;
+  authMethods: Record<string, number>;
+}
+
 import { useIsMobile } from '@/hooks/use-mobile';
 
 export default function AuditLogAnalyticsDashboard() {
   const isMobile = useIsMobile();
   const [groupData, setGroupData] = useState<GroupChangeAnalytics | null>(null);
   const [hostAliasData, setHostAliasData] = useState<HostAliasChangeAnalytics | null>(null);
+  const [networkAliasData, setNetworkAliasData] = useState<NetworkAliasChangeAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -142,23 +174,26 @@ export default function AuditLogAnalyticsDashboard() {
 
       // Add cache-busting timestamp for refresh
       const timestamp = isRefresh ? Date.now() : '';
-      const [groupResponse, hostAliasResponse] = await Promise.all([
+      const [groupResponse, hostAliasResponse, networkAliasResponse] = await Promise.all([
         fetch(`/api/admin/audit-logs/analytics/group-changes?${params}${timestamp ? `&_t=${timestamp}` : ''}`),
-        fetch(`/api/admin/audit-logs/analytics/host-aliases?${params}${timestamp ? `&_t=${timestamp}` : ''}`)
+        fetch(`/api/admin/audit-logs/analytics/host-aliases?${params}${timestamp ? `&_t=${timestamp}` : ''}`),
+        fetch(`/api/admin/audit-logs/analytics/network-aliases?${params}${timestamp ? `&_t=${timestamp}` : ''}`)
       ]);
 
-      if (!groupResponse.ok || !hostAliasResponse.ok) {
+      if (!groupResponse.ok || !hostAliasResponse.ok || !networkAliasResponse.ok) {
         throw new Error('Failed to fetch audit analytics');
       }
 
-      const [groupResult, hostAliasResult] = await Promise.all([
+      const [groupResult, hostAliasResult, networkAliasResult] = await Promise.all([
         groupResponse.json(),
-        hostAliasResponse.json()
+        hostAliasResponse.json(),
+        networkAliasResponse.json()
       ]);
 
-      if (groupResult.success && hostAliasResult.success) {
+      if (groupResult.success && hostAliasResult.success && networkAliasResult.success) {
         setGroupData(groupResult.data);
         setHostAliasData(hostAliasResult.data);
+        setNetworkAliasData(networkAliasResult.data);
 
         // Force re-render by updating refresh key
         if (isRefresh) {
@@ -202,7 +237,7 @@ export default function AuditLogAnalyticsDashboard() {
     );
   }
 
-  if (!groupData || !hostAliasData) {
+  if (!groupData || !hostAliasData || !networkAliasData) {
     return (
       <Card className="flex flex-col flex-grow min-h-0">
         <CardHeader className="pb-3 shrink-0">
@@ -236,6 +271,7 @@ export default function AuditLogAnalyticsDashboard() {
                   ...groupData.topUsers,
                   ...groupData.topGroups,
                   ...hostAliasData.topUsers,
+                  ...networkAliasData.topUsers,
                 ]}
                 filename="audit-analytics"
                 title="Export"
@@ -306,8 +342,8 @@ export default function AuditLogAnalyticsDashboard() {
                 <Activity className="h-3 w-3 text-muted-foreground" />
               </CardHeader>
               <CardContent className="pt-1">
-                <div key={`total-${groupData.summary.totalOperations + hostAliasData.summary.totalOperations}`} className="text-xl font-bold">
-                  {(groupData.summary.totalOperations + hostAliasData.summary.totalOperations).toLocaleString()}
+                <div key={`total-${groupData.summary.totalOperations + hostAliasData.summary.totalOperations + networkAliasData.summary.totalOperations}`} className="text-xl font-bold">
+                  {(groupData.summary.totalOperations + hostAliasData.summary.totalOperations + networkAliasData.summary.totalOperations).toLocaleString()}
                 </div>
                 <p className="text-xs text-muted-foreground">
                   All activities
@@ -355,14 +391,54 @@ export default function AuditLogAnalyticsDashboard() {
               </CardContent>
             </Card>
 
+            {/* Network Alias Operations */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1">
+                <CardTitle className="text-xs font-medium">Network Creations</CardTitle>
+                <Globe className="h-3 w-3 text-cyan-600" />
+              </CardHeader>
+              <CardContent className="pt-1">
+                <div key={`na-creations-${networkAliasData.summary.creations}`} className="text-xl font-bold">{networkAliasData.summary.creations.toLocaleString()}</div>
+                <p className="text-xs text-muted-foreground">
+                  New network aliases
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1">
+                <CardTitle className="text-xs font-medium">Network Modifications</CardTitle>
+                <Edit className="h-3 w-3 text-yellow-600" />
+              </CardHeader>
+              <CardContent className="pt-1">
+                <div key={`na-modifications-${networkAliasData.summary.modifications}`} className="text-xl font-bold">{networkAliasData.summary.modifications.toLocaleString()}</div>
+                <p className="text-xs text-muted-foreground">
+                  Network alias changes
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1">
+                <CardTitle className="text-xs font-medium">Network Deletions</CardTitle>
+                <Trash2 className="h-3 w-3 text-red-600" />
+              </CardHeader>
+              <CardContent className="pt-1">
+                <div key={`na-deletions-${networkAliasData.summary.deletions}`} className="text-xl font-bold">{networkAliasData.summary.deletions.toLocaleString()}</div>
+                <p className="text-xs text-muted-foreground">
+                  Deleted network aliases
+                </p>
+              </CardContent>
+            </Card>
+
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1">
                 <CardTitle className="text-xs font-medium">Active Users</CardTitle>
                 <Users className="h-3 w-3 text-muted-foreground" />
               </CardHeader>
               <CardContent className="pt-1">
-                <div key={`users-${Math.max(groupData.summary.uniqueUsers, hostAliasData.summary.uniqueUsers)}`} className="text-xl font-bold">
-                  {Math.max(groupData.summary.uniqueUsers, hostAliasData.summary.uniqueUsers)}
+                <div key={`users-${Math.max(groupData.summary.uniqueUsers, hostAliasData.summary.uniqueUsers, networkAliasData.summary.uniqueUsers)}`} className="text-xl font-bold">
+                  {Math.max(groupData.summary.uniqueUsers, hostAliasData.summary.uniqueUsers, networkAliasData.summary.uniqueUsers)}
                 </div>
                 <p className="text-xs text-muted-foreground">
                   Making changes
@@ -372,7 +448,7 @@ export default function AuditLogAnalyticsDashboard() {
           </div>
 
           {/* Operation Breakdown */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
             <PieChart
               data={[
                 { name: 'Assignments', value: groupData.summary.assignments },
@@ -397,6 +473,18 @@ export default function AuditLogAnalyticsDashboard() {
               colors={['#3b82f6', '#10b981', '#ef4444']}
               height={250}
             />
+
+            <PieChart
+              data={[
+                { name: 'Creations', value: networkAliasData.summary.creations },
+                { name: 'Modifications', value: networkAliasData.summary.modifications },
+                { name: 'Deletions', value: networkAliasData.summary.deletions },
+              ]}
+              title="Network Alias Operations Breakdown"
+              description="Types of network alias operations"
+              colors={['#06b6d4', '#eab308', '#ef4444']}
+              height={250}
+            />
           </div>
 
           {/* Detailed Analytics Tabs */}
@@ -408,6 +496,7 @@ export default function AuditLogAnalyticsDashboard() {
             tabs={[
               { value: "group-trends", label: "Group Trends" },
               { value: "host-trends", label: "Host Alias Trends" },
+              { value: "network-alias-trends", label: "Network Alias Trends" },
               { value: "top-users", label: "Top Users" },
               { value: "top-groups", label: "Top Groups" },
               { value: "all-activity", label: "All Activity" }
@@ -504,8 +593,53 @@ export default function AuditLogAnalyticsDashboard() {
               </div>
             </TabsContent>
 
-            <TabsContent value="top-users" className="space-y-4">
+            <TabsContent value="network-alias-trends" className="space-y-4">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <LineChart
+                  data={networkAliasData.dailyStats.map(stat => ({
+                    date: stat.date,
+                    successful: stat.successfulOperations,
+                    failed: stat.failedOperations,
+                  }))}
+                  title="Network Alias Operation Success/Failure Trends"
+                  description="Daily success and failure rates"
+                  xAxisKey="date"
+                  lines={[
+                    { key: 'successful', name: 'Successful', color: '#10b981' },
+                    { key: 'failed', name: 'Failed', color: '#ef4444' },
+                  ]}
+                  height={300}
+                  formatXAxis={(value) => format(new Date(value), 'MMM dd')}
+                  formatTooltip={(value, name) => [Number(value).toLocaleString(), name]}
+                />
+
+                <MultiAxisBarChart
+                  data={networkAliasData.dailyStats.slice(-7).map(stat => ({
+                    date: format(new Date(stat.date), 'MMM dd'),
+                    creations: stat.creations,
+                    modifications: stat.modifications,
+                    deletions: stat.deletions,
+                  }))}
+                  title="Network Alias Operations (Last 7 Days)"
+                  description="Types of network alias operations"
+                  xAxisKey="date"
+                  bars={[
+                    { key: 'creations', name: 'Creations', color: '#06b6d4', yAxisId: 'left' },
+                    { key: 'modifications', name: 'Modifications', color: '#eab308', yAxisId: 'right' },
+                    { key: 'deletions', name: 'Deletions', color: '#ef4444', yAxisId: 'right' },
+                  ]}
+                  yAxes={[
+                    { id: 'left', orientation: 'left', color: '#06b6d4' },
+                    { id: 'right', orientation: 'right', color: '#ef4444' },
+                  ]}
+                  height={300}
+                  formatTooltip={(value, name) => [Number(value).toLocaleString(), name]}
+                />
+              </div>
+            </TabsContent>
+
+            <TabsContent value="top-users" className="space-y-4">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 <Card>
                   <CardHeader className="pb-3">
                     <CardTitle className="text-base">Top Users - Group Operations</CardTitle>
@@ -545,6 +679,34 @@ export default function AuditLogAnalyticsDashboard() {
                     ) : (
                       <div className="space-y-2">
                         {hostAliasData.topUsers.slice(0, 10).map((user, index) => (
+                          <div key={user.userId} className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-800 rounded">
+                            <div className="flex-1">
+                              <div className="text-sm font-medium">
+                                {user.userName || user.userEmail || `User ${user.userId}`}
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                {user.operations} operations • {Math.round(user.successRate)}% success
+                              </div>
+                            </div>
+                            <div className="text-sm font-bold">#{index + 1}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base">Top Users - Network Alias Operations</CardTitle>
+                    <CardDescription className="text-xs">Most active users in network alias management</CardDescription>
+                  </CardHeader>
+                  <CardContent className="overflow-auto">
+                    {networkAliasData.topUsers.length === 0 ? (
+                      <div className="text-center py-4 text-muted-foreground">No user data available</div>
+                    ) : (
+                      <div className="space-y-2">
+                        {networkAliasData.topUsers.slice(0, 10).map((user, index) => (
                           <div key={user.userId} className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-800 rounded">
                             <div className="flex-1">
                               <div className="text-sm font-medium">

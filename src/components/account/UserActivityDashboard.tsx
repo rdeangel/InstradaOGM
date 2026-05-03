@@ -29,6 +29,7 @@ import {
   Trash2,
   Wrench,
   Edit,
+  Globe,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { useAuth } from '@/context/AuthContext';
@@ -70,6 +71,26 @@ interface UserActivityStats {
     last30Days: number;
   };
   hostModifications: {
+    total: number;
+    last7Days: number;
+    last30Days: number;
+  };
+  networkAliasOperations: {
+    total: number;
+    last7Days: number;
+    last30Days: number;
+  };
+  networkAliasCreations: {
+    total: number;
+    last7Days: number;
+    last30Days: number;
+  };
+  networkAliasModifications: {
+    total: number;
+    last7Days: number;
+    last30Days: number;
+  };
+  networkAliasDeletions: {
     total: number;
     last7Days: number;
     last30Days: number;
@@ -741,6 +762,35 @@ const UserActivityDashboard = memo(function UserActivityDashboard({ }: UserActiv
                           />
                         </>
                       )}
+
+                      {/* Network Alias Operations - admin only */}
+                      {showHostCards && (
+                        <>
+                          <StatCard
+                            icon={<Globe className="h-8 w-8 text-cyan-600 dark:text-cyan-400 mb-2" />}
+                            value={getStatForPeriod(adjustedStats.networkAliasCreations)}
+                            label="Network Creations"
+                            bgColorScheme="bg-cyan-50 dark:bg-cyan-950/20"
+                            textColorScheme="text-cyan-700 dark:text-cyan-300"
+                          />
+
+                          <StatCard
+                            icon={<Edit className="h-8 w-8 text-yellow-600 dark:text-yellow-400 mb-2" />}
+                            value={getStatForPeriod(adjustedStats.networkAliasModifications)}
+                            label="Network Modifications"
+                            bgColorScheme="bg-yellow-50 dark:bg-yellow-950/20"
+                            textColorScheme="text-yellow-700 dark:text-yellow-300"
+                          />
+
+                          <StatCard
+                            icon={<Trash2 className="h-8 w-8 text-red-600 dark:text-red-400 mb-2" />}
+                            value={getStatForPeriod(adjustedStats.networkAliasDeletions)}
+                            label="Network Deletions"
+                            bgColorScheme="bg-red-50 dark:bg-red-950/20"
+                            textColorScheme="text-red-700 dark:text-red-300"
+                          />
+                        </>
+                      )}
                     </div>
 
                     {/* Additional Information */}
@@ -837,7 +887,7 @@ const UserActivityDashboard = memo(function UserActivityDashboard({ }: UserActiv
                         { key: 'assignments', name: 'Assignments', color: '#3b82f6', fillOpacity: 0.6 },
                         { key: 'moves', name: 'Moves', color: '#10b981', fillOpacity: 0.6 },
                         { key: 'unassignments', name: 'Unassignments', color: '#f59e0b', fillOpacity: 0.6 },
-                        ...(showHostCards ? [{ key: 'hostOperations', name: 'Host Operations', color: '#8b5cf6', fillOpacity: 0.6 }] : []),
+                        ...(showHostCards ? [{ key: 'hostOperations', name: 'Host Operations', color: '#8b5cf6', fillOpacity: 0.6 }, { key: 'networkAliasOperations', name: 'Network Alias Ops', color: '#06b6d4', fillOpacity: 0.6 }] : []),
                       ]}
                       height={350}
                       stacked={true}
@@ -905,11 +955,12 @@ const UserActivityDashboard = memo(function UserActivityDashboard({ }: UserActiv
                     {showHostCards && (
                       <LineChartComponent
                         data={adjustedStats.dailyBreakdown}
-                        title="Host Operations"
-                        description="Host alias and DHCP operations"
+                        title="Operations Over Time"
+                        description="Host and network alias operations"
                         xAxisKey="date"
                         lines={[
                           { key: 'hostOperations', name: 'Host Operations', color: '#8b5cf6' },
+                          { key: 'networkAliasOperations', name: 'Network Alias Ops', color: '#06b6d4' },
                         ]}
                         height={250}
                         formatXAxis={(value) => {
