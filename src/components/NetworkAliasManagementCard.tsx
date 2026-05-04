@@ -33,7 +33,7 @@ import { formatLastOperation, getLastOperationTooltip, type LastAssignmentData }
 import { DeviceGroupHistoryGraph, DeviceGroupHistoryGraphHandles } from '@/components/DeviceGroupHistoryGraph';
 
 export interface NetworkAliasManagementCardHandles {
-  refreshNetworkAliases: () => Promise<void>;
+  refreshNetworkAliases: () => Promise<NetworkAlias[]>;
   refreshAliasesSilent: () => Promise<NetworkAlias[]>;
   refreshLastOperationOnly: () => Promise<void>;
   refreshExtendedDetails: () => Promise<void>;
@@ -44,6 +44,7 @@ export interface NetworkAliasManagementCardHandles {
 interface NetworkAliasManagementCardProps {
   selectedAlias: NetworkAlias | null;
   onSelectAlias: (alias: NetworkAlias | null) => void;
+  onAliasesLoaded?: (aliases: NetworkAlias[]) => void;
   layoutMode?: 'stacked' | 'side-by-side';
   allEmojiValues?: string[];
   allFlagValues?: string[];
@@ -63,6 +64,7 @@ interface AliasSelectOption {
 const NetworkAliasManagementCard = forwardRef<NetworkAliasManagementCardHandles, NetworkAliasManagementCardProps>(function NetworkAliasManagementCard({
   selectedAlias,
   onSelectAlias,
+  onAliasesLoaded,
   layoutMode,
   allEmojiValues = [],
   allFlagValues = [],
@@ -73,9 +75,24 @@ const NetworkAliasManagementCard = forwardRef<NetworkAliasManagementCardHandles,
   const isMobile = useIsMobile();
   const { enableGroupTypes, singleSelectName, multiSelectName } = useGroupType();
 
-  const [aliases, setAliases] = useState<NetworkAlias[]>([]);
+  const [aliases, setAliases] = useState<NetworkAlias[]>(() => {
+    try {
+      const cached = localStorage.getItem('network-aliases-cache');
+      if (cached) return JSON.parse(cached);
+    } catch {}
+    return [];
+  });
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Persist alias list to localStorage for pre-load on next visit
+  useEffect(() => {
+    try {
+      if (aliases.length > 0) {
+        localStorage.setItem('network-aliases-cache', JSON.stringify(aliases));
+      }
+    } catch {}
+  }, [aliases]);
   const [error, setError] = useState<string | null>(null);
   const [extendedDetails, setExtendedDetails] = useState<{
     lastAssignment: LastAssignmentData | null;
@@ -147,7 +164,7 @@ const NetworkAliasManagementCard = forwardRef<NetworkAliasManagementCardHandles,
   const isFetchingRef = useRef<boolean>(false);
   const lastFetchedUuidRef = useRef<string | null>(null);
 
-  const fetchAliases = useCallback(async () => {
+  const fetchAliases = useCallback(async (): Promise<NetworkAlias[]> => {
     try {
       setIsLoading(true);
       setError(null);
@@ -155,25 +172,23 @@ const NetworkAliasManagementCard = forwardRef<NetworkAliasManagementCardHandles,
       if (!resp.ok) {
         if (resp.status === 403) {
           setError('Network alias management is disabled.');
-          return;
+          return [];
         }
         const errData = await resp.json().catch(() => ({}));
         throw new Error(errData.error || `HTTP ${resp.status}`);
       }
       const data: NetworkAlias[] = await resp.json();
       setAliases(data);
-      // Sync selectedAlias in parent with fresh data
-      if (selectedAlias?.uuid) {
-        const updated = data.find(a => a.uuid === selectedAlias.uuid);
-        if (updated) onSelectAlias(updated);
-      }
+      onAliasesLoaded?.(data);
+      return data;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load network aliases');
       logger.error('[NetworkAliasManagementCard] fetch error:', err);
+      return [];
     } finally {
       setIsLoading(false);
     }
-  }, [selectedAlias?.uuid, onSelectAlias]);
+  }, [onAliasesLoaded]);
 
   const fetchAliasesSilent = useCallback(async (): Promise<NetworkAlias[]> => {
     setIsRefreshing(true);
@@ -182,11 +197,6 @@ const NetworkAliasManagementCard = forwardRef<NetworkAliasManagementCardHandles,
       if (!resp.ok) return [];
       const data: NetworkAlias[] = await resp.json();
       setAliases(data);
-      // Sync selectedAlias in parent with fresh data
-      if (selectedAlias?.uuid) {
-        const updated = data.find(a => a.uuid === selectedAlias.uuid);
-        if (updated) onSelectAlias(updated);
-      }
       return data;
     } catch (err) {
       logger.error('[NetworkAliasManagementCard] silent fetch error:', err);
@@ -194,7 +204,7 @@ const NetworkAliasManagementCard = forwardRef<NetworkAliasManagementCardHandles,
     } finally {
       setIsRefreshing(false);
     }
-  }, [selectedAlias?.uuid, onSelectAlias]);
+  }, []);
 
   const refreshLastOperationOnly = useCallback(async () => {
     if (layoutMode !== 'side-by-side' || !selectedAlias?.uuid) return;

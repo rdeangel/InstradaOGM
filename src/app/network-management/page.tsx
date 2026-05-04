@@ -113,10 +113,42 @@ export default function NetworkManagementPage() {
     };
   }, []);
 
-  const [selectedAlias, setSelectedAlias] = useState<NetworkAlias | null>(null);
+  const [selectedAlias, setSelectedAliasState] = useState<NetworkAlias | null>(null);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [isAssigning, setIsAssigning] = useState(false);
   const [isUnassigning, setIsUnassigning] = useState(false);
+
+  // Persist selection to localStorage
+  const setSelectedAlias = useCallback((alias: NetworkAlias | null) => {
+    setSelectedAliasState(alias);
+    try {
+      if (alias) {
+        localStorage.setItem('network-management-selected-alias-uuid', alias.uuid);
+      } else {
+        localStorage.removeItem('network-management-selected-alias-uuid');
+      }
+    } catch {}
+  }, []);
+
+  // Sync selectedAlias with fresh data after a fetch
+  const syncSelectedAlias = useCallback((freshAliases: NetworkAlias[]) => {
+    setSelectedAliasState(prev => {
+      if (!prev?.uuid) return prev;
+      const updated = freshAliases.find(a => a.uuid === prev.uuid);
+      return updated || prev;
+    });
+  }, []);
+
+  // Restore selection from localStorage after aliases are loaded
+  const handleAliasesLoaded = useCallback((aliases: NetworkAlias[]) => {
+    try {
+      const savedUuid = localStorage.getItem('network-management-selected-alias-uuid');
+      if (savedUuid) {
+        const match = aliases.find(a => a.uuid === savedUuid);
+        if (match) setSelectedAliasState(match);
+      }
+    } catch {}
+  }, []);
 
   const [hasAccess, setHasAccess] = useState(false);
   const [isLoadingAccess, setIsLoadingAccess] = useState(true);
@@ -227,7 +259,7 @@ export default function NetworkManagementPage() {
       }
 
       if (data.memberOfGroups) {
-        setSelectedAlias(prev => prev ? { ...prev, memberOfGroups: data.memberOfGroups } : prev);
+        setSelectedAlias(selectedAlias ? { ...selectedAlias, memberOfGroups: data.memberOfGroups } : null);
         aliasCardRef.current?.updateAliasMembership(selectedAlias.uuid, data.memberOfGroups);
       }
       await Promise.all([
@@ -255,7 +287,7 @@ export default function NetworkManagementPage() {
       if (!resp.ok) throw new Error(data.error || 'Failed to unassign');
       toast({ title: 'Alias removed from group', variant: 'success' });
       if (data.memberOfGroups) {
-        setSelectedAlias(prev => prev ? { ...prev, memberOfGroups: data.memberOfGroups } : prev);
+        setSelectedAlias(selectedAlias ? { ...selectedAlias, memberOfGroups: data.memberOfGroups } : null);
         aliasCardRef.current?.updateAliasMembership(selectedAlias.uuid, data.memberOfGroups);
       }
       await Promise.all([
@@ -289,7 +321,7 @@ export default function NetworkManagementPage() {
       } else {
         toast({ title: 'Alias removed from all groups', variant: 'success' });
       }
-      setSelectedAlias(prev => prev ? { ...prev, memberOfGroups: [] } : prev);
+      setSelectedAlias(selectedAlias ? { ...selectedAlias, memberOfGroups: [] } : null);
       aliasCardRef.current?.updateAliasMembership(selectedAlias.uuid, []);
       await Promise.all([
         refreshGroups(true),
@@ -339,9 +371,9 @@ export default function NetworkManagementPage() {
 
       try {
         if (currentAlias) {
-          // Refresh groups, VPN, last operation, and extended details in parallel
-          // refreshGraphs calls fetchAliasesSilent internally which also syncs selectedAlias
-          await Promise.all([
+          // Refresh aliases, groups, VPN, last operation, and extended details in parallel
+          const [freshAliases] = await Promise.all([
+            fns.refreshAliasesSilent(),
             fns.refreshGroups(true),
             fns.refreshVpnStatuses(true),
             fns.refreshLastOperationOnly(),
@@ -350,7 +382,10 @@ export default function NetworkManagementPage() {
 
           if (controller.signal.aborted) return;
 
-          // refreshGraphs fetches aliases silently and syncs selectedAlias, then refreshes graphs
+          // Sync selectedAlias with fresh data
+          if (freshAliases?.length) syncSelectedAlias(freshAliases);
+
+          // Refresh graphs (also fetches aliases internally but we already have fresh data)
           await fns.refreshGraphs();
         } else {
           // No alias selected — just refresh aliases, groups and VPN in-place
@@ -439,6 +474,7 @@ export default function NetworkManagementPage() {
                   ref={aliasCardRef}
                   selectedAlias={selectedAlias}
                   onSelectAlias={setSelectedAlias}
+                  onAliasesLoaded={handleAliasesLoaded}
                   layoutMode={layoutMode}
                   allEmojiValues={allEmojiValues}
                   allFlagValues={allFlagValues}

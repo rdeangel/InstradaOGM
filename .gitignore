@@ -108,3 +108,4 @@ internal/
 # Test results (untracked)
 .test-results/
 
+.openc*

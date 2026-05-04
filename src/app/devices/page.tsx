@@ -149,6 +149,33 @@ export default function UserDeviceAccessPage() {
   // State for the selected device from the DeviceManagementCard
   const [selectedDevice, setSelectedDevice] = useState<SelectedDevice | null>(null);
 
+  // Persist device selection to localStorage
+  useEffect(() => {
+    try {
+      if (selectedDevice?.uuid) {
+        localStorage.setItem('devices-selected-device-uuid', selectedDevice.uuid);
+      }
+    } catch {}
+  }, [selectedDevice?.uuid]);
+
+  // Restore device selection from localStorage after devices are loaded
+  // Card passes the loaded devices; we find the match and store it for the restore effect
+  // (defined after handleDeviceSelect) to pick up.
+  const pendingRestoreRef = useRef<HostAlias | null>(null);
+  const [devicesReady, setDevicesReady] = useState(false);
+  const handleDevicesLoaded = useCallback((devices: HostAlias[]) => {
+    try {
+      const savedUuid = localStorage.getItem('devices-selected-device-uuid');
+      if (savedUuid) {
+        const match = devices.find(d => d.uuid === savedUuid);
+        if (match) {
+          pendingRestoreRef.current = match;
+          setDevicesReady(true);
+        }
+      }
+    } catch {}
+  }, []);
+
   // NEW: Per-device UI state tracking using maps
   const [deviceAssigningStates, setDeviceAssigningStates] = useState<Map<string, boolean>>(new Map());
   const [deviceUnassigningStates, setDeviceUnassigningStates] = useState<Map<string, boolean>>(new Map());
@@ -699,6 +726,16 @@ export default function UserDeviceAccessPage() {
       setSelectedDevice(null);
     }
   }, [refreshSelectedDeviceDetails, getDeviceDetails, setDeviceGroupIdsState, setDevicePreservedHostname]); // Device state is now managed by useEffect
+
+  // Restore device selection from localStorage after devices are loaded
+  useEffect(() => {
+    if (!devicesReady || !pendingRestoreRef.current) return;
+    if (!selectedDevice) {
+      handleDeviceSelect(pendingRestoreRef.current);
+    }
+    pendingRestoreRef.current = null;
+    setDevicesReady(false);
+  }, [devicesReady, handleDeviceSelect, selectedDevice]);
 
   // NEW: Set selected group ID for current device
   const setSelectedGroupId = useCallback((groupId: string | null) => {
@@ -1497,6 +1534,7 @@ export default function UserDeviceAccessPage() {
                 <DeviceManagementCard
                   ref={deviceManagementCardRef} // Attach the ref here
                   onDeviceSelect={handleDeviceSelect}
+                  onDevicesLoaded={handleDevicesLoaded}
                   selectedDeviceUuid={selectedDevice?.uuid || null}
                   onClearDeviceCache={clearDeviceDetails} // Pass the cache clearing function
                   selectedDeviceMemberOfGroups={

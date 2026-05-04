@@ -81,6 +81,7 @@ interface SearchableSelectOption {
 
 interface DeviceManagementCardProps {
   onDeviceSelect: (device: HostAlias | null) => void;
+  onDevicesLoaded?: (devices: HostAlias[]) => void;
   selectedDeviceUuid: string | null;
   selectedDeviceMemberOfGroups: { uuid: string; name: string; friendlyName?: string; iconIdentifier?: string | null; groupType?: 'SingleSelect' | 'MultiSelect' }[];
   // opnsenseGroupDisplays: OpnsenseGroupDisplay[]; // Removed
@@ -112,6 +113,7 @@ export interface DeviceManagementCardHandles {
 
 const DeviceManagementCard = forwardRef<DeviceManagementCardHandles, DeviceManagementCardProps>(function DeviceManagementCard({
   onDeviceSelect,
+  onDevicesLoaded,
   selectedDeviceMemberOfGroups,
   allEmojiValues,
   allFlagValues,
@@ -143,13 +145,28 @@ const DeviceManagementCard = forwardRef<DeviceManagementCardHandles, DeviceManag
   const { shouldSuppressError, createFocusSafeFetch } = usePageReloadDetection();
   const { createController, isAbortError } = useAbortController();
 
-  const [permittedDevices, setPermittedDevices] = useState<HostAlias[]>([]);
+  const [permittedDevices, setPermittedDevices] = useState<HostAlias[]>(() => {
+    try {
+      const cached = localStorage.getItem('devices-cache');
+      if (cached) return JSON.parse(cached);
+    } catch {}
+    return [];
+  });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isRenameDialogOpen, setIsRenameDialogOpen] = useState(false);
   const { deviceManagementRenamingEnabled } = useSecureUI();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false); // State to control dropdown open/close
   const [windowWidth, setWindowWidth] = useState(0);
+
+  // Persist device list to localStorage for pre-load on next visit
+  useEffect(() => {
+    try {
+      if (permittedDevices.length > 0) {
+        localStorage.setItem('devices-cache', JSON.stringify(permittedDevices));
+      }
+    } catch {}
+  }, [permittedDevices]);
   const [windowHeight, setWindowHeight] = useState(0);
   const [isGraphModalOpen, setIsGraphModalOpen] = useState(false);
   const graphRefCard = useRef<DeviceGroupHistoryGraphHandles>(null);
@@ -261,6 +278,7 @@ const DeviceManagementCard = forwardRef<DeviceManagementCardHandles, DeviceManag
       });
 
       setPermittedDevices(processedHostAliases);
+      onDevicesLoaded?.(processedHostAliases);
     } catch (err) {
       logger.error("Error fetching permitted devices:", err);
       setError(err instanceof Error ? err.message : 'An unknown error occurred');
@@ -268,7 +286,7 @@ const DeviceManagementCard = forwardRef<DeviceManagementCardHandles, DeviceManag
       setIsLoading(false);
       isFetchingPermittedDevicesRef.current = false; // Reset flag
     }
-  }, []); // Empty dependency array since it doesn't depend on any props/state
+  }, [onDevicesLoaded]); // Empty dependency array since it doesn't depend on any props/state
 
   // Create a memoized function to fetch extended details
   // Use a ref to track the last IP address we fetched for
