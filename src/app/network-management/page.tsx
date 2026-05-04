@@ -10,6 +10,8 @@ import { useRouter } from 'next/navigation';
 import { useIsMobile } from '@/hooks/use-mobile';
 import useResizeObserver from '@/hooks/useResizeObserver';
 import { logger } from '@/lib/logger';
+import { usePageReloadDetection } from '@/hooks/usePageReloadDetection';
+import { useAbortController } from '@/hooks/useAbortController';
 
 import { AppFooter } from '@/components/layout/AppFooter';
 import { AppHeader } from '@/components/layout/AppHeader';
@@ -39,6 +41,11 @@ export default function NetworkManagementPage() {
   const networkGroupsCardWidth = useResizeObserver(networkGroupsCardRef);
 
   const aliasCardRef = useRef<NetworkAliasManagementCardHandles>(null);
+  const selectedAliasRef = useRef<NetworkAlias | null>(null);
+  const { createController, isAbortError } = useAbortController();
+  const { shouldSuppressError } = usePageReloadDetection();
+  const currentControllerRef = useRef<AbortController | null>(null);
+  const focusTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const areButtonsCompact = useMemo(() => {
     return isMobile || (layoutMode === 'side-by-side' && networkGroupsCardWidth !== undefined && networkGroupsCardWidth < 600);
@@ -134,6 +141,39 @@ export default function NetworkManagementPage() {
       await refreshOpnsenseData();
     }
   }, [refreshGroupsInPlace, refreshOpnsenseData]);
+
+  // Keep a ref of current refresh functions to avoid stale closures in focus handlers
+  const refreshFunctionsRef = useRef<{
+    refreshAliasesSilent: () => Promise<NetworkAlias[]>;
+    refreshGroups: (inPlace?: boolean) => Promise<void>;
+    refreshVpnStatuses: (inPlace?: boolean) => Promise<void>;
+    refreshLastOperationOnly: () => Promise<void>;
+    refreshExtendedDetails: () => Promise<void>;
+    refreshGraphs: () => Promise<void>;
+  }>({
+    refreshAliasesSilent: () => Promise.resolve([]),
+    refreshGroups: () => Promise.resolve(),
+    refreshVpnStatuses: () => Promise.resolve(),
+    refreshLastOperationOnly: () => Promise.resolve(),
+    refreshExtendedDetails: () => Promise.resolve(),
+    refreshGraphs: () => Promise.resolve(),
+  });
+
+  useEffect(() => {
+    refreshFunctionsRef.current = {
+      refreshAliasesSilent: () => aliasCardRef.current?.refreshAliasesSilent() || Promise.resolve([]),
+      refreshGroups: (inPlace?: boolean) => refreshGroups(inPlace),
+      refreshVpnStatuses: (inPlace?: boolean) => refreshVpnStatuses(inPlace),
+      refreshLastOperationOnly: () => aliasCardRef.current?.refreshLastOperationOnly() || Promise.resolve(),
+      refreshExtendedDetails: () => aliasCardRef.current?.refreshExtendedDetails() || Promise.resolve(),
+      refreshGraphs: () => aliasCardRef.current?.refreshGraphs() || Promise.resolve(),
+    };
+  }, [refreshGroups, refreshVpnStatuses]);
+
+  // Keep selectedAliasRef in sync
+  useEffect(() => {
+    selectedAliasRef.current = selectedAlias;
+  }, [selectedAlias]);
 
   useEffect(() => {
     if (authStatus === 'authenticated') {
@@ -272,6 +312,78 @@ export default function NetworkManagementPage() {
       return () => clearTimeout(timer);
     }
   }, [authStatus, router]);
+
+  // Focus/visibility-based in-place refresh (mirrors /devices pattern)
+  useEffect(() => {
+    if (authStatus !== 'authenticated' || !hasAccess) return;
+
+    const handleRefresh = async () => {
+      // Abort any previous focus-triggered requests
+      if (currentControllerRef.current && !currentControllerRef.current.signal.aborted) {
+        currentControllerRef.current.abort('New focus event triggered');
+      }
+
+      const controller = createController(15000);
+      currentControllerRef.current = controller;
+
+      // Debounce to reduce collision with page reloads
+      await new Promise(resolve => {
+        if (focusTimeoutRef.current) clearTimeout(focusTimeoutRef.current);
+        focusTimeoutRef.current = setTimeout(resolve, 500);
+      });
+
+      if (controller.signal.aborted) return;
+
+      const fns = refreshFunctionsRef.current;
+      const currentAlias = selectedAliasRef.current;
+
+      try {
+        if (currentAlias) {
+          // Refresh groups, VPN, last operation, and extended details in parallel
+          // refreshGraphs calls fetchAliasesSilent internally which also syncs selectedAlias
+          await Promise.all([
+            fns.refreshGroups(true),
+            fns.refreshVpnStatuses(true),
+            fns.refreshLastOperationOnly(),
+            fns.refreshExtendedDetails(),
+          ]);
+
+          if (controller.signal.aborted) return;
+
+          // refreshGraphs fetches aliases silently and syncs selectedAlias, then refreshes graphs
+          await fns.refreshGraphs();
+        } else {
+          // No alias selected — just refresh aliases, groups and VPN in-place
+          await Promise.all([
+            fns.refreshAliasesSilent(),
+            fns.refreshGroups(true),
+            fns.refreshVpnStatuses(true),
+          ]);
+        }
+      } catch (error) {
+        if (!isAbortError(error) && !shouldSuppressError(error, 'focus refresh')) {
+          logger.error('[NetworkManagement] Focus refresh error:', error);
+        }
+      }
+    };
+
+    const handleFocus = () => handleRefresh();
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') handleRefresh();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (focusTimeoutRef.current) clearTimeout(focusTimeoutRef.current);
+      if (currentControllerRef.current && !currentControllerRef.current.signal.aborted) {
+        currentControllerRef.current.abort('Component unmounting');
+      }
+    };
+  }, [authStatus, hasAccess, createController, isAbortError, shouldSuppressError]);
 
   if (authStatus === 'loading' || isLoadingAccess) {
     return (

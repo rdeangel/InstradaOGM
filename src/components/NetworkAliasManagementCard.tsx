@@ -34,7 +34,9 @@ import { DeviceGroupHistoryGraph, DeviceGroupHistoryGraphHandles } from '@/compo
 
 export interface NetworkAliasManagementCardHandles {
   refreshNetworkAliases: () => Promise<void>;
+  refreshAliasesSilent: () => Promise<NetworkAlias[]>;
   refreshLastOperationOnly: () => Promise<void>;
+  refreshExtendedDetails: () => Promise<void>;
   refreshGraphs: () => Promise<void>;
   updateAliasMembership: (uuid: string, memberOfGroups: NetworkAlias['memberOfGroups']) => void;
 }
@@ -73,6 +75,7 @@ const NetworkAliasManagementCard = forwardRef<NetworkAliasManagementCardHandles,
 
   const [aliases, setAliases] = useState<NetworkAlias[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [extendedDetails, setExtendedDetails] = useState<{
     lastAssignment: LastAssignmentData | null;
@@ -159,24 +162,39 @@ const NetworkAliasManagementCard = forwardRef<NetworkAliasManagementCardHandles,
       }
       const data: NetworkAlias[] = await resp.json();
       setAliases(data);
+      // Sync selectedAlias in parent with fresh data
+      if (selectedAlias?.uuid) {
+        const updated = data.find(a => a.uuid === selectedAlias.uuid);
+        if (updated) onSelectAlias(updated);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load network aliases');
       logger.error('[NetworkAliasManagementCard] fetch error:', err);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [selectedAlias?.uuid, onSelectAlias]);
 
-  const fetchAliasesSilent = useCallback(async () => {
+  const fetchAliasesSilent = useCallback(async (): Promise<NetworkAlias[]> => {
+    setIsRefreshing(true);
     try {
       const resp = await fetch('/api/user/network-aliases', { cache: 'no-store' });
-      if (!resp.ok) return;
+      if (!resp.ok) return [];
       const data: NetworkAlias[] = await resp.json();
       setAliases(data);
+      // Sync selectedAlias in parent with fresh data
+      if (selectedAlias?.uuid) {
+        const updated = data.find(a => a.uuid === selectedAlias.uuid);
+        if (updated) onSelectAlias(updated);
+      }
+      return data;
     } catch (err) {
       logger.error('[NetworkAliasManagementCard] silent fetch error:', err);
+      return [];
+    } finally {
+      setIsRefreshing(false);
     }
-  }, []);
+  }, [selectedAlias?.uuid, onSelectAlias]);
 
   const refreshLastOperationOnly = useCallback(async () => {
     if (layoutMode !== 'side-by-side' || !selectedAlias?.uuid) return;
@@ -255,14 +273,16 @@ const NetworkAliasManagementCard = forwardRef<NetworkAliasManagementCardHandles,
 
   useImperativeHandle(ref, () => ({
     refreshNetworkAliases: () => fetchAliases(),
+    refreshAliasesSilent: fetchAliasesSilent,
     refreshLastOperationOnly,
+    refreshExtendedDetails: () => fetchExtendedDetails(true),
     refreshGraphs,
     updateAliasMembership: (uuid, memberOfGroups) => {
       setAliases(prev => prev.map(a =>
         a.uuid === uuid ? { ...a, memberOfGroups: memberOfGroups ?? [] } : a
       ));
     },
-  }), [fetchAliases, refreshLastOperationOnly, refreshGraphs]);
+  }), [fetchAliases, fetchAliasesSilent, refreshLastOperationOnly, fetchExtendedDetails, refreshGraphs]);
 
   useEffect(() => { fetchAliases(); }, [fetchAliases]);
 
@@ -748,17 +768,17 @@ const NetworkAliasManagementCard = forwardRef<NetworkAliasManagementCardHandles,
                       selectedAlias ? "" : "cursor-not-allowed opacity-50"
                     )}
                     onClick={async () => {
-                      if (selectedAlias && !isLoading) {
+                      if (selectedAlias && !isLoading && !isRefreshing) {
                         try {
-                          await fetchAliases();
+                          await fetchAliasesSilent();
                         } catch (error) {
                           logger.error('Error during manual refresh:', error);
                         }
                       }
                     }}
-                    disabled={!selectedAlias || isLoading}
+                    disabled={!selectedAlias || isLoading || isRefreshing}
                   >
-                    {isLoading ? (
+                    {isLoading || isRefreshing ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
                       <RefreshCcw size={isMobile ? 18 : 22} />
