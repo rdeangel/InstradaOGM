@@ -492,11 +492,15 @@ curl -X GET "{{SERVER_URL}}/api/account/activity-statistics?period=all" \
 - `statistics.hostCreations`: Host creation operations (admin only)
 - `statistics.hostDeletions`: Host deletion operations (admin only)
 - `statistics.hostModifications`: Host modification operations (admin only)
+- `statistics.networkAliasOperations`: Network alias management operations (admin only)
+- `statistics.networkAliasCreations`: Network alias creation operations (admin only)
+- `statistics.networkAliasModifications`: Network alias modification operations (admin only)
+- `statistics.networkAliasDeletions`: Network alias deletion operations (admin only)
 - `statistics.totalActivities`: Total count of all activities in the period
 - `statistics.mostActiveDay`: The day with the most activities (formatted date string or null)
 - `statistics.topGroups`: Array of top 10 groups by activity count
 - `statistics.dailyBreakdown`: Array of daily activity breakdown by type, sorted by date
-  - Each entry contains: `date` (YYYY-MM-DD), `assignments`, `moves`, `unassignments`, `hostOperations`, `total`
+  - Each entry contains: `date` (YYYY-MM-DD), `assignments`, `moves`, `unassignments`, `hostOperations`, `networkAliasOperations`, `total`
   - Useful for generating activity trend charts
 
 **Error Response**:
@@ -533,6 +537,7 @@ The `dailyBreakdown` array provides time-series data for charting activity trend
 - **moves**: Number of group moves on that day
 - **unassignments**: Number of group unassignments on that day
 - **hostOperations**: Number of host operations on that day (admin only)
+- **networkAliasOperations**: Number of network alias operations on that day (admin only)
 - **total**: Total activities on that day
 
 This data is useful for:

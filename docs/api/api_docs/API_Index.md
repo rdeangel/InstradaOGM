@@ -65,15 +65,18 @@ This document serves as the **primary navigation hub** for the InstradaOGM API e
 | [30_backup_endpoints.md](30_backup_endpoints.md) | Backup API and script usage | Complete backup creation and download workflows |
 | [31_update_endpoints.md](31_update_endpoints.md) | Update detection and management | Check for updates, release notes |
 | [32_schedule_endpoints.md](32_schedule_endpoints.md) | Schedule system endpoints | List, create, toggle, and view executions |
+| [33_network_alias_endpoints.md](33_network_alias_endpoints.md) | Network alias management | Create, update, delete, and assign network aliases to groups |
+| [34_network_alias_analytics_endpoints.md](34_network_alias_analytics_endpoints.md) | Network alias analytics | Assignment history tracking and audit analytics |
 
 ### 🚀 Enhanced Features Overview
-- **Complete Endpoint Coverage**: 100+ endpoints across 9 major categories
+- **Complete Endpoint Coverage**: 100+ endpoints across 10+ major categories
 - **Context-Aware Endpoints**: Dynamic responses based on authentication status
 - **Comprehensive 2FA Management**: Full two-factor authentication lifecycle
 - **Self-Service Operations**: Unauthenticated operations with IP validation
 - **Standardized Role Access**: Consistent permission patterns across all endpoints
 - **Real Response Examples**: Verified against actual API responses
 - **Advanced Analytics**: Usage tracking, audit logs, and system monitoring
+- **Network Alias Management**: Complete CIDR-based network management with scheduling support
 
 ### 📚 Documentation Organization
 - **Master Overview**: This file provides system-wide navigation and cross-references
