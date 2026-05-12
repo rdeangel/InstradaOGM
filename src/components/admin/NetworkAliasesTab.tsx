@@ -19,7 +19,7 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
 import { logger } from '@/lib/logger';
 import {
-  Waypoints, RefreshCcw, PlusCircle, Edit, Trash2, Loader2, AlertCircle, XCircle, AlertTriangle, X,
+  Waypoints, RefreshCcw, PlusCircle, Edit, Trash2, Loader2, AlertCircle, XCircle, X,
 } from 'lucide-react';
 import * as LucideIcons from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';

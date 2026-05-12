@@ -272,7 +272,7 @@ export default function NetworkManagementPage() {
     } finally {
       setIsAssigning(false);
     }
-  }, [selectedAlias, toast, refreshGroups, groups]);
+  }, [selectedAlias, toast, refreshGroups, groups, setSelectedAlias]);
 
   const handleRemoveFromGroup = useCallback(async (groupId: string) => {
     if (!selectedAlias) return;
@@ -300,7 +300,7 @@ export default function NetworkManagementPage() {
     } finally {
       setIsUnassigning(false);
     }
-  }, [selectedAlias, toast, refreshGroups]);
+  }, [selectedAlias, toast, refreshGroups, setSelectedAlias]);
 
   const handleUnassignAll = useCallback(async () => {
     if (!selectedAlias?.memberOfGroups?.length) return;
@@ -333,7 +333,7 @@ export default function NetworkManagementPage() {
     } finally {
       setIsUnassigning(false);
     }
-  }, [selectedAlias, toast, refreshGroups]);
+  }, [selectedAlias, toast, refreshGroups, setSelectedAlias]);
 
   useEffect(() => {
     if (authStatus === 'unauthenticated') {
@@ -418,7 +418,7 @@ export default function NetworkManagementPage() {
         currentControllerRef.current.abort('Component unmounting');
       }
     };
-  }, [authStatus, hasAccess, createController, isAbortError, shouldSuppressError]);
+  }, [authStatus, hasAccess, createController, isAbortError, shouldSuppressError, syncSelectedAlias]);
 
   if (authStatus === 'loading' || isLoadingAccess) {
     return (
