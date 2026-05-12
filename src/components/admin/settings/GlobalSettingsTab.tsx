@@ -553,6 +553,51 @@ export function GlobalSettingsTab({
                 </div>
               </div>
 
+              {/* Network Aliases Management Section */}
+              <div className="border rounded-lg p-4 space-y-4">
+                <div>
+                  <h3 className="text-lg font-semibold flex items-center">
+                    <ClientOnly><Waypoints size={20} className="mr-2 text-primary" /></ClientOnly> Network Aliases Management
+                  </h3>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Enable scheduling actions on OPNsense network aliases (CIDR ranges). When enabled, schedules can target network range aliases and administrators can configure per-group alias permissions.
+                  </p>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="manage-network-aliases">Enable Network Aliases Management</Label>
+                    <div className="text-sm text-muted-foreground">
+                      Adds a &ldquo;Network Ranges&rdquo; tab to the admin panel and allows schedules to target network aliases.
+                    </div>
+                  </div>
+                  <ClientOnly>
+                    <Switch
+                      id="manage-network-aliases"
+                      checked={manageNetworkAliasesEnabled}
+                      onCheckedChange={async (checked) => {
+                        if (!checked) {
+                          setShowDisableNetworkAliasesDialog(true);
+                          return;
+                        }
+                        setManageNetworkAliasesEnabled(true);
+                        try {
+                          await handleSaveSetting(
+                            'manageNetworkAliasesEnabled',
+                            true,
+                            setManageNetworkAliasesEnabled,
+                            'Network aliases management enabled.',
+                            'Failed to save network aliases setting.'
+                          );
+                          globalSettingsEvents.emit();
+                        } catch {
+                          setManageNetworkAliasesEnabled(false);
+                        }
+                      }}
+                    />
+                  </ClientOnly>
+                </div>
+              </div>
+
               {/* Group Type Settings Section */}
               <div className="border rounded-lg p-4 space-y-4">
                 <div>
@@ -1206,50 +1251,7 @@ export function GlobalSettingsTab({
                   )}
                 </div>
               </div>
-              {/* Network Aliases Management Section */}
-              <div className="border rounded-lg p-4 space-y-4">
-                <div>
-                  <h3 className="text-lg font-semibold flex items-center">
-                    <ClientOnly><Waypoints size={20} className="mr-2 text-primary" /></ClientOnly> Network Aliases Management
-                  </h3>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Enable scheduling actions on OPNsense network aliases (CIDR ranges). When enabled, schedules can target network range aliases and administrators can configure per-group alias permissions.
-                  </p>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label htmlFor="manage-network-aliases">Enable Network Aliases Management</Label>
-                    <div className="text-sm text-muted-foreground">
-                      Adds a &ldquo;Network Ranges&rdquo; tab to the admin panel and allows schedules to target network aliases.
-                    </div>
-                  </div>
-                  <ClientOnly>
-                    <Switch
-                      id="manage-network-aliases"
-                      checked={manageNetworkAliasesEnabled}
-                      onCheckedChange={async (checked) => {
-                        if (!checked) {
-                          setShowDisableNetworkAliasesDialog(true);
-                          return;
-                        }
-                        setManageNetworkAliasesEnabled(true);
-                        try {
-                          await handleSaveSetting(
-                            'manageNetworkAliasesEnabled',
-                            true,
-                            setManageNetworkAliasesEnabled,
-                            'Network aliases management enabled.',
-                            'Failed to save network aliases setting.'
-                          );
-                          globalSettingsEvents.emit();
-                        } catch {
-                          setManageNetworkAliasesEnabled(false);
-                        }
-                      }}
-                    />
-                  </ClientOnly>
-                </div>
-              </div>
+
             </div>
           </ScrollArea>
         </CardContent>
