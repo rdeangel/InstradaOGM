@@ -411,7 +411,7 @@ export function ScheduleForm({
       }
     }
     if (values.targetType === 'NETWORK_ALIAS') {
-      if (values.networkAliasUuids.length === 0) errs.targetSelector = 'Select at least one network range';
+      if (values.networkAliasUuids.length === 0) errs.targetSelector = 'Select at least one network alias';
     } else {
       if (values.hostAliasUuids.length === 0) errs.targetSelector = 'Select at least one host alias';
     }
@@ -619,7 +619,7 @@ export function ScheduleForm({
                 <RadioGroupItem value="NETWORK_ALIAS" id="target-network" />
                 <Label htmlFor="target-network" className="flex items-center gap-1">
                   <Waypoints className="h-3.5 w-3.5" />
-                  Network Ranges
+                  Network Aliases
                 </Label>
               </div>
             </RadioGroup>
@@ -747,7 +747,7 @@ export function ScheduleForm({
                   </AlertDescription>
                 </Alert>
               )}
-              {values.networkAliasUuids.length > 0 && (
+              {manageNetworkAliasesEnabled && values.networkAliasUuids.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
                   {networkAliasOptionsLoading
                     ? values.networkAliasUuids.map((_, i) => (
@@ -791,7 +791,7 @@ export function ScheduleForm({
                           ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
                           : <Search className="h-3.5 w-3.5" />}
                         {values.networkAliasUuids.length === 0
-                          ? 'Add network ranges...'
+                          ? 'Add network aliases...'
                           : `${values.networkAliasUuids.length} selected — add or remove`}
                       </span>
                       <ChevronsUpDown className="h-4 w-4 opacity-50 shrink-0" />
@@ -803,7 +803,7 @@ export function ScheduleForm({
                         <Search className="h-4 w-4 mr-2 shrink-0 opacity-50" />
                         <input
                           type="text"
-                          placeholder="Search network ranges..."
+                          placeholder="Search network aliases..."
                           value={networkAliasSearch}
                           onChange={e => { setNetworkAliasSearch(e.target.value); setNetworkAliasDisplayCount(50); }}
                           className="h-10 flex-grow bg-transparent text-sm focus:outline-none"
@@ -825,7 +825,7 @@ export function ScheduleForm({
                           o.label.toLowerCase().includes(networkAliasSearch.toLowerCase()) ||
                           o.content.toLowerCase().includes(networkAliasSearch.toLowerCase())
                         ).length === 0 ? (
-                          <p className="text-sm text-muted-foreground text-center py-4">No network ranges found.</p>
+                          <p className="text-sm text-muted-foreground text-center py-4">No network aliases found.</p>
                         ) : (
                           networkAliasOptions
                             .filter(o =>

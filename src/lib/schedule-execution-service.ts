@@ -1508,9 +1508,21 @@ class ScheduleExecutionService {
       return [];
     }
 
-    const selector = schedule.targetSelector as { networkAliasUuids?: string[] };
-    const uuids = selector?.networkAliasUuids ?? [];
-    if (uuids.length === 0) return [];
+    const selector = schedule.targetSelector as { networkAliasUuids?: string[] } | null;
+    if (!selector || !Array.isArray(selector.networkAliasUuids)) {
+      logger.error(`[resolveNetworkAliasTargets] Invalid targetSelector for schedule ${schedule.id}: ${JSON.stringify(schedule.targetSelector)}`);
+      await logAuditEvent({
+        action: 'OPNSENSE_GROUP_NETWORK_ALIAS_INVALID_SELECTOR',
+        details: { scheduleId: schedule.id, targetSelector: schedule.targetSelector },
+      });
+      return [];
+    }
+
+    const uuids = selector.networkAliasUuids ?? [];
+    if (uuids.length === 0) {
+      logger.warn(`[resolveNetworkAliasTargets] No networkAliasUuids in targetSelector for schedule ${schedule.id}`);
+      return [];
+    }
 
     const aliasesResponse = await exportAliases();
     const aliases = aliasesResponse?.aliases?.alias ?? {};

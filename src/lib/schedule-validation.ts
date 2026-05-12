@@ -1,5 +1,5 @@
 import { CronExpressionParser } from 'cron-parser';
-import { getNetworkGroups } from './opnsense-api';
+import { getNetworkGroups, exportAliases } from './opnsense-api';
 import { logger } from './logger';
 import type { CreateScheduleRequest } from '@/types/schedule';
 
@@ -160,6 +160,38 @@ export async function validateScheduleData(
     const actionValidation = validateAction(action);
     if (!actionValidation.valid) {
       return { message: actionValidation.error!, status: 400 };
+    }
+  }
+
+  // Validate NETWORK_ALIAS UUIDs exist in OPNsense
+  if (data.targetType === 'NETWORK_ALIAS') {
+    const selector = data.targetSelector as { networkAliasUuids?: string[] };
+    const networkAliasUuids = selector?.networkAliasUuids ?? [];
+
+    if (networkAliasUuids.length === 0) {
+      return { message: 'At least one network alias must be selected', status: 400 };
+    }
+
+    try {
+      const aliasesResponse = await exportAliases();
+      const aliases = aliasesResponse?.aliases?.alias ?? {};
+
+      for (const uuid of networkAliasUuids) {
+        // eslint-disable-next-line security/detect-object-injection
+        const alias = aliases[uuid];
+        if (!alias) {
+          return { message: `Network alias with UUID ${uuid} not found in OPNsense`, status: 400 };
+        }
+        if (alias.type !== 'network') {
+          return { message: `Alias ${alias.name} has type '${alias.type}', expected 'network'`, status: 400 };
+        }
+        if (alias.enabled !== '1') {
+          return { message: `Network alias '${alias.name}' is disabled in OPNsense`, status: 400 };
+        }
+      }
+    } catch (err) {
+      logger.error('Error validating network aliases:', err);
+      return { message: 'Failed to validate network aliases with OPNsense', status: 500 };
     }
   }
 
