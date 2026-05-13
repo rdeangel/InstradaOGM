@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useMemo } from 'react';
+import { format } from 'date-fns';
 import {
   Dialog,
   DialogContent,
@@ -255,7 +256,7 @@ export function ScheduleInfoModal({ schedule, onClose }: ScheduleInfoModalProps)
                       <p className="text-sm">
                         <span className="text-muted-foreground">Executes at: </span>
                         <span className="font-medium">
-                          {new Date(detail.executeAt).toLocaleString()}
+                          {format(new Date(detail.executeAt), 'PPP HH:mm:ss')}
                         </span>
                       </p>
                     )}

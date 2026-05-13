@@ -218,6 +218,11 @@ class ScheduleExecutionService {
   /** retryMap key: `${scheduleId}:${boundaryType}:${windowId ?? 'root'}` */
   private retryMap = new Map<string, { count: number; nextRetryAt: Date; event: BoundaryEvent }>();
 
+  /** Boundaries currently executing — prevents concurrent duplicate firings (precision timer vs reconciliation sweep). */
+  private inProgress = new Set<string>();
+  /** Boundaries recently executed successfully — prevents double-execution within a 2-minute window. */
+  private recentlyExecuted = new Map<string, Date>();
+
   // ─── Public API ─────────────────────────────────────────────────────────────
 
   start(): void {
@@ -507,7 +512,21 @@ class ScheduleExecutionService {
   }
 
   private async fireSingleBoundary(event: BoundaryEvent): Promise<void> {
+    const dedupeKey = `${event.scheduleId}:${event.boundaryType}:${event.windowId ?? 'root'}`;
+
+    if (this.inProgress.has(dedupeKey)) {
+      logger.warn(`[dedup] Boundary already in progress, skipping duplicate: ${dedupeKey}`);
+      return;
+    }
+    const recentExec = this.recentlyExecuted.get(dedupeKey);
+    if (recentExec && (Date.now() - recentExec.getTime()) < 30_000) {
+      logger.warn(`[dedup] Boundary recently executed at ${recentExec.toISOString()}, skipping duplicate: ${dedupeKey}`);
+      return;
+    }
+
+    this.inProgress.add(dedupeKey);
     const startTime = Date.now();
+    try {
 
     // Reload schedule with its actions
     const schedule = await prisma.scheduledAssignment.findUnique({
@@ -656,7 +675,7 @@ class ScheduleExecutionService {
       data: {
         scheduleId: schedule.id,
         boundaryType: event.boundaryType,
-        executedAt: new Date(),
+        executedAt: new Date(startTime),
         status: summary.status,
         targetIps: summary.targetIps,
         targetAliasNames: summary.targetAliasNames !== undefined ? summary.targetAliasNames : undefined,
@@ -665,6 +684,10 @@ class ScheduleExecutionService {
         errorMessage: summary.errorMessage,
       },
     });
+
+    if (summary.status === 'SUCCESS' || summary.status === 'PARTIAL') {
+      this.recentlyExecuted.set(dedupeKey, new Date());
+    }
 
     // Update lastExecutedAt
     await prisma.scheduledAssignment.update({
@@ -743,6 +766,9 @@ class ScheduleExecutionService {
           `Schedule ${schedule.id} boundary ${event.boundaryType} failed (attempt ${count}), retrying at ${nextRetryAt.toISOString()}`,
         );
       }
+    }
+    } finally {
+      this.inProgress.delete(dedupeKey);
     }
   }
 
@@ -1777,7 +1803,7 @@ class ScheduleExecutionService {
                 schedule.id,
                 boundaryType,
                 firesAt,
-                30,
+                120,
               );
 
               if (!alreadyDone) {
@@ -1806,7 +1832,7 @@ class ScheduleExecutionService {
           schedule.id,
           'START',
           schedule.executeAt,
-          30,
+          120,
         );
 
         if (!alreadyDone) {
@@ -1841,7 +1867,7 @@ class ScheduleExecutionService {
               schedule.id,
               'START',
               occurrence,
-              30,
+              120,
             );
 
             if (!alreadyDone) {

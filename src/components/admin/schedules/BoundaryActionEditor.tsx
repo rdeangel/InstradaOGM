@@ -152,6 +152,8 @@ function ActionRow({
   );
 }
 
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/
+
 export function BoundaryActionEditor({
   open,
   window: initialWindow,
@@ -159,6 +161,8 @@ export function BoundaryActionEditor({
   onClose,
 }: BoundaryActionEditorProps) {
   const [editedWindow, setEditedWindow] = useState<TimeWindowFormData>(initialWindow);
+  const [startTimeDraft, setStartTimeDraft] = useState(initialWindow.startTime);
+  const [endTimeDraft, setEndTimeDraft] = useState(initialWindow.endTime);
   const { groups, isLoading: groupsLoading, error: groupsError } = useOpnsenseNetworkGroups();
 
   const startActions = editedWindow.actions.filter(a => a.boundaryType === 'START');
@@ -293,17 +297,41 @@ export function BoundaryActionEditor({
               <Label className="text-muted-foreground">Time Range</Label>
               <div className="flex flex-wrap items-center gap-1 sm:gap-2 mt-1">
                 <Input
-                  type="time"
-                  className="font-mono bg-muted w-auto"
-                  value={editedWindow.startTime}
-                  onChange={e => setEditedWindow({ ...editedWindow, startTime: e.target.value })}
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="HH:MM"
+                  className="font-mono bg-muted w-24"
+                  value={startTimeDraft}
+                  onChange={e => {
+                    const val = e.target.value;
+                    // eslint-disable-next-line security/detect-unsafe-regex -- Safe: simple time format validation
+                    if (val === '' || /^\d{0,2}(:\d{0,2})?$/.test(val)) {
+                      setStartTimeDraft(val);
+                      if (TIME_RE.test(val)) setEditedWindow(prev => ({ ...prev, startTime: val }));
+                    }
+                  }}
+                  onBlur={() => {
+                    if (!TIME_RE.test(startTimeDraft)) setStartTimeDraft(editedWindow.startTime);
+                  }}
                 />
                 <span className="text-muted-foreground">–</span>
                 <Input
-                  type="time"
-                  className="font-mono bg-muted w-auto"
-                  value={editedWindow.endTime}
-                  onChange={e => setEditedWindow({ ...editedWindow, endTime: e.target.value })}
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="HH:MM"
+                  className="font-mono bg-muted w-24"
+                  value={endTimeDraft}
+                  onChange={e => {
+                    const val = e.target.value;
+                    // eslint-disable-next-line security/detect-unsafe-regex -- Safe: simple time format validation
+                    if (val === '' || /^\d{0,2}(:\d{0,2})?$/.test(val)) {
+                      setEndTimeDraft(val);
+                      if (TIME_RE.test(val)) setEditedWindow(prev => ({ ...prev, endTime: val }));
+                    }
+                  }}
+                  onBlur={() => {
+                    if (!TIME_RE.test(endTimeDraft)) setEndTimeDraft(editedWindow.endTime);
+                  }}
                 />
               </div>
               {editedWindow.startTime >= editedWindow.endTime && (

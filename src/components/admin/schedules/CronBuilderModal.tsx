@@ -37,12 +37,12 @@ const COMMON_PRESETS = [
   { label: 'Every 30 minutes', value: '*/30 * * * *' },
   { label: 'Every hour', value: '0 * * * *' },
   { label: 'Every 2 hours', value: '0 */2 * * *' },
-  { label: 'Every day at midnight', value: '0 0 * * *' },
-  { label: 'Every day at 8 AM', value: '0 8 * * *' },
-  { label: 'Monday to Friday at 8 AM', value: '0 8 * * 1-5' },
-  { label: 'Every Saturday at midnight', value: '0 0 * * 6' },
-  { label: 'Every Sunday at midnight', value: '0 0 * * 0' },
-  { label: 'First day of every month at midnight', value: '0 0 1 * *' },
+  { label: 'Every day at 00:00', value: '0 0 * * *' },
+  { label: 'Every day at 08:00', value: '0 8 * * *' },
+  { label: 'Monday to Friday at 08:00', value: '0 8 * * 1-5' },
+  { label: 'Every Saturday at 00:00', value: '0 0 * * 6' },
+  { label: 'Every Sunday at 00:00', value: '0 0 * * 0' },
+  { label: 'First day of every month at 00:00', value: '0 0 1 * *' },
 ];
 
 const DAYS_OF_WEEK = [
@@ -170,9 +170,17 @@ export function CronBuilderModal({
             <div className="space-y-3">
               <Label>Time of Day</Label>
               <Input
-                type="time"
+                type="text"
+                inputMode="numeric"
+                placeholder="HH:MM"
                 value={customTime}
-                onChange={(e) => setCustomTime(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  // eslint-disable-next-line security/detect-unsafe-regex -- Safe: simple time format validation
+                  if (val === '' || /^\d{0,2}(:\d{0,2})?$/.test(val)) {
+                    setCustomTime(val);
+                  }
+                }}
               />
 
               <div className="pt-2">

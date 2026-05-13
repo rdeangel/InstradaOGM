@@ -3,6 +3,7 @@ import { withAdminApiTracking } from '@/lib/api-route-wrapper';
 import { logger } from '@/lib/logger';
 import { createScheduleSchema } from '@/types/schedule';
 import { getNetworkGroups, exportAliases } from '@/lib/opnsense-api';
+import { CronExpressionParser } from 'cron-parser';
 
 // POST /api/admin/schedules/preview - Dry-run preview
 // Uses POST (not GET) because the schedule definition in the body can be large
@@ -93,10 +94,28 @@ export const POST = withAdminApiTracking(async (request: NextRequest) => {
     }> = [];
 
     if (schedule.scheduleType === 'COMPLEX_WEEKLY' && schedule.days) {
-      const dayOfWeek = simulatedAt.getDay();
-      const timeStr = `${String(simulatedAt.getHours()).padStart(2, '0')}:${String(simulatedAt.getMinutes()).padStart(2, '0')}`;
+      // Convert simulated time to the schedule's timezone to get correct day of week and time
+      const tzFormatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: schedule.timezone,
+        weekday: 'short',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+      });
 
-      const day = schedule.days.find(d => d.dayOfWeek === dayOfWeek);
+      const parts = tzFormatter.formatToParts(simulatedAt);
+      const tzDayOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(
+        parts.find(p => p.type === 'weekday')?.value || 'Sun'
+      );
+      const tzHour = parts.find(p => p.type === 'hour')?.value;
+      const tzMinute = parts.find(p => p.type === 'minute')?.value;
+      const timeStr = `${tzHour}:${tzMinute}`;
+
+      const day = schedule.days.find(d => d.dayOfWeek === tzDayOfWeek);
       if (day) {
         // Fetch groups once for name resolution
         const groups = await getNetworkGroups();
@@ -150,8 +169,37 @@ export const POST = withAdminApiTracking(async (request: NextRequest) => {
       }
     }
 
-    // Note: RECURRING preview requires cron-parser to compute next occurrence.
-    // This will be fully implemented in Phase 2 (execution engine).
+    // RECURRING schedule preview
+    if (schedule.scheduleType === 'RECURRING' && schedule.cronExpression && schedule.recurringActions) {
+      try {
+        const expr = CronExpressionParser.parse(schedule.cronExpression, {
+          tz: schedule.timezone || 'UTC',
+          currentDate: new Date(simulatedAt.getTime() - 1000), // Check from 1 second before
+        });
+        const nextOccurrence = expr.next().toDate();
+
+        // Check if the next occurrence is within ±1 minute of simulated time (matching execution engine tolerance)
+        const tolerance = 60 * 1000; // 1 minute
+        const diff = Math.abs(simulatedAt.getTime() - nextOccurrence.getTime());
+
+        if (diff <= tolerance) {
+          const groups = await getNetworkGroups();
+          boundariesFiring.push({
+            windowLabel: 'Recurring execution',
+            boundaryType: 'RECURRING',
+            actions: schedule.recurringActions.map(a => ({
+              operation: a.operation,
+              targetGroupUuid: a.targetGroupUuid,
+              targetGroupName: a.targetGroupUuid
+                ? groups.find(g => g.uuid === a.targetGroupUuid)?.name
+                : undefined,
+            })),
+          });
+        }
+      } catch (err) {
+        logger.warn('Invalid cron expression in preview:', schedule.cronExpression, err);
+      }
+    }
 
     return NextResponse.json({
       simulatedAt: simulatedAt.toISOString(),

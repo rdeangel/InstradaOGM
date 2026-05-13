@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, Fragment } from 'react';
+import { format, formatDistanceToNow } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
 import {
   Select,
@@ -11,7 +12,6 @@ import {
 } from '@/components/ui/select';
 import { PaginationControls } from '@/components/ui/pagination-controls';
 import { Skeleton } from '@/components/ui/skeleton';
-import { formatDistanceToNow } from 'date-fns';
 import { AlertCircle, ChevronDown, ChevronRight } from 'lucide-react';
 import { useOpnsenseNetworkGroups } from '@/hooks/use-opnsense-network-groups';
 
@@ -217,7 +217,7 @@ export function ExecutionHistory({ scheduleId }: ExecutionHistoryProps) {
                         <tr className="bg-muted/20">
                           <td colSpan={6} className="px-4 py-3">
                             <div className="text-xs text-muted-foreground space-y-2">
-                              <p><span className="font-medium text-foreground">Executed at:</span> {new Date(exec.executedAt).toLocaleString()}</p>
+                              <p><span className="font-medium text-foreground">Executed at:</span> {format(new Date(exec.executedAt), 'PPP HH:mm:ss')}</p>
                               {exec.errorMessage && (
                                 <p className="text-destructive">
                                   <span className="font-medium">Error:</span> {exec.errorMessage}

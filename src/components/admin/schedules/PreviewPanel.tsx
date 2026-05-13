@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { format } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -124,7 +125,7 @@ export function PreviewPanel({ getFormData }: PreviewPanelProps) {
           {/* Boundaries firing */}
           <div>
             <p className="text-sm font-medium mb-2">
-              Boundaries Firing at {new Date(result.simulatedAt).toLocaleString()}
+              Boundaries Firing at {format(new Date(result.simulatedAt), 'PPP HH:mm:ss')}
             </p>
             {result.boundariesFiring.length === 0 ? (
               <div className="flex items-center gap-2 text-muted-foreground text-sm py-4 border border-dashed rounded-md justify-center">

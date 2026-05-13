@@ -94,10 +94,13 @@ function scheduleTypeVariant(
   return 'outline';
 }
 
-/** ISO date string → "YYYY-MM-DDTHH:MM" for display. */
+/** ISO date string → local "YYYY-MM-DD HH:MM" for display. */
 function formatEvaluatedAt(iso: string): string {
   try {
-    return new Date(iso).toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
+    const d = new Date(iso);
+    const datePart = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const timePart = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    return `${datePart} ${timePart} Local`;
   } catch {
     return iso;
   }
@@ -108,10 +111,10 @@ function formatEvaluatedAt(iso: string): string {
 export function ScheduleEvaluatorDialog({ open, onOpenChange }: ScheduleEvaluatorDialogProps) {
   // ── State ──────────────────────────────────────────────────────────────────
 
-  // Initialise with the current UTC date/time so the user can start immediately.
-  const nowUtc = new Date();
-  const defaultDate = nowUtc.toISOString().slice(0, 10);
-  const defaultTime = nowUtc.toISOString().slice(11, 16);
+  // Initialise with the current local date/time so the user can start immediately.
+  const now = new Date();
+  const defaultDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const defaultTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
   const [dateValue, setDateValue] = useState<string>(defaultDate);
   const [timeValue, setTimeValue] = useState<string>(defaultTime);
@@ -127,9 +130,11 @@ export function ScheduleEvaluatorDialog({ open, onOpenChange }: ScheduleEvaluato
       return;
     }
 
-    // Combine date + time into a UTC ISO 8601 string.
-    // The inputs are labelled as UTC so no local-time conversion is applied.
-    const isoString = `${dateValue}T${timeValue}:00.000Z`;
+    // Combine date + time into a local datetime and convert to a UTC ISO 8601 string.
+    const [year, month, day] = dateValue.split('-').map(Number);
+    const [hours, minutes] = timeValue.split(':').map(Number);
+    const localDateTime = new Date(year, month - 1, day, hours, minutes);
+    const isoString = localDateTime.toISOString();
 
     setIsLoading(true);
     setError(null);
@@ -170,8 +175,8 @@ export function ScheduleEvaluatorDialog({ open, onOpenChange }: ScheduleEvaluato
           <DialogTitle>Evaluate Schedule at Date / Time</DialogTitle>
           <DialogDescription>
             See which enabled rules would be active or would fire at a specific moment.
-            Times are interpreted as{' '}
-            <span className="font-medium text-foreground">UTC</span>. Individual schedule
+            Times are interpreted as your{' '}
+            <span className="font-medium text-foreground">Local Time</span>. Individual schedule
             rules are evaluated against their own configured timezone.
           </DialogDescription>
         </DialogHeader>
@@ -180,7 +185,7 @@ export function ScheduleEvaluatorDialog({ open, onOpenChange }: ScheduleEvaluato
         <div className="flex flex-wrap items-end gap-3 py-2 shrink-0">
           <div className="flex flex-col gap-1">
             <label className="text-xs text-muted-foreground font-medium" htmlFor="eval-date">
-              Date (UTC)
+              Date (Local)
             </label>
             <input
               id="eval-date"
@@ -193,13 +198,21 @@ export function ScheduleEvaluatorDialog({ open, onOpenChange }: ScheduleEvaluato
 
           <div className="flex flex-col gap-1">
             <label className="text-xs text-muted-foreground font-medium" htmlFor="eval-time">
-              Time (UTC)
+              Time (Local)
             </label>
             <input
               id="eval-time"
-              type="time"
+              type="text"
+              inputMode="numeric"
+              placeholder="HH:MM"
               value={timeValue}
-              onChange={(e) => setTimeValue(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                // eslint-disable-next-line security/detect-unsafe-regex -- Safe: simple time format validation
+                if (val === '' || /^\d{0,2}(:\d{0,2})?$/.test(val)) {
+                  setTimeValue(val);
+                }
+              }}
               className="h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             />
           </div>
