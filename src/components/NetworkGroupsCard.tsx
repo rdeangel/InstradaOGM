@@ -649,8 +649,8 @@ export default memo(function NetworkGroupsCard({
       ) : isHostAliasDisabled ? (
         <div className="flex flex-col items-center justify-center h-full min-h-[150px] text-muted-foreground text-center px-5">
           <ClientOnly fallback={<Skeleton className={`h-5 w-5 mb-2 rounded-full ${isMobile ? 'h-4 w-4' : ''}`} />}><AlertCircle className={`h-5 w-5 mb-2 ${isMobile ? 'h-4 w-4' : ''}`} /></ClientOnly>
-          <p className={`font-medium ${isMobile ? 'text-sm' : 'text-base'}`}>Network Alias Disabled</p>
-          <p className={`mt-1 ${isMobile ? 'text-xs' : 'text-sm'}`}>You cannot assign or unassign it to any group.</p>
+          <p className={`font-medium ${isMobile ? 'text-sm' : 'text-base'}`}>{isAliasMode ? 'Network Alias Disabled' : 'Host Alias Disabled'}</p>
+          <p className={`mt-1 ${isMobile ? 'text-xs' : 'text-sm'}`}>{isAliasMode ? 'This network alias is disabled and cannot be assigned to any group.' : 'This host alias is disabled and cannot be assigned to any group.'}</p>
         </div>
       ) : isIpNotAllowed ? (
         <div className="flex flex-col items-center justify-center h-full min-h-[150px] text-muted-foreground text-center px-5">

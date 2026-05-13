@@ -926,11 +926,14 @@ const NetworkAliasManagementCard = forwardRef<NetworkAliasManagementCardHandles,
                       <strong className={cn(isMobile ? "text-sm" : "")}>Alias Name:</strong>
                       <span
                         className={cn(
-                          "font-mono rounded-md inline-block transition-colors bg-primary text-primary-foreground hover:bg-primary/90 cursor-copy px-2.5 py-0.5",
+                          "font-mono rounded-md inline-block transition-colors px-2.5 py-0.5",
+                          selectedAlias.enabled !== '1'
+                            ? "bg-gray-400 dark:bg-gray-700 opacity-60 text-white cursor-not-allowed"
+                            : "bg-primary text-primary-foreground hover:bg-primary/90 cursor-copy",
                           isMobile ? "text-sm" : "text-base"
                         )}
                         onClick={async () => {
-                          if (selectedAlias?.name) {
+                          if (selectedAlias?.name && selectedAlias.enabled === '1') {
                             const { safeClipboardCopy, getClipboardErrorDescription } = await import('@/lib/clipboard-utils');
                             const success = await safeClipboardCopy(selectedAlias.name);
                             if (success) {
@@ -940,7 +943,7 @@ const NetworkAliasManagementCard = forwardRef<NetworkAliasManagementCardHandles,
                             }
                           }
                         }}
-                        title="Click to copy Alias Name"
+                        title={selectedAlias.enabled !== '1' ? "This alias is disabled" : "Click to copy Alias Name"}
                       >
                         {selectedAlias.name}
                       </span>
@@ -962,11 +965,14 @@ const NetworkAliasManagementCard = forwardRef<NetworkAliasManagementCardHandles,
                               return (
                                 <span
                                   className={cn(
-                                    "font-mono rounded-md inline-block bg-primary text-primary-foreground hover:bg-primary/90 cursor-copy transition-colors px-2.5 py-0.5",
+                                    "font-mono rounded-md inline-block transition-colors px-2.5 py-0.5",
+                                    selectedAlias?.enabled !== '1'
+                                      ? "bg-gray-400 dark:bg-gray-700 opacity-60 text-white cursor-not-allowed"
+                                      : "bg-primary text-primary-foreground hover:bg-primary/90 cursor-copy",
                                     isMobile ? "text-sm" : "text-base"
                                   )}
                                   onClick={async () => {
-                                    if (selectedAlias?.content) {
+                                    if (selectedAlias?.content && selectedAlias.enabled === '1') {
                                       const { safeClipboardCopy, getClipboardErrorDescription } = await import('@/lib/clipboard-utils');
                                       const success = await safeClipboardCopy(selectedAlias.content);
                                       if (success) {
@@ -976,7 +982,7 @@ const NetworkAliasManagementCard = forwardRef<NetworkAliasManagementCardHandles,
                                       }
                                     }
                                   }}
-                                  title="Click to copy Content"
+                                  title={selectedAlias?.enabled !== '1' ? "This alias is disabled" : "Click to copy Content"}
                                 >
                                   {selectedAlias?.content || 'N/A'}
                                 </span>
@@ -985,11 +991,14 @@ const NetworkAliasManagementCard = forwardRef<NetworkAliasManagementCardHandles,
                             return (
                               <span
                                 className={cn(
-                                  "font-mono rounded-md inline-block bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer transition-colors px-2.5 py-0.5",
+                                  "font-mono rounded-md inline-block transition-colors px-2.5 py-0.5",
+                                  selectedAlias?.enabled !== '1'
+                                    ? "bg-gray-400 dark:bg-gray-700 opacity-60 text-white cursor-not-allowed"
+                                    : "bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer",
                                   isMobile ? "text-sm" : "text-base"
                                 )}
-                                onClick={() => setIsCidrDialogOpen(true)}
-                                title="Click to view CIDRs"
+                                onClick={() => selectedAlias?.enabled === '1' && setIsCidrDialogOpen(true)}
+                                title={selectedAlias?.enabled !== '1' ? "This alias is disabled" : "Click to view CIDRs"}
                               >
                                 {cidrItems.length} CIDRs
                               </span>
