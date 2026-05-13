@@ -1,5 +1,6 @@
 
 import type { Metadata, Viewport } from 'next';
+
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
 import { Providers } from "@/components/layout/Providers";
@@ -32,6 +33,10 @@ export default async function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
+        {process.env.NODE_ENV === "development" && (
+          // eslint-disable-next-line @next/next/no-sync-scripts
+          <script src="/react-grab.js" />
+        )}
         <link rel="icon" href="/favicon.svg" sizes="any" type="image/svg+xml" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
         <script

@@ -38,6 +38,9 @@ const eslintConfig = [
       "maintenance_scripts/**",
       "scripts/**",
 
+      // Third-party bundles in public/
+      "public/**/*.js",
+
       // Misc
       ".vercel/**",
       "coverage/**",

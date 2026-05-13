@@ -2,6 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Ensure react-grab toolbar appears above app chrome (dev only) */
+[data-react-grab] { z-index: 10001 !important; }
+
 html,
 body {
   height: 100%;
