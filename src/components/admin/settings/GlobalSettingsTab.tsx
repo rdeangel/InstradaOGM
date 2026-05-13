@@ -119,10 +119,7 @@ export function GlobalSettingsTab({
   const { toast } = useToast();
   const isMobile = useIsMobile();
   const [databaseType, setDatabaseType] = useState<string>('Unknown');
-  const [showRefreshDialog, setShowRefreshDialog] = useState(false);
-  const [showGroupTypesRefreshDialog, setShowGroupTypesRefreshDialog] = useState(false);
-  const [showMultiSelectRefreshDialog, setShowMultiSelectRefreshDialog] = useState(false);
-  const [showMacTrackingRefreshDialog, setShowMacTrackingRefreshDialog] = useState(false);
+  const [refreshDialog, setRefreshDialog] = useState<{ title: string; description: string } | null>(null);
   const [showClearMacDbDialog, setShowClearMacDbDialog] = useState(false);
   const [showDisableNetworkAliasesDialog, setShowDisableNetworkAliasesDialog] = useState(false);
   const {
@@ -478,7 +475,10 @@ export function GlobalSettingsTab({
                           );
 
                           // Show refresh dialog after successful save
-                          setShowRefreshDialog(true);
+                          setRefreshDialog({
+                            title: "Page Refresh Required",
+                            description: "The self-service page setting has been changed. A full page refresh is required to update the menu and apply all changes."
+                          });
                         } catch (error) {
                           // If save failed, revert the local state
                           setRemoveSelfServicePage(!checked);
@@ -589,6 +589,10 @@ export function GlobalSettingsTab({
                             'Failed to save network aliases setting.'
                           );
                           globalSettingsEvents.emit();
+                          setRefreshDialog({
+                            title: "Page Refresh Required",
+                            description: "Network aliases management has been enabled. A full page refresh is required to add the Network Ranges tab and apply all changes."
+                          });
                         } catch {
                           setManageNetworkAliasesEnabled(false);
                         }
@@ -668,7 +672,10 @@ export function GlobalSettingsTab({
                               );
 
                               // Show refresh dialog after successful save
-                              setShowGroupTypesRefreshDialog(true);
+                              setRefreshDialog({
+                                title: "Page Refresh Required",
+                                description: "The group types setting has been changed. A full page refresh is required to update the UI components and group management behavior."
+                              });
                             } catch (error) {
                               // If save failed, revert the local state
                               setEnableGroupTypes(!checked);
@@ -785,7 +792,10 @@ export function GlobalSettingsTab({
                               );
 
                               // Show refresh dialog after successful save
-                              setShowMultiSelectRefreshDialog(true);
+                              setRefreshDialog({
+                                title: "Page Refresh Required",
+                                description: "The self-service multi-select setting has been changed. A full page refresh is required to update the group selection interface and user experience."
+                              });
                             } catch (error) {
                               // If save failed, revert the local state
                               setEnableSelfServiceMultiSelect(!checked);
@@ -1070,7 +1080,10 @@ export function GlobalSettingsTab({
                             }
 
                             // Show refresh dialog after successful save
-                            setShowMacTrackingRefreshDialog(true);
+                            setRefreshDialog({
+                              title: "Page Refresh Required",
+                              description: "The MAC tracking setting has been changed. A full page refresh is required to update the navigation menu and apply all changes."
+                            });
                           } catch (error) {
                             // If save failed, revert the local state
                             setEnableMacTracking(!checked);
@@ -1257,44 +1270,12 @@ export function GlobalSettingsTab({
         </CardContent>
       </Card>
 
-      {/* Refresh Required Dialog - Self Service */}
+      {/* Refresh Required Dialog */}
       <RefreshRequiredDialog
-        isOpen={showRefreshDialog}
-        onRefresh={() => {
-          window.location.reload();
-        }}
-        title="Page Refresh Required"
-        description="The self-service page setting has been changed. A full page refresh is required to update the menu and apply all changes."
-      />
-
-      {/* Refresh Required Dialog - Group Types */}
-      <RefreshRequiredDialog
-        isOpen={showGroupTypesRefreshDialog}
-        onRefresh={() => {
-          window.location.reload();
-        }}
-        title="Page Refresh Required"
-        description="The group types setting has been changed. A full page refresh is required to update the UI components and group management behavior."
-      />
-
-      {/* Refresh Required Dialog - Self-Service Multi Select */}
-      <RefreshRequiredDialog
-        isOpen={showMultiSelectRefreshDialog}
-        onRefresh={() => {
-          window.location.reload();
-        }}
-        title="Page Refresh Required"
-        description="The self-service multi-select setting has been changed. A full page refresh is required to update the group selection interface and user experience."
-      />
-
-      {/* Refresh Required Dialog - MAC Tracking */}
-      <RefreshRequiredDialog
-        isOpen={showMacTrackingRefreshDialog}
-        onRefresh={() => {
-          window.location.reload();
-        }}
-        title="Page Refresh Required"
-        description="The MAC tracking setting has been changed. A full page refresh is required to update the navigation menu and apply all changes."
+        isOpen={refreshDialog !== null}
+        onRefresh={() => window.location.reload()}
+        title={refreshDialog?.title}
+        description={refreshDialog?.description}
       />
 
       {/* Disable Network Aliases Confirmation Dialog */}
@@ -1323,6 +1304,10 @@ export function GlobalSettingsTab({
                     'Failed to save network aliases setting.'
                   );
                   globalSettingsEvents.emit();
+                  setRefreshDialog({
+                    title: "Page Refresh Required",
+                    description: "Network aliases management has been disabled. A full page refresh is required to remove the Network Ranges tab and apply all changes."
+                  });
                 } catch {
                   setManageNetworkAliasesEnabled(true);
                 }
