@@ -178,7 +178,7 @@ docker buildx build \
   --build-arg PRISMA_SCHEMA_FILE=schema.postgres.prisma \
   --build-arg PRISMA_MIGRATIONS_DIR=migrations-postgres \
   --build-arg DATABASE_URL=postgresql://user:password@localhost:5432/InstradaOGM_build?schema=public \
-  --build-arg BACKUP_ENCRYPTION_SECRET_KEY=ac55cc5552e04f44953c939574b02a3a87c64f48d8cdf44029b4979bcdbf93c3 \
+  --build-arg BACKUP_ENCRYPTION_SECRET_KEY=${BACKUP_ENCRYPTION_SECRET_KEY} \
   --build-arg APP_DEBUG_LEVEL=SILENT \
   .
 ```
@@ -193,7 +193,7 @@ docker buildx build \
   --build-arg PRISMA_SCHEMA_FILE=schema.sqlite.prisma \
   --build-arg PRISMA_MIGRATIONS_DIR=migrations-sqlite \
   --build-arg DATABASE_URL=file:/app/data/db/dev.db \
-  --build-arg BACKUP_ENCRYPTION_SECRET_KEY=ac55cc5552e04f44953c939574b02a3a87c64f48d8cdf44029b4979bcdbf93c3 \
+  --build-arg BACKUP_ENCRYPTION_SECRET_KEY=${BACKUP_ENCRYPTION_SECRET_KEY} \
   --build-arg APP_DEBUG_LEVEL=SILENT \
   .
 ```
@@ -208,7 +208,7 @@ docker buildx build \
   --build-arg PRISMA_SCHEMA_FILE=schema.postgres.prisma \
   --build-arg PRISMA_MIGRATIONS_DIR=migrations-postgres \
   --build-arg DATABASE_URL=postgresql://user:password@localhost:5432/InstradaOGM_build?schema=public \
-  --build-arg BACKUP_ENCRYPTION_SECRET_KEY=ac55cc5552e04f44953c939574b02a3a87c64f48d8cdf44029b4979bcdbf93c3 \
+  --build-arg BACKUP_ENCRYPTION_SECRET_KEY=${BACKUP_ENCRYPTION_SECRET_KEY} \
   --build-arg APP_DEBUG_LEVEL=SILENT \
   .
 ```
@@ -223,10 +223,71 @@ docker buildx build \
   --build-arg PRISMA_SCHEMA_FILE=schema.sqlite.prisma \
   --build-arg PRISMA_MIGRATIONS_DIR=migrations-sqlite \
   --build-arg DATABASE_URL=file:/app/data/db/dev.db \
-  --build-arg BACKUP_ENCRYPTION_SECRET_KEY=ac55cc5552e04f44953c939574b02a3a87c64f48d8cdf44029b4979bcdbf93c3 \
+  --build-arg BACKUP_ENCRYPTION_SECRET_KEY=${BACKUP_ENCRYPTION_SECRET_KEY} \
   --build-arg APP_DEBUG_LEVEL=SILENT \
   .
 ```
+
+### **Build Single Platform and Save to File (No Registry)**
+
+Use this when you want to build for a specific platform and save the image as a tar file for manual transfer (e.g., to a remote machine that doesn't have registry access).
+
+> **Important:** You must include all `--build-arg` parameters. Omitting them causes the Dockerfile to fall back to its defaults — most critically `PRISMA_SCHEMA_FILE=schema.postgres.prisma`, which will embed the **wrong schema** in a SQLite image.
+
+#### **SQLite — ARM64**
+```bash
+NEXT_PUBLIC_APP_VERSION=$(node -p "require('./package.json').version") \
+docker buildx build \
+  --platform linux/arm64 \
+  --output type=docker,dest=./instrada-ogm-sqlite-$(node -p "require('./package.json').version")-arm64.tar \
+  --tag rdeangel/instrada-ogm-sqlite:$(node -p "require('./package.json').version") \
+  --file Dockerfile \
+  --build-arg PRISMA_SCHEMA_FILE=schema.sqlite.prisma \
+  --build-arg PRISMA_MIGRATIONS_DIR=migrations-sqlite \
+  --build-arg DATABASE_URL=file:/app/data/db/dev.db \
+  --build-arg BACKUP_ENCRYPTION_SECRET_KEY=${BACKUP_ENCRYPTION_SECRET_KEY} \
+  --build-arg APP_DEBUG_LEVEL=SILENT \
+  .
+```
+
+#### **SQLite — AMD64**
+```bash
+NEXT_PUBLIC_APP_VERSION=$(node -p "require('./package.json').version") \
+docker buildx build \
+  --platform linux/amd64 \
+  --output type=docker,dest=./instrada-ogm-sqlite-$(node -p "require('./package.json').version")-amd64.tar \
+  --tag rdeangel/instrada-ogm-sqlite:$(node -p "require('./package.json').version") \
+  --file Dockerfile \
+  --build-arg PRISMA_SCHEMA_FILE=schema.sqlite.prisma \
+  --build-arg PRISMA_MIGRATIONS_DIR=migrations-sqlite \
+  --build-arg DATABASE_URL=file:/app/data/db/dev.db \
+  --build-arg BACKUP_ENCRYPTION_SECRET_KEY=${BACKUP_ENCRYPTION_SECRET_KEY} \
+  --build-arg APP_DEBUG_LEVEL=SILENT \
+  .
+```
+
+#### **PostgreSQL — ARM64**
+```bash
+NEXT_PUBLIC_APP_VERSION=$(node -p "require('./package.json').version") \
+docker buildx build \
+  --platform linux/arm64 \
+  --output type=docker,dest=./instrada-ogm-postgres-$(node -p "require('./package.json').version")-arm64.tar \
+  --tag rdeangel/instrada-ogm-postgres:$(node -p "require('./package.json').version") \
+  --file Dockerfile \
+  --build-arg PRISMA_SCHEMA_FILE=schema.postgres.prisma \
+  --build-arg PRISMA_MIGRATIONS_DIR=migrations-postgres \
+  --build-arg DATABASE_URL=postgresql://user:password@localhost:5432/InstradaOGM_build?schema=public \
+  --build-arg BACKUP_ENCRYPTION_SECRET_KEY=${BACKUP_ENCRYPTION_SECRET_KEY} \
+  --build-arg APP_DEBUG_LEVEL=SILENT \
+  .
+```
+
+**Load the saved image on the target machine:**
+```bash
+docker load < instrada-ogm-sqlite-1.1.0-arm64.tar
+```
+
+> **Note:** `--output type=docker` only works with single-platform builds. For multi-platform images use `--push` to a registry instead.
 
 ## Image Naming Convention
 

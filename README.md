@@ -139,6 +139,7 @@ Full administrative interface for managing the entire system.
 - **🌐 Network Groups**: Create and manage OPNsense network groups with custom icons
 - **🎯 Group Types**: Configure SingleSelect and MultiSelect group behaviors for advanced assignment control
 - **🏷️ Host Aliases**: Complete CRUD operations for OPNsense host aliases
+- **🌐 Network Aliases**: Manage OPNsense network aliases (CIDR ranges) with full CRUD operations and group assignment support (enabled via feature toggle in Global Settings)
 - **🖥️ DHCP Management**: View and manage DHCP reservations with automatic MAC randomization detection
 - **👤 User Management**: Local user accounts with role-based permissions (USER, ADMIN, SUPER_ADMIN)
 - [🔗 SSO Integration](docs/CONFIGURATION/SSO_PROVIDER_CONFIG.md): Map external SSO groups to local groups automatically
@@ -956,6 +957,7 @@ curl -X GET "https://your-instrada-ogm.com/api/admin/api-keys/analytics/performa
 
 ### 📡 **API Documentation**
 - **[Full API Documentation](docs/api/api_docs/API_Index.md)** - Complete API reference with 100+ endpoints across all features (authentication, device management, VPN, analytics, schedules, and more)
+- **[Network Alias Endpoints](docs/api/api_docs/33_network_alias_endpoints.md)** - CRUD and group assignment endpoints for network aliases (CIDR-based OPNsense aliases)
 
 ---
 
