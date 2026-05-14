@@ -53,9 +53,12 @@ async function getVpnStatusForGroup(groupId: string): Promise<{ vpnUuid: string;
   }
 }
 
-async function getFeatureToggle(): Promise<boolean> {
+async function getSettings(): Promise<{ manageNetworkAliasesEnabled: boolean; enableGroupTypes: boolean }> {
   const settings = await prisma.globalSettings.findFirst({ orderBy: { id: 'asc' } });
-  return settings?.manageNetworkAliasesEnabled ?? false;
+  return {
+    manageNetworkAliasesEnabled: settings?.manageNetworkAliasesEnabled ?? false,
+    enableGroupTypes: settings?.enableGroupTypes ?? false,
+  };
 }
 
 export async function POST(request: Request) {
@@ -65,8 +68,8 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
       }
 
-      const enabled = await getFeatureToggle();
-      if (!enabled) {
+      const { manageNetworkAliasesEnabled, enableGroupTypes } = await getSettings();
+      if (!manageNetworkAliasesEnabled) {
         return NextResponse.json({ error: 'Feature disabled', code: 'NETWORK_ALIAS_MANAGEMENT_DISABLED' }, { status: 403 });
       }
 
@@ -135,7 +138,12 @@ export async function POST(request: Request) {
         const targetGroupDisplay = groupDisplayMap.get(body.groupId.toLowerCase());
         const targetGroupType = targetGroupDisplay?.groupType || 'SingleSelect';
 
-        if (targetGroupType === 'SingleSelect') {
+        // When group types are globally disabled, always treat as SingleSelect (always move).
+        // The stored groupType is irrelevant — a group previously set to MultiSelect must still
+        // behave as SingleSelect when the feature is off.
+        const treatAsSingleSelect = !enableGroupTypes || targetGroupType === 'SingleSelect';
+
+        if (treatAsSingleSelect) {
           const currentSingleSelectGroups: { uuid: string; alias: { name: string; content: string; enabled: string; type: string; description: string } }[] = [];
           for (const [uuid, a] of Object.entries(aliasMap)) {
             if (a.type !== 'networkgroup') continue;
@@ -143,7 +151,8 @@ export async function POST(request: Request) {
             const members = (a.content || '').split('\n').map((s: string) => s.trim()).filter(Boolean);
             if (!members.includes(alias.name)) continue;
             const display = groupDisplayMap.get(uuid.toLowerCase());
-            if (display?.groupType === 'MultiSelect') continue;
+            // When group types are disabled, remove from ALL groups (stored MultiSelect type is ignored).
+            if (enableGroupTypes && display?.groupType === 'MultiSelect') continue;
             currentSingleSelectGroups.push({ uuid, alias: a as unknown as { name: string; content: string; enabled: string; type: string; description: string } });
           }
 

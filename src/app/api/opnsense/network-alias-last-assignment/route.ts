@@ -27,6 +27,7 @@ export async function GET(request: NextRequest) {
 
       const actions = [
         'NETWORK_ALIAS_GROUP_ASSIGN_SUCCESS',
+        'NETWORK_ALIAS_GROUP_ASSIGN_MOVE',
         'NETWORK_ALIAS_GROUP_UNASSIGN_SUCCESS',
       ];
 
@@ -85,8 +86,12 @@ export async function GET(request: NextRequest) {
       }
 
       const details = lastAssignment.details as Record<string, unknown>;
+
+      const isMove = lastAssignment.action === 'NETWORK_ALIAS_GROUP_ASSIGN_MOVE';
       let operationType: string;
-      if (lastAssignment.action.includes('ASSIGN') && !lastAssignment.action.includes('UNASSIGN')) {
+      if (isMove) {
+        operationType = 'move';
+      } else if (lastAssignment.action.includes('ASSIGN') && !lastAssignment.action.includes('UNASSIGN')) {
         operationType = 'assign';
       } else {
         operationType = 'unassign';
@@ -111,7 +116,8 @@ export async function GET(request: NextRequest) {
         return name;
       };
 
-      const resolvedGroupName = resolveFriendlyName(groupName, typeof details.groupUuid === 'string' ? details.groupUuid : null);
+      const targetUuid = typeof details.groupUuid === 'string' ? details.groupUuid : null;
+      const resolvedGroupName = resolveFriendlyName(groupName, targetUuid);
 
       const response: Record<string, unknown> = {
         timestamp: lastAssignment.timestamp.toISOString(),
@@ -121,7 +127,16 @@ export async function GET(request: NextRequest) {
         userName: lastAssignment.user?.name || lastAssignment.user?.email || null,
       };
 
-      if (details.targetGroup && typeof details.targetGroup === 'object') {
+      // For move operations logged by ASSIGN_MOVE: build targetGroup from groupUuid/groupName
+      if (isMove && targetUuid) {
+        response.targetGroup = {
+          id: targetUuid,
+          name: groupName || '',
+          friendlyName: groupFriendlyNameMap.get(targetUuid.toLowerCase()) || groupName || null,
+        };
+      }
+
+      if (!isMove && details.targetGroup && typeof details.targetGroup === 'object') {
         const tg = details.targetGroup as Record<string, unknown>;
         const tgFriendly = typeof tg.friendlyName === 'string' ? tg.friendlyName : null;
         const tgId = typeof tg.id === 'string' ? tg.id : null;
