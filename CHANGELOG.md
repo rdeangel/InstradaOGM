@@ -9,6 +9,45 @@ All notable changes to the InstradaOGM project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-05-14
+
+### 🔒 Security
+- fix: resolve security linter warnings and update network alias tab dependency tracking ([1c2808c](https://github.com/rdeangel/InstradaOGM/commit/1c2808c))
+
+### ✨ Features
+- feat: add react-grab development tool to project layout and styling ([874235e](https://github.com/rdeangel/InstradaOGM/commit/874235e))
+- feat(schedules): improve preview accuracy and implement execution deduplication ([e6c8f2f](https://github.com/rdeangel/InstradaOGM/commit/e6c8f2f))
+- feat: implement persistent selection and state caching for devices and network aliases using localStorage ([c5dfaca](https://github.com/rdeangel/InstradaOGM/commit/c5dfaca))
+- feat: implement focus and visibility-based in-place refresh for network data and expose silent refresh methods via component handles ([c3ab40e](https://github.com/rdeangel/InstradaOGM/commit/c3ab40e))
+- feat: implement network alias change analytics with associated audit log tracking and dashboard visualization ([1310197](https://github.com/rdeangel/InstradaOGM/commit/1310197))
+- feat: implement CIDR list viewing and integrate group-based VPN status indicators into Network Alias management ([3f3e9e6](https://github.com/rdeangel/InstradaOGM/commit/3f3e9e6))
+- feat(network): lift network alias state to admin page and enhance bulk operations ([dbfd048](https://github.com/rdeangel/InstradaOGM/commit/dbfd048))
+- feat(network): implement friendly name resolution and VPN status tracking ([398204c](https://github.com/rdeangel/InstradaOGM/commit/398204c))
+- feat(analytics): add network alias assignment history and tracking ([6cb3603](https://github.com/rdeangel/InstradaOGM/commit/6cb3603))
+- feat(network): implement network management page and enhance alias validation ([bda31de](https://github.com/rdeangel/InstradaOGM/commit/bda31de))
+- feat: implement network alias management system ([9f76d9e](https://github.com/rdeangel/InstradaOGM/commit/9f76d9e))
+
+### 🐛 Bug Fixes
+- fix: visually disable inactive aliases and update group assignment helper text ([d5c13a0](https://github.com/rdeangel/InstradaOGM/commit/d5c13a0))
+- fix: add network alias validation and improve execution error handling ([624118a](https://github.com/rdeangel/InstradaOGM/commit/624118a))
+- fix: update dependency arrays for network alias callbacks and remove unused AlertTriangle icon ([9ae6a82](https://github.com/rdeangel/InstradaOGM/commit/9ae6a82))
+
+### ♻️ Refactor
+- refactor: consolidated Network Aliases Management toggle with multiple refresh dialog states into a single unified object and update dialog overlay accessibility ([f3ef305](https://github.com/rdeangel/InstradaOGM/commit/f3ef305))
+- refactor: implement network alias support, normalize audit logging, and add VPN status indicators to alias management ([5cc4f49](https://github.com/rdeangel/InstradaOGM/commit/5cc4f49))
+- refactor: optimize network alias management with targeted membership updates, silent background fetches, and improved audit logging logic. ([9b8b74c](https://github.com/rdeangel/InstradaOGM/commit/9b8b74c))
+- refactor(network): implement exclusive group assignment and enhance alias metadata ([db26847](https://github.com/rdeangel/InstradaOGM/commit/db26847))
+
+### 📚 Documentation
+- docs: README update and cross platform build local save commands ([c44f3b8](https://github.com/rdeangel/InstradaOGM/commit/c44f3b8))
+- docs: add network alias management and analytics documentation ([15cbeb1](https://github.com/rdeangel/InstradaOGM/commit/15cbeb1))
+- docs: small readme update ([07fefac](https://github.com/rdeangel/InstradaOGM/commit/07fefac))
+- docs(readme): simplify readme and add scheduled assignments ([e1556c7](https://github.com/rdeangel/InstradaOGM/commit/e1556c7))
+
+### 📝 Chore
+- chore: prepare release v1.2.0 ([f175f2c](https://github.com/rdeangel/InstradaOGM/commit/f175f2c))
+- chore: update nodemailer to v8.0.5 and ignore .mcp.json files ([e845728](https://github.com/rdeangel/InstradaOGM/commit/e845728))
+
 ## [1.1.0] - 2026-03-26
 
 ### ✨ Features
