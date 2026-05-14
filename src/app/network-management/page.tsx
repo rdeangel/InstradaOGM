@@ -475,6 +475,7 @@ export default function NetworkManagementPage() {
                   selectedAlias={selectedAlias}
                   onSelectAlias={setSelectedAlias}
                   onAliasesLoaded={handleAliasesLoaded}
+                  onAliasesSilentRefreshed={syncSelectedAlias}
                   layoutMode={layoutMode}
                   allEmojiValues={allEmojiValues}
                   allFlagValues={allFlagValues}

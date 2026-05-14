@@ -45,6 +45,7 @@ interface NetworkAliasManagementCardProps {
   selectedAlias: NetworkAlias | null;
   onSelectAlias: (alias: NetworkAlias | null) => void;
   onAliasesLoaded?: (aliases: NetworkAlias[]) => void;
+  onAliasesSilentRefreshed?: (aliases: NetworkAlias[]) => void;
   layoutMode?: 'stacked' | 'side-by-side';
   allEmojiValues?: string[];
   allFlagValues?: string[];
@@ -65,6 +66,7 @@ const NetworkAliasManagementCard = forwardRef<NetworkAliasManagementCardHandles,
   selectedAlias,
   onSelectAlias,
   onAliasesLoaded,
+  onAliasesSilentRefreshed,
   layoutMode,
   allEmojiValues = [],
   allFlagValues = [],
@@ -197,6 +199,7 @@ const NetworkAliasManagementCard = forwardRef<NetworkAliasManagementCardHandles,
       if (!resp.ok) return [];
       const data: NetworkAlias[] = await resp.json();
       setAliases(data);
+      onAliasesSilentRefreshed?.(data);
       return data;
     } catch (err) {
       logger.error('[NetworkAliasManagementCard] silent fetch error:', err);
@@ -204,7 +207,7 @@ const NetworkAliasManagementCard = forwardRef<NetworkAliasManagementCardHandles,
     } finally {
       setIsRefreshing(false);
     }
-  }, []);
+  }, [onAliasesSilentRefreshed]);
 
   const refreshLastOperationOnly = useCallback(async () => {
     if (layoutMode !== 'side-by-side' || !selectedAlias?.uuid) return;
