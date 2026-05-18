@@ -23,6 +23,7 @@ This document provides a comprehensive reference for the InstradaOGM database sc
   - [OpnsenseNetworkGroup](#opnsensenetworkgroup)
   - [OpnsenseGroupDisplay](#opnsensegroupdisplay)
   - [GloballyDisabledGroup](#globallydisabledgroup)
+  - [NetworkAliasDisplaySettings](#networkaliasdisplaysettings)
   - [ValidLocalNetwork](#validlocalnetwork)
 - [VPN Management](#vpn-management)
   - [VpnMapping](#vpnmapping)
@@ -293,6 +294,42 @@ This document provides a comprehensive reference for the InstradaOGM database sc
 - Hide administrative groups
 - Disable deprecated groups
 - System-level group management
+
+---
+
+### NetworkAliasDisplaySettings
+
+**Purpose**: Local overlay storage for network alias visibility state. Stores whether individual network aliases should be hidden from management interfaces.
+
+**Key Fields**:
+- `opnsenseAliasUuid` - Unique reference to OPNsense network alias UUID
+- `hidden` - Boolean flag; when true, alias is excluded from all management interfaces
+
+**Relationships**:
+- One-to-one mapping with network aliases in OPNsense (by UUID)
+
+**Default Values**:
+- `hidden` - false (aliases are visible by default)
+
+**Cascade Behavior**:
+- Records are deleted when their corresponding alias is deleted in OPNsense
+
+**Use Cases**:
+- Hide sensitive or special-use network aliases
+- Prevent accidental assignment of critical network ranges
+- Manage large alias collections by hiding deprecated entries
+- Protect aliases that should only be managed directly in OPNsense
+
+**Important Notes**:
+- **Aliases cannot be assigned while hidden** - Any API or UI attempt to assign a hidden alias to a group will be rejected with a 403 error
+- **Existing assignments protected** - Hidden aliases already assigned to groups will not be reassigned, only evicted from SingleSelect groups if a non-hidden alias is assigned to that group
+- **Admin-visible** - The Network Management admin table still displays hidden aliases with a "Hidden" badge
+- **Filtering applied server-side** - User-facing APIs automatically exclude hidden aliases from results
+
+**Migration & Cleanup**:
+- Records are automatically created/updated when the hidden flag is changed via the API
+- Orphaned records (with non-existent OPNsense UUIDs) can be cleaned up periodically
+- Index on `opnsenseAliasUuid` enables fast lookups during assignment operations
 
 ---
 

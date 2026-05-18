@@ -150,6 +150,7 @@ None
     "content": "192.168.1.0/24\n192.168.2.0/24\n10.0.0.0/8",
     "description": "All office network subnets",
     "enabled": "1",
+    "hidden": false,
     "memberOfGroups": [
       {
         "uuid": "group-uuid-1",
@@ -167,6 +168,7 @@ None
     "content": "192.168.100.0/24",
     "description": "Guest network access",
     "enabled": "1",
+    "hidden": true,
     "memberOfGroups": []
   }
 ]
@@ -440,7 +442,8 @@ curl -X PUT "{{SERVER_URL}}/api/opnsense/network-aliases/a1b2c3d4-e5f6-47a8-9b0c
     "name": "Office_Networks_Updated",
     "content": "192.168.1.0/24\n192.168.2.0/24\n192.168.3.0/24",
     "description": "Updated office network subnets",
-    "enabled": "1"
+    "enabled": "1",
+    "hidden": false
   }'
 ```
 
@@ -452,6 +455,7 @@ curl -X PUT "{{SERVER_URL}}/api/opnsense/network-aliases/a1b2c3d4-e5f6-47a8-9b0c
 | `content` | string | Yes | Updated CIDR ranges |
 | `description` | string | No | Updated description |
 | `enabled` | string | No | `"0"` for disabled, `"1"` for enabled |
+| `hidden` | boolean | No | `true` to hide from all management interfaces, `false` to show |
 
 #### Success Response (200 OK)
 
@@ -734,16 +738,24 @@ Aliases can belong to multiple MultiSelect groups simultaneously.
 }
 ```
 
+**403 Forbidden - Alias is Hidden**
+```json
+{
+  "error": "Network alias is hidden and cannot be assigned to groups"
+}
+```
+
 #### Validation Checks
 
 Before performing assignment, the API validates:
 
 1. ✅ Network alias exists and is of type `network`
 2. ✅ Network alias is enabled in OPNsense
-3. ✅ Target network group exists and is of type `networkgroup`
-4. ✅ Target group is enabled in OPNsense
-5. ✅ Target group is not globally disabled
-6. ✅ If group has associated VPN, VPN must be connected or enabled
+3. ✅ Network alias is NOT hidden (cannot assign hidden aliases)
+4. ✅ Target network group exists and is of type `networkgroup`
+5. ✅ Target group is enabled in OPNsense
+6. ✅ Target group is not globally disabled
+7. ✅ If group has associated VPN, VPN must be connected or enabled
 
 #### Audit Log Events
 

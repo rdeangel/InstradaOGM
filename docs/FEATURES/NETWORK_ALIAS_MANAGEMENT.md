@@ -201,6 +201,45 @@ Examples:
   Lab_Dev_Nets
 ```
 
+## Hiding Network Aliases
+
+Network aliases can be hidden from all management interfaces to prevent accidental assignment or modification. This is useful for:
+- Protecting special-use aliases that should not be managed manually
+- Organizing large alias collections by hiding legacy or deprecated entries
+- Preventing assignment of sensitive network ranges
+
+### How to Hide an Alias
+
+1. **Go to** Admin Panel → Network Management
+2. **Find** the alias you want to hide
+3. **Click** "Edit"
+4. **Toggle** the "Hide" switch to ON
+5. **Click** "Save"
+
+### What Happens When Hidden
+
+When an alias is hidden:
+- ❌ **Excluded** from all dropdown pickers and selection interfaces
+- ❌ **Cannot be assigned** to network groups via API or UI
+- ❌ **Cannot be selected** in scheduled assignments
+- ❌ **Automatically removed** from management interfaces (but not from groups it's already in)
+
+**Admin View**: The alias still appears in the Network Management admin table with a "Hidden" badge so admins can manage the hidden state.
+
+### Visibility States
+
+| State | Display in Picker | Can Assign | In Admin Table | Badge |
+|-------|---|---|---|---|
+| **Visible** | ✅ Yes | ✅ Yes | ✅ Yes | Green "Visible" |
+| **Hidden** | ❌ No | ❌ No | ✅ Yes | Gray "Hidden" |
+
+### Hiding Aliases Already in Groups
+
+Hidden aliases that are already members of network groups:
+- 🔒 **Protected from assignment** - cannot be reassigned to other groups
+- 🔒 **Protected from eviction** - will only be removed from SingleSelect groups if a non-hidden alias is assigned to that group
+- ✅ **Still functional** - firewall rules and VPN routing continue to work
+
 ## Validation and Safety
 
 ### Pre-Assignment Validation
@@ -210,12 +249,24 @@ Before assigning an alias to a group, the system validates:
 ✅ **Alias exists** in OPNsense  
 ✅ **Alias is enabled** in OPNsense  
 ✅ **Alias is network type** (not host or other types)  
+✅ **Alias is NOT hidden** in the management system  
 ✅ **Target group exists** in OPNsense  
 ✅ **Target group is enabled** in OPNsense  
 ✅ **Target group is not globally disabled** in InstradaOGM  
 ✅ **Target group's VPN is connected** (if assigned a VPN)  
 
 If any validation fails, the assignment is rejected with a specific error message.
+
+### Hidden Alias Assignment Error
+
+**Symptom**: Assignment fails with "Network alias is hidden"
+
+**Cause**: The alias is marked as hidden in the management system
+
+**Solutions**:
+- Option 1: Admin unhides the alias in Network Management
+- Option 2: Use a different, non-hidden alias
+- Option 3: For direct API calls, contact your administrator to toggle hidden state
 
 ### Delete Protection
 
