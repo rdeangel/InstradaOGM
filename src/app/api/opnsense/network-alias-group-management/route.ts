@@ -101,6 +101,13 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Network alias is disabled in OPNsense' }, { status: 400 });
       }
 
+      const displaySettings = await prisma.networkAliasDisplaySettings.findUnique({
+        where: { opnsenseAliasUuid: body.aliasUuid },
+      });
+      if (displaySettings?.hidden) {
+        return NextResponse.json({ error: 'Network alias is hidden and cannot be assigned to groups' }, { status: 403 });
+      }
+
       const group = aliasMap[body.groupId];
       if (!group || group.type !== 'networkgroup') {
         return NextResponse.json({ error: 'Network group not found' }, { status: 404 });

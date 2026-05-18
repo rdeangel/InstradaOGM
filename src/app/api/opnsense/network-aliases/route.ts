@@ -55,7 +55,11 @@ export async function GET(request: Request) {
 
       const enriched = enrichNetworkAliasesWithGroups(networkAliases, aliasMap as Record<string, { type: string; name: string; content: string; description: string; enabled: string }>, groupDisplayMap);
 
-      return NextResponse.json(enriched);
+      const displaySettings = await prisma.networkAliasDisplaySettings.findMany();
+      const hiddenSet = new Set(displaySettings.filter(s => s.hidden).map(s => s.opnsenseAliasUuid));
+      const withHidden = enriched.map(a => ({ ...a, hidden: hiddenSet.has(a.uuid) }));
+
+      return NextResponse.json(withHidden);
     } catch (error) {
       logger.error('Error fetching network aliases:', error);
       return NextResponse.json({ error: 'Failed to fetch network aliases' }, { status: 500 });

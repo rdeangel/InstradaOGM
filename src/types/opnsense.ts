@@ -98,6 +98,7 @@ export interface NetworkAlias {
   content: string; // CIDR, e.g. "192.168.1.0/24"
   description: string;
   enabled: '0' | '1'; // OPNsense returns strings, not booleans (review S6)
+  hidden?: boolean; // local overlay: when true, alias is excluded from management interfaces
   memberOfGroups?: { uuid: string; name: string; friendlyName?: string; iconIdentifier?: string | null; groupType?: 'SingleSelect' | 'MultiSelect' }[];
 }
 

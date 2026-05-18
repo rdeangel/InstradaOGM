@@ -239,6 +239,14 @@ model GloballyDisabledGroup {
   updatedAt    DateTime @updatedAt
 }
 
+model NetworkAliasDisplaySettings {
+  id               String   @id @default(cuid())
+  opnsenseAliasUuid String  @unique
+  hidden           Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
 model AuditLog {
   id        String   @id @default(cuid())
   timestamp DateTime @default(now())

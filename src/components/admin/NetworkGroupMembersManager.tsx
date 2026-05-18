@@ -349,7 +349,8 @@ export function NetworkGroupMembersManager({
     try {
       const resp = await fetch('/api/opnsense/network-aliases', { cache: 'no-store' });
       if (!resp.ok) throw new Error('Failed to fetch network aliases');
-      const data: NetworkAlias[] = await resp.json();
+      const rawData: NetworkAlias[] = await resp.json();
+      const data = rawData.filter(a => !a.hidden);
 
       const memberNames = new Set((group.rawContent || '').split('\n').map(n => n.trim()).filter(Boolean));
       const currentAssociated = data.filter(a => memberNames.has(a.name)).sort((a, b) => a.name.localeCompare(b.name));

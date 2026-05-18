@@ -100,7 +100,11 @@ export async function GET(request: Request) {
 
       const displayableGroupUuids = new Set(displayableNetworkGroups.map(g => g.uuid));
 
+      const displaySettings = await prisma.networkAliasDisplaySettings.findMany({ where: { hidden: true } });
+      const hiddenUuids = new Set(displaySettings.map(s => s.opnsenseAliasUuid));
+
       const result = enriched.filter(alias => {
+        if (hiddenUuids.has(alias.uuid)) return false;
         const aliasGroups = alias.memberOfGroups || [];
         if (aliasGroups.length === 0) return true;
         return aliasGroups.some(g => displayableGroupUuids.has(g.uuid));

@@ -48,9 +48,10 @@ interface AliasFormState {
   content: string;
   description: string;
   enabled: boolean;
+  hidden: boolean;
 }
 
-const emptyForm: AliasFormState = { name: '', content: '', description: '', enabled: true };
+const emptyForm: AliasFormState = { name: '', content: '', description: '', enabled: true, hidden: false };
 
 interface FormErrors {
   name?: string;
@@ -268,7 +269,7 @@ export function NetworkAliasesTab({
 
   const handleOpenEdit = (alias: NetworkAlias) => {
     setEditingAlias(alias);
-    setEditForm({ name: alias.name, content: alias.content, description: alias.description ?? '', enabled: alias.enabled === '1' });
+    setEditForm({ name: alias.name, content: alias.content, description: alias.description ?? '', enabled: alias.enabled === '1', hidden: alias.hidden ?? false });
     setEditErrors({});
     setIsEditOpen(true);
   };
@@ -287,6 +288,7 @@ export function NetworkAliasesTab({
           content: editForm.content.trim(),
           description: editForm.description.trim(),
           enabled: editForm.enabled ? '1' : '0',
+          hidden: editForm.hidden,
         }),
       });
       if (!resp.ok) {
@@ -824,6 +826,43 @@ export function NetworkAliasesTab({
                         ),
                       },
                       {
+                        key: 'hidden',
+                        label: 'Visibility',
+                        sortable: true,
+                        headerClassName: "text-center",
+                        render: (a: NetworkAlias) => (
+                          <div className="flex justify-center">
+                            {a.hidden ? (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="text-xs px-1.5 py-0.5 rounded-md bg-gray-100 text-gray-600 border border-gray-300 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-600 cursor-help">
+                                      Hidden
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    Not included in network management interface
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            ) : (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="text-xs px-1.5 py-0.5 rounded-md bg-green-100 text-green-800 border border-green-700 cursor-help">
+                                      Visible
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    Included in network management interface
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            )}
+                          </div>
+                        ),
+                      },
+                      {
                         key: 'actions',
                         label: 'Actions',
                         sortable: false,
@@ -953,7 +992,8 @@ export function NetworkAliasesTab({
               editForm.name === editingAlias?.name &&
               editForm.content === editingAlias?.content &&
               editForm.description === (editingAlias?.description ?? '') &&
-              editForm.enabled === (editingAlias?.enabled === '1')
+              editForm.enabled === (editingAlias?.enabled === '1') &&
+              editForm.hidden === (editingAlias?.hidden ?? false)
             )}>
               {isEditSubmitting && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
               Save
@@ -1117,6 +1157,14 @@ function AliasForm({
           onCheckedChange={checked => onChange({ enabled: checked })}
         />
         <Label htmlFor="alias-enabled">Enabled</Label>
+      </div>
+      <div className="flex items-center gap-2">
+        <Switch
+          id="alias-hidden"
+          checked={form.hidden}
+          onCheckedChange={checked => onChange({ hidden: checked })}
+        />
+        <Label htmlFor="alias-hidden">Hide</Label>
       </div>
     </div>
   );

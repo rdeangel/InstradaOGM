@@ -263,10 +263,10 @@ export function ScheduleForm({
     fetch('/api/opnsense/network-aliases')
       .then(r => r.json())
       .then(data => {
-        const aliases: Array<{ uuid: string; name: string; content: string; description?: string }> =
+        const aliases: Array<{ uuid: string; name: string; content: string; description?: string; hidden?: boolean }> =
           Array.isArray(data) ? data : (data.aliases ?? []);
         setNetworkAliasOptions(
-          aliases.map(a => ({ value: a.uuid, label: a.name, content: a.content ?? '' })),
+          aliases.filter(a => !a.hidden).map(a => ({ value: a.uuid, label: a.name, content: a.content ?? '' })),
         );
       })
       .catch(() => setNetworkAliasOptions([]))

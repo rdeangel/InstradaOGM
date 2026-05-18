@@ -44,12 +44,22 @@ export async function POST(request: Request, { params }: { params: Promise<{ uui
         return NextResponse.json({ error: 'Network group not found' }, { status: 404 });
       }
 
-      const skipped: { uuid: string; reason: 'not-found' | 'wrong-type' }[] = [];
+      const skipped: { uuid: string; reason: 'not-found' | 'wrong-type' | 'hidden' }[] = [];
       const addedEntries: { uuid: string; name: string }[] = [];
       const removedEntries: { uuid: string; name: string }[] = [];
 
+      const allAliasUuids = [...new Set([...toAdd, ...toRemove])];
+      const hiddenSettings = await prisma.networkAliasDisplaySettings.findMany({
+        where: { opnsenseAliasUuid: { in: allAliasUuids }, hidden: true },
+      });
+      const hiddenUuids = new Set(hiddenSettings.map(s => s.opnsenseAliasUuid));
+
       // Resolve UUIDs to names
       const resolveUuid = async (aliasUuid: string): Promise<{ name: string } | null> => {
+        if (hiddenUuids.has(aliasUuid)) {
+          skipped.push({ uuid: aliasUuid, reason: 'hidden' });
+          return null;
+        }
         // eslint-disable-next-line security/detect-object-injection
         const alias = aliasMap[aliasUuid];
         if (!alias) {
@@ -78,6 +88,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ uui
       }
 
       for (const aliasUuid of toRemove) {
+        if (hiddenUuids.has(aliasUuid)) { skipped.push({ uuid: aliasUuid, reason: 'hidden' }); continue; }
         // eslint-disable-next-line security/detect-object-injection
         const alias = aliasMap[aliasUuid];
         if (!alias) { skipped.push({ uuid: aliasUuid, reason: 'not-found' }); continue; }

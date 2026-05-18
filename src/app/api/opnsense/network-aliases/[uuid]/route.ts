@@ -30,7 +30,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ uuid
 
       const { uuid } = await params;
 
-      const body: { name: string; content: string; description?: string; enabled?: '0' | '1' } = await request.json();
+      const body: { name: string; content: string; description?: string; enabled?: '0' | '1'; hidden?: boolean } = await request.json();
 
       // Server-side name validation (match host-alias rules)
       const trimmedName = body.name?.trim();
@@ -80,6 +80,14 @@ export async function PUT(request: Request, { params }: { params: Promise<{ uuid
         enabled: body.enabled ?? '1',
       });
       await reconfigureAliases();
+
+      if (body.hidden !== undefined) {
+        await prisma.networkAliasDisplaySettings.upsert({
+          where: { opnsenseAliasUuid: uuid },
+          create: { opnsenseAliasUuid: uuid, hidden: body.hidden },
+          update: { hidden: body.hidden },
+        });
+      }
 
       await logApiAccess(auth, 'NETWORK_ALIAS_UPDATE_SUCCESS', {
         uuid, oldName, newName: trimmedName,
@@ -145,6 +153,8 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ u
 
       await deleteAliasItem(uuid);
       await reconfigureAliases();
+
+      await prisma.networkAliasDisplaySettings.deleteMany({ where: { opnsenseAliasUuid: uuid } });
 
       await logApiAccess(auth, 'NETWORK_ALIAS_DELETE_SUCCESS', { uuid, name: aliasName }, request);
 
