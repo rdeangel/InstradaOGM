@@ -9,6 +9,17 @@ All notable changes to the InstradaOGM project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.2] - 2026-05-18
+
+### ✨ Features
+- feat(db): add network alias visibility overlay ([7d9966a](https://github.com/rdeangel/InstradaOGM/commit/7d9966a))
+
+### 📚 Documentation
+- docs(network): update documentation for alias visibility feature ([c108d6b](https://github.com/rdeangel/InstradaOGM/commit/c108d6b))
+
+### 📝 Chore
+- chore: prepare release v1.2.2 ([9a2a2bf](https://github.com/rdeangel/InstradaOGM/commit/9a2a2bf))
+
 ## [1.2.1] - 2026-05-14
 
 ### ✨ Features
