@@ -118,8 +118,8 @@ export function DuplicateAliasesModal({ isOpen, onOpenChange, results, onRemoveA
       </AlertDialogContent>
     </AlertDialog>
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
+      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
+        <DialogHeader className="shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <ScanSearch className="h-5 w-5" />
             Duplicate Check Results
@@ -130,7 +130,7 @@ export function DuplicateAliasesModal({ isOpen, onOpenChange, results, onRemoveA
         </DialogHeader>
 
         {results.length === 0 || totalRemaining === 0 ? (
-          <div className="flex flex-col items-center justify-center py-8 gap-3 text-center">
+          <div className="flex flex-col items-center justify-center py-8 gap-3 text-center shrink-0">
             <CheckCircle2 className="h-12 w-12 text-green-500" />
             <p className="text-lg font-medium">{totalRemoved > 0 ? 'All duplicates resolved' : 'No duplicates found'}</p>
             <p className="text-sm text-muted-foreground">
@@ -140,8 +140,8 @@ export function DuplicateAliasesModal({ isOpen, onOpenChange, results, onRemoveA
             </p>
           </div>
         ) : (
-          <div className="space-y-1">
-            <div className="flex items-center gap-2 mb-3 text-sm text-muted-foreground">
+          <div className="flex flex-col overflow-hidden min-h-0 flex-1 space-y-1">
+            <div className="flex items-center gap-2 mb-3 text-sm text-muted-foreground shrink-0">
               <AlertTriangle className="h-4 w-4 text-yellow-500" />
               <span>
                 <span className="font-semibold text-foreground">{totalRemaining}</span> duplicate group{totalRemaining !== 1 ? 's' : ''} remaining
@@ -151,7 +151,7 @@ export function DuplicateAliasesModal({ isOpen, onOpenChange, results, onRemoveA
               </span>
             </div>
 
-            <ScrollArea className="max-h-[460px] pr-3">
+            <div className="overflow-y-auto pr-3 flex-1 min-h-0 max-h-[60vh]">
               <div className="space-y-4">
                 {ipDuplicates.length > 0 && (
                   <div className="space-y-2">
@@ -203,7 +203,7 @@ export function DuplicateAliasesModal({ isOpen, onOpenChange, results, onRemoveA
                   </div>
                 )}
               </div>
-            </ScrollArea>
+            </div>
           </div>
         )}
       </DialogContent>
