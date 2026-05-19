@@ -9,6 +9,14 @@ All notable changes to the InstradaOGM project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.3] - 2026-05-19
+
+### 🎨 Style
+- style(ui): improve layout and scrolling in DuplicateAliasesModal ([e3b2778](https://github.com/rdeangel/InstradaOGM/commit/e3b2778))
+
+### 📝 Chore
+- chore: prepare release v1.2.3 ([a743e60](https://github.com/rdeangel/InstradaOGM/commit/a743e60))
+
 ## [1.2.2] - 2026-05-18
 
 ### ✨ Features
