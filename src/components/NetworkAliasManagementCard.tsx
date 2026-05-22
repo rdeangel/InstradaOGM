@@ -80,7 +80,14 @@ const NetworkAliasManagementCard = forwardRef<NetworkAliasManagementCardHandles,
   const [aliases, setAliases] = useState<NetworkAlias[]>(() => {
     try {
       const cached = localStorage.getItem('network-aliases-cache');
-      if (cached) return JSON.parse(cached);
+      if (!cached) return [];
+      const parsed: NetworkAlias[] = JSON.parse(cached);
+      const hiddenRaw = localStorage.getItem('network-aliases-hidden-uuids');
+      if (hiddenRaw) {
+        const hiddenSet = new Set<string>(JSON.parse(hiddenRaw));
+        if (hiddenSet.size > 0) return parsed.filter(a => !hiddenSet.has(a.uuid));
+      }
+      return parsed;
     } catch {}
     return [];
   });
@@ -95,6 +102,23 @@ const NetworkAliasManagementCard = forwardRef<NetworkAliasManagementCardHandles,
       }
     } catch {}
   }, [aliases]);
+
+  // Fast local-DB fetch to keep the hidden-UUIDs cache fresh and immediately
+  // strip any hidden aliases from the stale main cache before the full fetch returns.
+  useEffect(() => {
+    fetch('/api/user/network-aliases/hidden', { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : { hiddenUuids: [] })
+      .then(({ hiddenUuids }: { hiddenUuids: string[] }) => {
+        try {
+          localStorage.setItem('network-aliases-hidden-uuids', JSON.stringify(hiddenUuids));
+        } catch {}
+        if (hiddenUuids.length > 0) {
+          const hiddenSet = new Set(hiddenUuids);
+          setAliases(prev => prev.filter(a => !hiddenSet.has(a.uuid)));
+        }
+      })
+      .catch(() => {});
+  }, []);
   const [error, setError] = useState<string | null>(null);
   const [extendedDetails, setExtendedDetails] = useState<{
     lastAssignment: LastAssignmentData | null;
