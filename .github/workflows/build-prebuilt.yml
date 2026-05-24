@@ -36,7 +36,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '23'
+          node-version: '24'
       
       - name: Switch to ${{ matrix.db_type }} schema
         run: npm run db:switch:${{ matrix.db_type }}
@@ -92,7 +92,7 @@ jobs:
           docker run --rm --platform linux/arm64 \
             -v ${{ github.workspace }}:/app \
             -w /app \
-            node:23-slim \
+            node:24-slim \
             bash -c "
               apt-get update && apt-get install -y python3 make g++ git && \
               npm run db:switch:${{ matrix.db_type }} && \

@@ -24,7 +24,7 @@ REPO_OWNER="rdeangel"
 REPO_NAME="InstradaOGM"
 INSTALL_DIR="/opt/instradaogm"
 DB_TYPE="sqlite"
-NODE_VERSION="23"
+NODE_VERSION="24"
 SERVICE_NAME="instradaogm"
 LOG_FILE="/var/log/instradaogm-install.log"
 
@@ -191,7 +191,7 @@ setup_nodejs() {
         fi
     fi
     
-    # Install Node.js v23 using nvm
+    # Install Node.js v24 using nvm
     msg_info "Installing Node.js v$NODE_VERSION with nvm..."
     echo "  This may take a minute..." >&2
     if ! nvm install "$NODE_VERSION" >> "$LOG_FILE" 2>&1; then
@@ -1110,7 +1110,7 @@ Requirements:
 
 What this script does:
     1. Detects system architecture
-    2. Installs required dependencies (Node.js v23, sqlite3, etc.)
+    2. Installs required dependencies (Node.js v24, sqlite3, etc.)
     3. Downloads prebuilt package from GitHub
     4. Extracts and installs to /opt/instradaogm
     5. Configures environment variables

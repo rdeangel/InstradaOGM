@@ -3,7 +3,7 @@
 # ============================================
 
 # 1. Base image with minimal system dependencies
-FROM node:23-alpine AS base
+FROM node:24-alpine AS base
 
 WORKDIR /app
 
@@ -20,8 +20,9 @@ ARG PRISMA_SCHEMA_FILE=schema.postgres.prisma
 COPY package.json package-lock.json* ./
 COPY prisma/${PRISMA_SCHEMA_FILE} ./prisma/schema.prisma
 
-# Pin npm to v11 to match the committed lockfile. node:23-alpine ships npm 10, which rejects the
-# platform optional-dependency layout npm 11 writes (e.g. esbuild/lightningcss/@next-swc variants).
+# Pin npm to v11 to match the committed lockfile. node:24-alpine already ships npm 11, but the
+# explicit pin guarantees the major matches the platform optional-dependency layout written by
+# npm 11 (e.g. esbuild/lightningcss/@next-swc variants), independent of the base image's bundled npm.
 # Install production dependencies only
 RUN npm install -g npm@11 && \
     npm ci --omit=dev && \
@@ -118,8 +119,8 @@ RUN addgroup -g ${NODE_GID} -S nodejs && \
 RUN npm install --omit=dev \
     prisma@6.18.0 \
     tsx@4.16.2 \
-    bcryptjs@2.4.3 \
-    dotenv@16.5.0 && \
+    bcryptjs@3.0.3 \
+    dotenv@17.4.2 && \
     rm -rf /root/.npm && \
     chown -R nextjs:nodejs /app/node_modules
 

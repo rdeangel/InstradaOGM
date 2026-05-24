@@ -91,13 +91,13 @@ curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
 # Reload shell configuration
 source ~/.bashrc  # or source ~/.zshrc for zsh
 
-# Install Node.js 23
-nvm install 23
-nvm use 23
-nvm alias default 23
+# Install Node.js 24
+nvm install 24
+nvm use 24
+nvm alias default 24
 
 # Verify installation
-node --version  # Should show v23.x.x
+node --version  # Should show v24.x.x
 npm --version
 ```
 </details>
@@ -109,8 +109,8 @@ npm --version
 2. Open a new Command Prompt or PowerShell as Administrator
 3. Run:
 ```bash
-nvm install 23
-nvm use 23
+nvm install 24
+nvm use 24
 
 # Verify
 node --version
@@ -327,13 +327,13 @@ curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
 # Reload shell
 source ~/.bashrc  # or source ~/.zshrc for zsh
 
-# Install Node.js 23
-nvm install 23
-nvm use 23
-nvm alias default 23
+# Install Node.js 24
+nvm install 24
+nvm use 24
+nvm alias default 24
 
 # Verify
-node --version  # Should show v23.x.x
+node --version  # Should show v24.x.x
 ```
 </details>
 

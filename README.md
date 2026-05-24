@@ -515,7 +515,7 @@ sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/rdeangel/InstradaOG
 ```
 
 **What it does:**
-- ✅ Automatically installs all dependencies (Node.js v23, SQLite, etc.)
+- ✅ Automatically installs all dependencies (Node.js v24, SQLite, etc.)
 - ✅ Downloads and installs the latest InstradaOGM release
 - ✅ Sets up systemd service for automatic startup
 - ✅ Guides you through OPNsense API configuration

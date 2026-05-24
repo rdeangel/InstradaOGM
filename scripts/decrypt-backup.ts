@@ -3,7 +3,7 @@ import path from 'path';
 import dotenv from 'dotenv';
 
 // Load environment variables from .env
-dotenv.config();
+dotenv.config({ quiet: true });
 
 async function decryptBackupFile() {
   const args = process.argv.slice(2);

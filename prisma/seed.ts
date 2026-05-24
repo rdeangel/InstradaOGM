@@ -11,7 +11,7 @@ for (const file of envFiles) {
   const filePath = path.join(process.cwd(), file);
   // eslint-disable-next-line security/detect-non-literal-fs-filename
   if (fs.existsSync(filePath)) {
-    dotenv.config({ path: filePath });
+    dotenv.config({ path: filePath, quiet: true });
     break; // Stop after finding the highest priority file
   }
 }
