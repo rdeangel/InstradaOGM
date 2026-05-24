@@ -109,3 +109,6 @@ internal/
 .test-results/
 
 .openc*
+
+# Firecrawl cache
+.firecrawl*
