@@ -99,6 +99,7 @@ interface DeviceManagementCardProps {
   isVpnRestarting: boolean; // New prop for VPN restart loading state
   refetchVpnStatuses: (inPlace?: boolean, forceRefresh?: boolean) => Promise<void>; // New prop for refreshing VPN statuses with forceRefresh support
   refreshGroups?: (inPlace?: boolean) => Promise<void>; // New prop for refreshing groups in-place
+  refreshSelectedDeviceDetails?: () => Promise<void>; // Refresh the currently selected device's group membership/details
   onClearDeviceCache?: (deviceUuid: string) => void; // New prop for clearing device cache after rename
   layoutMode?: 'stacked' | 'side-by-side'; // New prop for layout mode
   onFetchExtendedDetailsReady?: (fetchFn: (forceRefresh?: boolean) => Promise<void>) => void; // New prop to pass fetchExtendedDetails to parent
@@ -125,6 +126,7 @@ const DeviceManagementCard = forwardRef<DeviceManagementCardHandles, DeviceManag
   selectedDeviceUuid,
   refetchVpnStatuses,
   refreshGroups,
+  refreshSelectedDeviceDetails,
   onClearDeviceCache,
   layoutMode,
   onFetchExtendedDetailsReady,
@@ -1206,6 +1208,12 @@ const DeviceManagementCard = forwardRef<DeviceManagementCardHandles, DeviceManag
                           // Only refresh groups if the function is provided
                           if (refreshGroups) {
                             refreshPromises.push(refreshGroups(true)); // Refresh groups in-place
+                          }
+
+                          // Refresh the selected device's group membership so the
+                          // membership panel reflects externally-made changes
+                          if (refreshSelectedDeviceDetails) {
+                            refreshPromises.push(refreshSelectedDeviceDetails());
                           }
 
                           await Promise.all(refreshPromises);

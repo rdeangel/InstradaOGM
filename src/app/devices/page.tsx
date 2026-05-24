@@ -13,6 +13,7 @@ import { useRouter } from 'next/navigation';
 import { useIsMobile } from '@/hooks/use-mobile';
 import useResizeObserver from '@/hooks/useResizeObserver'; // Import the new hook
 import { logger } from '@/lib/logger'; // Import logger
+import { resolveDeviceToRefresh } from '@/lib/device-refresh';
 
 import { AppFooter } from '@/components/layout/AppFooter';
 import { AppHeader } from '@/components/layout/AppHeader';
@@ -189,6 +190,9 @@ export default function UserDeviceAccessPage() {
   // NEW: Track the current operation ID to prevent stale updates
   const currentOperationIdRef = useRef<string>('');
   const currentSelectedDeviceRef = useRef<string | null>(null);
+  // Holds the latest selected device object so focus/manual refresh can refetch its
+  // membership even when the details cache misses (avoids stale membership panel).
+  const currentSelectedDeviceObjRef = useRef<SelectedDevice | null>(null);
 
   // Refs for focus event handling
   const focusTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -256,11 +260,13 @@ export default function UserDeviceAccessPage() {
       // Clear operation ID when device changes
       currentOperationIdRef.current = '';
       currentSelectedDeviceRef.current = selectedDevice.uuid;
+      currentSelectedDeviceObjRef.current = selectedDevice;
 
     } else {
       // Clear operation ID when no device is selected
       currentOperationIdRef.current = '';
       currentSelectedDeviceRef.current = null;
+      currentSelectedDeviceObjRef.current = null;
     }
   }, [selectedDevice, deviceGroupIds, devicePreservedHostnames, setDeviceGroupIdsState, setDevicePreservedHostname, setDeviceDetails]);
 
@@ -547,6 +553,20 @@ export default function UserDeviceAccessPage() {
     }
   }, [toast, session?.user?.role, setDeviceDetails, setDeviceGroupIdsState, setDevicePreservedHostname, showErrorIfNotSuppressed]);
 
+  // Refresh the currently selected device's membership/details on demand (manual refresh icon).
+  // Resolves the device from cache or the live selection so it works regardless of cache state.
+  const refreshCurrentSelectedDeviceDetails = useCallback(async () => {
+    const uuid = currentSelectedDeviceRef.current;
+    const deviceToRefresh = resolveDeviceToRefresh(
+      uuid,
+      uuid ? getDeviceDetails(uuid) : undefined,
+      currentSelectedDeviceObjRef.current,
+    );
+    if (deviceToRefresh) {
+      await refreshSelectedDeviceDetails(deviceToRefresh);
+    }
+  }, [getDeviceDetails, refreshSelectedDeviceDetails]);
+
   // Effect to refresh data when the window gains focus or visibility changes (e.g., switching tabs back)
   useEffect(() => {
     // Common refresh function used by both focus and visibilitychange events
@@ -610,12 +630,17 @@ export default function UserDeviceAccessPage() {
         // Use the ref to get the current selected device to avoid stale closures
         const currentSelectedDeviceUuid = currentSelectedDeviceRef.current;
         if (currentSelectedDeviceUuid && refreshFunctionsRef.current.refreshSelectedDeviceDetails) {
-          // Find the device in the cache to pass to the refresh function
-          const currentDeviceDetails = getDeviceDetails(currentSelectedDeviceUuid);
-          if (currentDeviceDetails) {
-            refreshPromises.push(refreshFunctionsRef.current.refreshSelectedDeviceDetails(currentDeviceDetails));
+          // Prefer cached details, but fall back to the live selected device so a cache
+          // miss never skips the refresh (which left the membership panel stale).
+          const deviceToRefresh = resolveDeviceToRefresh(
+            currentSelectedDeviceUuid,
+            getDeviceDetails(currentSelectedDeviceUuid),
+            currentSelectedDeviceObjRef.current,
+          );
+          if (deviceToRefresh) {
+            refreshPromises.push(refreshFunctionsRef.current.refreshSelectedDeviceDetails(deviceToRefresh));
           } else {
-            logger.debug('Could not find device details in cache for refresh:', currentSelectedDeviceUuid);
+            logger.debug('No selected device available to refresh details for:', currentSelectedDeviceUuid);
           }
         }
 
@@ -1559,6 +1584,7 @@ export default function UserDeviceAccessPage() {
                   isVpnRestarting={isVpnRestarting} // Pass the new prop
                   refetchVpnStatuses={refreshVpnStatuses} // Pass the refetchVpnStatuses function
                   refreshGroups={refreshGroups} // Pass the refreshGroups function
+                  refreshSelectedDeviceDetails={refreshCurrentSelectedDeviceDetails} // Refresh selected device membership on manual refresh
                   layoutMode={layoutMode}
                   onFetchExtendedDetailsReady={(fetchFn) => { fetchExtendedDetailsRef.current = fetchFn; }}
                 />
