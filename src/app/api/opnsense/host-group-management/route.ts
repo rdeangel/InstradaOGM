@@ -15,6 +15,13 @@ import {
   addAliasItem,
   parseGroupContent
 } from '@/lib/opnsense-api';
+import {
+  buildBatchSnapshot,
+  resolveGroupFromSnapshot,
+  resolveHostAliasFromSnapshot,
+  findGroupsContainingAlias,
+  type BatchSnapshot,
+} from '@/lib/host-group-batch';
 import * as ipaddr from 'ipaddr.js';
 import { prisma } from '@/lib/prisma';
 import type { NetworkGroup } from '@/types/opnsense';
@@ -1543,15 +1550,29 @@ async function handleBatchOperation(
   // Resolve the caller's permissions once and reuse the validator for every batch item.
   const validator = await buildPermissionValidator(userId, authMethod, clientIp, allowedNetworks, selfServiceEnabled);
 
+  // Take a SINGLE OPNsense export snapshot and resolve every item in memory. This replaces the
+  // previous per-item exports (host-alias resolution, group resolution, per-group lookup, and the
+  // moveFromExisting scan), which turned an N-item batch into hundreds of sequential exports.
+  // Built only when there are hostAliases/groups to resolve; reused for the audit log below.
+  let snapshot: BatchSnapshot | null = null;
+
   // Handle hostAliases and groups combination
   if (hostAliases && groups) {
+    const batchSnapshotExport = await exportAliases();
+    const disabledGroupRows = await prisma.globallyDisabledGroup.findMany({ select: { opnsenseUuid: true } });
+    snapshot = buildBatchSnapshot({
+      exportResponse: batchSnapshotExport,
+      groupDisplays: opnsenseGroupDisplays,
+      disabledGroupUuids: disabledGroupRows.map(r => r.opnsenseUuid),
+    });
+
     for (const hostAlias of hostAliases) {
-      // Resolve host alias
-      let resolvedHostAlias = await resolveHostAliasIdentifier(
-        hostAlias.ipAddress,
-        hostAlias.hostAliasName,
-        hostAlias.hostAliasHostName
-      );
+      // Resolve host alias against the snapshot
+      let resolvedHostAlias = resolveHostAliasFromSnapshot(snapshot, {
+        ipAddress: hostAlias.ipAddress,
+        hostAliasName: hostAlias.hostAliasName,
+        hostAliasHostName: hostAlias.hostAliasHostName,
+      });
 
       if (!resolvedHostAlias) {
         // For unassign operations, we don't create host aliases
@@ -1773,11 +1794,11 @@ async function handleBatchOperation(
 
       // Process each group for this host alias
       for (const group of groups) {
-        const resolvedGroup = await resolveGroupIdentifier(
-          group.groupId,
-          group.groupName,
-          group.groupFriendlyName
-        );
+        const resolvedGroup = resolveGroupFromSnapshot(snapshot, {
+          groupId: group.groupId,
+          groupName: group.groupName,
+          groupFriendlyName: group.groupFriendlyName,
+        });
 
         if (!resolvedGroup) {
           operationResults.push({
@@ -1865,50 +1886,32 @@ async function handleBatchOperation(
           // Handle moving from existing groups if requested
           if (moveFromExisting) {
             try {
-              // Get all network groups to find which ones contain this host alias
-              const allAliasesResponse = await exportAliases();
-              if (allAliasesResponse?.aliases?.alias) {
-                const allAliasDetails: OpnsenseAliasDetail[] = Object.entries(allAliasesResponse.aliases.alias)
-                  .map(([uuid, detail]) => ({ ...detail, uuid }));
+              // Find all network groups (from the snapshot) that contain this host alias, excluding
+              // the target group, optionally restricted to SingleSelect groups.
+              const groupsContainingHostAlias = findGroupsContainingAlias(snapshot, {
+                aliasName: resolvedHostAliasName,
+                excludeGroupUuid: resolvedGroupId,
+                restrictToSingleSelect: restrictRemovalToSingleSelect,
+              });
 
-                // Find all network groups that contain this host alias name
-                let groupsContainingHostAlias = allAliasDetails
-                  .filter(alias => alias.type === 'networkgroup' && alias.content)
-                  .filter(groupAlias => {
-                    const memberAliasNames = groupAlias.content.split(/\n|,/).map(name => name.trim()).filter(Boolean);
-                    return memberAliasNames.includes(resolvedHostAliasName);
-                  })
-                  .filter(groupAlias => groupAlias.uuid !== resolvedGroupId); // Exclude target group
+              logger.debug(`Found ${groupsContainingHostAlias.length} groups containing host alias "${resolvedHostAliasName}":`,
+                groupsContainingHostAlias.map(g => g.name));
 
-                // Optional: restrict removals to SingleSelect groups only
-                if (restrictRemovalToSingleSelect) {
-                  groupsContainingHostAlias = groupsContainingHostAlias.filter(groupAlias => {
-                    const displayInfo = opnsenseGroupDisplays.find(d => d.opnsenseUuid.toLowerCase() === (groupAlias.uuid || '').toLowerCase());
-                    const groupType = displayInfo?.groupType || 'SingleSelect';
-                    return groupType === 'SingleSelect';
-                  });
+              // Track which groups need this host alias removed
+              for (const currentGroup of groupsContainingHostAlias) {
+                if (!groupsToRemoveFrom.has(currentGroup.uuid)) {
+                  groupsToRemoveFrom.set(currentGroup.uuid, new Set());
                 }
+                groupsToRemoveFrom.get(currentGroup.uuid)!.add(resolvedHostAliasName);
 
-                logger.debug(`Found ${groupsContainingHostAlias.length} groups containing host alias "${resolvedHostAliasName}":`,
-                  groupsContainingHostAlias.map(g => g.name));
+                // Track removed groups per host for response/notifications
+                const existingList = removedFromGroupsByHost.get(resolvedHostAliasName) || [];
+                removedFromGroupsByHost.set(resolvedHostAliasName, [
+                  ...existingList,
+                  { id: currentGroup.uuid, name: currentGroup.name, friendlyName: currentGroup.friendlyName || null, groupType: currentGroup.groupType || undefined }
+                ]);
 
-                // Track which groups need this host alias removed
-                for (const currentGroup of groupsContainingHostAlias) {
-                  if (!groupsToRemoveFrom.has(currentGroup.uuid!)) { // uuid can be undefined for NetworkGroup
-                    groupsToRemoveFrom.set(currentGroup.uuid!, new Set());
-                  }
-                  groupsToRemoveFrom.get(currentGroup.uuid!)!.add(resolvedHostAliasName);
-
-                  // Track removed groups per host for response/notifications
-                  const existingList = removedFromGroupsByHost.get(resolvedHostAliasName) || [];
-                  const groupDisplayInfo = opnsenseGroupDisplays.find(d => d.opnsenseUuid.toLowerCase() === (currentGroup.uuid || '').toLowerCase());
-                  removedFromGroupsByHost.set(resolvedHostAliasName, [
-                    ...existingList,
-                    { id: currentGroup.uuid || '', name: currentGroup.name, friendlyName: groupDisplayInfo?.friendlyName || null, groupType: groupDisplayInfo?.groupType || undefined }
-                  ]);
-
-                  logger.debug(`Tracked removal of "${resolvedHostAliasName}" from group "${currentGroup.name}" (${currentGroup.uuid})`);
-                }
+                logger.debug(`Tracked removal of "${resolvedHostAliasName}" from group "${currentGroup.name}" (${currentGroup.uuid})`);
               }
             } catch (error) {
               logger.error(`Error checking current group membership for host alias "${resolvedHostAliasName}":`, error);
@@ -1916,7 +1919,7 @@ async function handleBatchOperation(
           }
 
           // Add to target group - track content changes to avoid overwriting
-          const targetGroup = await getNetworkGroupById(resolvedGroupId);
+          const targetGroup = snapshot.groupByUuid.get(resolvedGroupId);
           if (targetGroup) {
             // Get the current content for this group (either from original or from our tracked changes)
             let currentContent: string[];
@@ -1955,7 +1958,7 @@ async function handleBatchOperation(
           }
         } else if (operationType === 'unassign') {
           // Handle unassign operation
-          const targetGroup = await getNetworkGroupById(resolvedGroupId);
+          const targetGroup = snapshot.groupByUuid.get(resolvedGroupId);
           if (targetGroup) {
             // Get the current content for this group (either from original or from our tracked changes)
             let currentContent: string[];
@@ -2004,7 +2007,7 @@ async function handleBatchOperation(
 
     // Now add the final group update operations based on our tracked changes
     for (const [groupId, hostAliases] of groupContentChanges) {
-      const targetGroup = await getNetworkGroupById(groupId);
+      const targetGroup = snapshot.groupByUuid.get(groupId);
       if (targetGroup) {
         const newContent = Array.from(hostAliases).join('\n');
 
@@ -2034,7 +2037,7 @@ async function handleBatchOperation(
       logger.debug(`Processing ${groupsToRemoveFrom.size} groups that need host aliases removed for moveFromExisting`);
 
       for (const [groupId, hostAliasesToRemove] of groupsToRemoveFrom) {
-        const targetGroup = await getNetworkGroupById(groupId);
+        const targetGroup = snapshot.groupByUuid.get(groupId);
         if (targetGroup) {
           // Get current content and deduplicate defensively (handles corrupted existing data)
           const currentContent = parseGroupContent(targetGroup.rawContent, targetGroup.name);
@@ -2229,7 +2232,10 @@ async function handleBatchOperation(
       let removedFromGroupsForAudit: { id: string; name: string; friendlyName: string | null }[] | undefined = undefined;
       if (moveFromExisting && restrictRemovalToSingleSelect && hostAliases?.length === 1 && groups?.length === 1) {
         const onlyHost = hostAliases[0];
-        const aliasNameForAudit = (await resolveHostAliasIdentifier(onlyHost.ipAddress, onlyHost.hostAliasName, onlyHost.hostAliasHostName))?.hostAliasName;
+        const aliasNameForAudit = (snapshot
+          ? resolveHostAliasFromSnapshot(snapshot, { ipAddress: onlyHost.ipAddress, hostAliasName: onlyHost.hostAliasName, hostAliasHostName: onlyHost.hostAliasHostName })
+          : await resolveHostAliasIdentifier(onlyHost.ipAddress, onlyHost.hostAliasName, onlyHost.hostAliasHostName)
+        )?.hostAliasName;
         if (aliasNameForAudit) {
           removedFromGroupsForAudit = removedFromGroupsByHost.get(aliasNameForAudit);
         }
@@ -2246,7 +2252,9 @@ async function handleBatchOperation(
       // Resolve groups to get complete information for audit log
       const resolvedGroupsForAudit = await Promise.all(
         (groups || []).map(async (g: GroupInput) => {
-          const resolved = await resolveGroupIdentifier(g.groupId, g.groupName, g.groupFriendlyName);
+          const resolved = snapshot
+            ? resolveGroupFromSnapshot(snapshot, { groupId: g.groupId, groupName: g.groupName, groupFriendlyName: g.groupFriendlyName })
+            : await resolveGroupIdentifier(g.groupId, g.groupName, g.groupFriendlyName);
           if (resolved) {
             const displayInfo = opnsenseGroupDisplays.find(d => d.opnsenseUuid === resolved.groupId);
             return {
@@ -2287,7 +2295,10 @@ async function handleBatchOperation(
       let removedFromGroups: { id: string; name: string; friendlyName: string | null }[] | undefined = undefined;
       if (moveFromExisting && restrictRemovalToSingleSelect && hostAliases?.length === 1 && groups?.length === 1) {
         const onlyHost = hostAliases[0];
-        const aliasName = (await resolveHostAliasIdentifier(onlyHost.ipAddress, onlyHost.hostAliasName, onlyHost.hostAliasHostName))?.hostAliasName;
+        const aliasName = (snapshot
+          ? resolveHostAliasFromSnapshot(snapshot, { ipAddress: onlyHost.ipAddress, hostAliasName: onlyHost.hostAliasName, hostAliasHostName: onlyHost.hostAliasHostName })
+          : await resolveHostAliasIdentifier(onlyHost.ipAddress, onlyHost.hostAliasName, onlyHost.hostAliasHostName)
+        )?.hostAliasName;
         if (aliasName) {
           removedFromGroups = removedFromGroupsByHost.get(aliasName);
         }

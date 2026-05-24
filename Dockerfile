@@ -20,8 +20,11 @@ ARG PRISMA_SCHEMA_FILE=schema.postgres.prisma
 COPY package.json package-lock.json* ./
 COPY prisma/${PRISMA_SCHEMA_FILE} ./prisma/schema.prisma
 
+# Pin npm to v11 to match the committed lockfile. node:23-alpine ships npm 10, which rejects the
+# platform optional-dependency layout npm 11 writes (e.g. esbuild/lightningcss/@next-swc variants).
 # Install production dependencies only
-RUN npm ci --omit=dev && \
+RUN npm install -g npm@11 && \
+    npm ci --omit=dev && \
     rm -rf /root/.npm
 
 # 3. Builder stage - build the application
@@ -46,7 +49,7 @@ COPY prisma/${PRISMA_MIGRATIONS_DIR} ./prisma/migrations
 # Copy seed file (needed for database initialization)
 COPY prisma/seed.ts ./prisma/seed.ts
 
-RUN npm ci && rm -rf /root/.npm
+RUN npm install -g npm@11 && npm ci && rm -rf /root/.npm
 
 # Copy source code
 # Note: This will copy all prisma files (schema.*.prisma, migrations-*/, etc.) to the builder stage,

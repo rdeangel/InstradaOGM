@@ -8,6 +8,8 @@
     "build": "prisma generate && next build",
     "start": "export $(grep -v '^#' .env.production 2>/dev/null | xargs) && npm run setup-dirs && NODE_ENV=production next start",
     "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "typecheck:pretty": "tsc --noEmit --pretty",
     "prisma:generate": "prisma generate",
@@ -130,7 +132,8 @@
     "react-grab": "^0.1.34",
     "tailwindcss": "^3.4.1",
     "tsx": "^4.16.2",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.7"
   },
   "overrides": {
     "rimraf": "5.0.7",
