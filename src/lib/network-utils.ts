@@ -309,3 +309,37 @@ export function isIpAllowedForSelfService(
 
   return { isAllowed: true, reason: 'IP is in allowed networks for self-service access' };
 }
+
+/**
+ * True when the caller is physically at the target device's own IP and that IP is permitted
+ * for self-service. This is the access an unauthenticated user gets at the same machine, so it
+ * can be granted to authenticated users too (logging in must never remove self-service access).
+ */
+export function isOwnDeviceSelfService(
+  clientIp: string | null,
+  deviceIp: string | null,
+  allowedNetworks: ValidLocalNetwork[]
+): boolean {
+  if (!clientIp || !deviceIp) return false;
+
+  const normalize = (ip: string): string | null => {
+    try {
+      let parsed = ipaddr.parse(ip.trim());
+      if (parsed.kind() === 'ipv6') {
+        const v6 = parsed as ipaddr.IPv6;
+        if (v6.isIPv4MappedAddress()) parsed = v6.toIPv4Address();
+      }
+      return parsed.toString();
+    } catch {
+      return null;
+    }
+  };
+
+  const normalizedClient = normalize(clientIp);
+  const normalizedDevice = normalize(deviceIp);
+  if (!normalizedClient || !normalizedDevice || normalizedClient !== normalizedDevice) {
+    return false;
+  }
+
+  return isIpInallowedNetworks(normalizedDevice, allowedNetworks);
+}

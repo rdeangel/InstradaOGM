@@ -54,9 +54,11 @@ When a host is in unmanaged groups:
 - **SUPER_ADMIN**: ✅ Can check unmanaged groups with user-specific filters applied
 
 **Role Access:**
-- **USER**: ✅ Can check unmanaged groups for any host groups, with user-specific filters applied to results
-- **ADMIN**: ✅ Can check unmanaged groups for any host groups, with user-specific filters applied to results
-- **SUPER_ADMIN**: ✅ Can check unmanaged groups for any host groups, with user-specific filters applied to results
+- **USER**: ✅ Can check unmanaged groups for any host groups; user-specific filters are applied **except** in the self-service view (see below)
+- **ADMIN**: ✅ Can check unmanaged groups for any host groups; user-specific filters are applied **except** in the self-service view
+- **SUPER_ADMIN**: ✅ Can check unmanaged groups for any host groups; user-specific filters are applied **except** in the self-service view
+
+> **Self-service view:** When the caller qualifies for self-service — the client IP is within the self-service `allowedNetworks` and **Remove Self-Service Page** is not enabled — unmanaged status is evaluated **without** the caller's per-user group filters (global filters and globally-disabled groups still apply). This matches the unauthenticated experience and the self-service grant used by `POST /api/opnsense/host-group-management`, so an authenticated self-service user is not locked out by their own per-user filters right after assigning their own device. The `userId` in the request body is ignored in this case.
 
 **Example Responses:**
 
@@ -106,9 +108,9 @@ When a host is in unmanaged groups:
 **Authentication**: Optional (supports both authenticated and unauthenticated requests)
 
 **Role Access:**
-- **USER**: ✅ Can check unmanaged groups with user-specific filters applied
-- **ADMIN**: ✅ Can check unmanaged groups with user-specific filters applied
-- **SUPER_ADMIN**: ✅ Can check unmanaged groups with user-specific filters applied
+- **USER**: ✅ Can check unmanaged groups with user-specific filters applied (skipped in the self-service view)
+- **ADMIN**: ✅ Can check unmanaged groups with user-specific filters applied (skipped in the self-service view)
+- **SUPER_ADMIN**: ✅ Can check unmanaged groups with user-specific filters applied (skipped in the self-service view)
 
 **Request Body**:
 ```json
@@ -137,7 +139,7 @@ When a host is in unmanaged groups:
   - **Validation**: Must be an array of group objects
   - **Example**: `[{"id": "group-uuid", "name": "GroupName"}]`
 
-- `userId` (string, optional): User ID for context (can be null for unauthenticated requests)
+- `userId` (string, optional): User ID for context (can be null for unauthenticated requests). Only honored when it matches the authenticated session's user; **ignored in the self-service view** (see Role Access), where evaluation always uses the unauthenticated/global filter set.
   - **Validation**: String up to 255 characters
   - **Example**: `"user-123"` or `null`
 

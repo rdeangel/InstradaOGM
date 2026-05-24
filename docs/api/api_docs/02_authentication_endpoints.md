@@ -1395,7 +1395,7 @@ curl -X GET "{{SERVER_URL}}/api/user/profile" \
 ### Authentication Methods
 
 1. **Session Authentication**: Browser-based authentication using NextAuth.js sessions
-2. **API Key Authentication**: Programmatic access using Bearer tokens or X-API-Key headers
+2. **API Key Authentication**: Both `Authorization: Bearer` and `x-api-key` headers are accepted. Bearer is the recommended method; x-api-key is an equivalent alternative for tools that prefer it. Keys must be at least 32 characters, and invalid or missing keys return HTTP 401.
 3. **Dual Support**: All endpoints support both authentication methods seamlessly
 
 ### Security Features

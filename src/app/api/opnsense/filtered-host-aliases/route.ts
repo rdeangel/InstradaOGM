@@ -7,6 +7,7 @@ import type { ValidLocalNetwork } from '@/types/settings';
 import { isIpAllowedForSelfService } from '@/lib/network-utils';
 import type { OpnsenseAliasDetailFromExport } from '@/types/opnsense';
 import { toJsonArrayOrUndefined } from '@/lib/utils';
+import { resolveUserAliasPermissions } from '@/lib/user-permissions';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -82,17 +83,29 @@ export async function GET(request: Request) {
     }
 
     // Use the getFilteredHostAliases function which includes proper filtering for globally disabled network groups
-    const { displayableHostAliases, filteredCount } = await getFilteredHostAliases();
+    const { displayableHostAliases } = await getFilteredHostAliases();
 
-    return NextResponse.json({
-      displayableHostAliases: displayableHostAliases,
-      totalCount: filteredCount,
-    });
+    // Apply user permission filtering — resolve the user's permitted alias UUIDs via group memberships
+    const userId = auth.user.id;
+    const { hasWildcard, permittedAliasUuids } = await resolveUserAliasPermissions(userId);
+
+    const permittedHostAliases = hasWildcard
+      ? displayableHostAliases
+      : displayableHostAliases.filter((alias: { uuid?: string }) =>
+          typeof alias.uuid === 'string' && permittedAliasUuids.has(alias.uuid)
+        );
+
+    logger.info(`[filtered-host-aliases] User ${userId}: ${permittedHostAliases.length} of ${displayableHostAliases.length} aliases permitted (wildcard: ${hasWildcard})`);
 
     // Track usage for authenticated requests
     if (auth && auth.user) {
       await trackUsageByAuthMethod(request, auth, 200);
     }
+
+    return NextResponse.json({
+      displayableHostAliases: permittedHostAliases,
+      totalCount: permittedHostAliases.length,
+    });
   } catch (error) {
     logger.error('Error in filtered-host-aliases API:', error);
 

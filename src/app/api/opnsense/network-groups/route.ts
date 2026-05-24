@@ -10,7 +10,7 @@ import type { CustomEmoji, CustomFlag, ValidLocalNetwork } from '@/types/setting
 import type { User } from '@/types/opnsense';
 import type { OpnsenseAliasTableSizeDetail } from '@/lib/opnsense-api';
 import { toJsonArray, toJsonArrayOrUndefined } from '@/lib/utils';
-import { isIpAllowedForSelfService } from '@/lib/network-utils';
+import { isIpAllowedForSelfService, getClientIp } from '@/lib/network-utils';
 
 export async function GET(request: Request) {
   let auth: Awaited<ReturnType<typeof authenticateRequest>> | null = null;
@@ -19,7 +19,6 @@ export async function GET(request: Request) {
 
     // For unauthenticated users, validate IP is in allowed networks for self-service
     if (!auth.user) {
-      const { getClientIp } = await import('@/lib/network-utils');
       const clientIp = getClientIp(request) || '0.0.0.0';
 
       // Get global settings to check allowed networks
@@ -43,6 +42,7 @@ export async function GET(request: Request) {
     }
 
     const { searchParams } = new URL(request.url);
+    const contextParam = searchParams.get('context');
     const debugQueryParam = searchParams.get('debug');
     const includeDisabledParam = searchParams.get('includeDisabled');
     const includeAllParam = searchParams.get('includeAll');
@@ -114,9 +114,20 @@ export async function GET(request: Request) {
       })
       .filter((group): group is NetworkGroup => group !== null);
 
-    // Apply global and user-specific filters
+    // Self-service view: an authenticated user loading the self-service page (context=public) from an
+    // IP allowed for self-service should see the same network groups an unauthenticated visitor sees,
+    // not their narrower per-user device-management set. Logging in must not remove self-service visibility.
+    const allowedNetworks = toJsonArrayOrUndefined<ValidLocalNetwork>(globalSettings?.allowedNetworks) || [];
+    const clientIp = getClientIp(request) || '0.0.0.0';
+    const isSelfServiceView =
+      contextParam === 'public' &&
+      !globalSettings?.removeSelfServicePage &&
+      isIpAllowedForSelfService(clientIp, clientIp, allowedNetworks, false).isAllowed;
+
+    // Apply global and user-specific filters. Self-service views skip the per-user filters so the
+    // authenticated caller sees the unauthenticated self-service set.
     let userSpecificFilters = null;
-    if (auth.user?.id) {
+    if (auth.user?.id && !isSelfServiceView) {
       // Directly call the GET handler for user-specific group filters
       const userFiltersResponse = await getUserGroupFilters(request);
       if (userFiltersResponse.ok) {

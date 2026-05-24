@@ -28,20 +28,28 @@ export interface ApiKeyValidationResult {
  */
 export async function validateApiKey(req: NextRequest): Promise<ApiKeyValidationResult> {
   const authHeader = req.headers.get('authorization');
+  const apiKeyHeader = req.headers.get('x-api-key');
   const ipAddress = req.headers.get('x-forwarded-for') || req.headers.get('remote-addr') || 'N/A';
   const userAgent = req.headers.get('user-agent') || 'N/A';
   const apiEndpoint = new URL(req.url).pathname;
 
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  // Accept the key from either `Authorization: Bearer <key>` (primary) or `x-api-key: <key>`.
+  let apiKey: string | null = null;
+  if (authHeader?.startsWith('Bearer ')) {
+    apiKey = authHeader.substring(7); // Remove 'Bearer ' prefix
+  } else if (apiKeyHeader) {
+    // x-api-key is normally sent raw, but tolerate a stray "Bearer " prefix
+    apiKey = apiKeyHeader.startsWith('Bearer ') ? apiKeyHeader.substring(7) : apiKeyHeader;
+  }
+
+  if (!apiKey) {
     return {
       isValid: false,
-      error: 'Missing or invalid Authorization header'
+      error: 'Missing API key (use "Authorization: Bearer <key>" or "x-api-key: <key>")'
     };
   }
 
-  const apiKey = authHeader.substring(7); // Remove 'Bearer ' prefix
-
-  if (!apiKey || apiKey.length < 32) {
+  if (apiKey.length < 32) {
     return {
       isValid: false,
       error: 'Invalid API key format'

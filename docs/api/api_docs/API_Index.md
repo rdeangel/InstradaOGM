@@ -119,11 +119,20 @@ Uses cookies from a logged-in session for browser-based access:
 Uses Bearer token or X-API-Key header for programmatic access:
 
 #### Standard API Keys
+Both authentication headers are accepted for API key requests:
+
 ```bash
+# Recommended (primary method)
 -H "Authorization: Bearer ${API_KEY}"
-# OR
--H "X-API-Key: ${API_KEY}"
+
+# Alternative (for tools that prefer this format)
+-H "x-api-key: ${API_KEY}"
 ```
+
+**Key Requirements:**
+- API keys must be at least 32 characters long
+- Invalid or missing API keys return HTTP 401 (Unauthorized)
+- Either header format is functionally equivalent
 
 **Features:**
 - Named API keys with expiration dates

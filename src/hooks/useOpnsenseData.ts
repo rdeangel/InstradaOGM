@@ -294,8 +294,9 @@ export function useOpnsenseData(shouldFetch: boolean, context: 'admin' | 'user' 
         globalFilters = [];
       }
 
-      // Fetch OPNsense groups (aliases)
-      const opnsenseGroupsResponse = await fetch(aliasesApiEndpoint);
+      // Fetch OPNsense groups (aliases). Pass the context so the server can return the
+      // self-service group set (public) rather than the caller's narrower per-user set.
+      const opnsenseGroupsResponse = await fetch(`${aliasesApiEndpoint}?context=${encodeURIComponent(context)}`);
       if (!opnsenseGroupsResponse.ok) {
         const errorData = await opnsenseGroupsResponse.json();
 

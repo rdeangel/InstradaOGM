@@ -1,10 +1,165 @@
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/logger';
 import { getCaseInsensitiveMode } from '@/lib/prisma-utils';
-import { exportAliases } from '@/lib/opnsense-api';
+import { exportAliases, type OpnsenseExportResponse } from '@/lib/opnsense-api';
 import { isIpInallowedNetworks } from '@/lib/network-utils';
-import { ValidLocalNetwork } from '@/types/settings';
+import { filterNetworkGroups } from '@/lib/group-filter-utils';
+import type { NetworkGroup, User } from '@/types/opnsense';
+import type { GroupFilter, ValidLocalNetwork } from '@/types/settings';
+import type { GroupSpecificFilterSetting } from '@prisma/client';
 import { toJsonArrayOrUndefined } from '@/lib/utils';
+
+/**
+ * Resolves the local group IDs a user belongs to, combining direct memberships
+ * with groups mapped from the user's SSO/external group memberships.
+ * Shared by all permission-resolution helpers so the membership logic lives in one place.
+ */
+export async function resolveUserLocalGroupIds(userId: string): Promise<string[]> {
+  // 1. SSO/external group memberships from the user's linked accounts
+  const userAccounts = await prisma.account.findMany({
+    where: { userId },
+    select: { externalGroups: true, provider: true },
+  });
+
+  const externalGroups: { provider: string; groupName: string }[] = [];
+  userAccounts.forEach(account => {
+    if (account.externalGroups && Array.isArray(account.externalGroups)) {
+      (account.externalGroups as string[]).forEach(groupName => {
+        if (typeof groupName === 'string') {
+          externalGroups.push({ provider: account.provider, groupName });
+        }
+      });
+    }
+  });
+
+  // 2. Map SSO groups to local groups (case-insensitive provider matching)
+  const mappedLocalGroups = externalGroups.length > 0
+    ? await prisma.ssoGroupMapping.findMany({
+      where: {
+        OR: externalGroups.map(eg => ({
+          ssoProvider: { equals: eg.provider, ...getCaseInsensitiveMode() },
+          ssoGroupName: eg.groupName,
+        })),
+      },
+      select: { localGroupId: true },
+    })
+    : [];
+  const ssoLocalGroupIds = mappedLocalGroups.map(m => m.localGroupId);
+
+  // 3. Direct group memberships
+  const userWithDirectGroups = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { groups: { select: { id: true } } },
+  });
+  const directLocalGroupIds = userWithDirectGroups?.groups.map(g => g.id) || [];
+
+  return [...new Set([...ssoLocalGroupIds, ...directLocalGroupIds])];
+}
+
+/**
+ * Resolves the host-alias UUIDs a user is permitted to manage. Cheap: no OPNsense call.
+ * A null userId (unauthenticated/self-service) is treated as wildcard — those flows are
+ * gated by IP-based self-service checks instead of group permissions.
+ */
+export async function resolveUserAliasPermissions(userId: string | null): Promise<{
+  hasWildcard: boolean;
+  permittedAliasUuids: Set<string>;
+  localGroupIds: string[];
+}> {
+  if (!userId) {
+    return { hasWildcard: true, permittedAliasUuids: new Set(), localGroupIds: [] };
+  }
+
+  const localGroupIds = await resolveUserLocalGroupIds(userId);
+  if (localGroupIds.length === 0) {
+    return { hasWildcard: false, permittedAliasUuids: new Set(), localGroupIds };
+  }
+
+  const aliasPermissions = await prisma.groupHostAliasPermission.findMany({
+    where: { groupId: { in: localGroupIds } },
+    select: { opnsenseAliasUuid: true },
+  });
+  const permittedAliasUuids = new Set(aliasPermissions.map(p => p.opnsenseAliasUuid));
+
+  return { hasWildcard: permittedAliasUuids.has('*'), permittedAliasUuids, localGroupIds };
+}
+
+export interface ResolvedUserPermissions {
+  hasWildcard: boolean;
+  permittedAliasUuids: Set<string>;
+  permittedGroupUuids: Set<string>;
+  localGroupIds: string[];
+}
+
+/**
+ * Resolves both host-alias and network-group permissions for a user.
+ * Network-group visibility is resolved through the canonical filterNetworkGroups pipeline
+ * (globally-disabled groups + global filters + user-specific filters), so it matches the
+ * /api/user/devices and UI visibility model exactly.
+ *
+ * Pass allAliasesResponse to reuse an already-fetched OPNsense export and avoid a duplicate call.
+ * Wildcard users and users with no groups skip the (expensive) group resolution.
+ */
+export async function resolveUserPermissions(
+  userId: string | null,
+  allAliasesResponse?: OpnsenseExportResponse
+): Promise<ResolvedUserPermissions> {
+  // Unauthenticated/self-service — IP-based checks apply elsewhere; treat as wildcard here.
+  if (!userId) {
+    return { hasWildcard: true, permittedAliasUuids: new Set(), permittedGroupUuids: new Set(), localGroupIds: [] };
+  }
+
+  const { hasWildcard, permittedAliasUuids, localGroupIds } = await resolveUserAliasPermissions(userId);
+
+  // Wildcard short-circuits all checks; no groups means nothing is permitted anyway.
+  if (hasWildcard || localGroupIds.length === 0) {
+    return { hasWildcard, permittedAliasUuids, permittedGroupUuids: new Set(), localGroupIds };
+  }
+
+  const [globalFiltersRaw, globallyDisabledGroups, userSpecificFiltersRaw, aliasesResponse] = await Promise.all([
+    prisma.groupFilterSetting.findMany(),
+    prisma.globallyDisabledGroup.findMany(),
+    prisma.groupSpecificFilterSetting.findMany({ where: { groupId: { in: localGroupIds } } }),
+    allAliasesResponse ? Promise.resolve(allAliasesResponse) : exportAliases(),
+  ]);
+
+  const globalFilters: GroupFilter[] = globalFiltersRaw.map(f => ({ ...f, type: f.type as 'include' | 'exclude' }));
+  const userSpecificFilters: GroupSpecificFilterSetting[] = userSpecificFiltersRaw.map(f => ({
+    ...f,
+    type: f.type as 'include' | 'exclude',
+  }));
+
+  const networkGroupAliases: NetworkGroup[] = Object.entries(aliasesResponse.aliases.alias)
+    .map(([uuid, alias]) => ({ ...alias, uuid }))
+    .filter(alias => alias.type === 'networkgroup')
+    .map(alias => ({
+      id: alias.uuid || '',
+      uuid: alias.uuid || '',
+      name: alias.name,
+      description: alias.description,
+      enabled: alias.enabled === '1',
+      members: [],
+      rawContent: alias.content,
+      type: alias.type,
+      proto: alias.proto,
+      interface: alias.interface,
+      counters: alias.counters,
+      updatefreq: alias.updatefreq,
+      categories: alias.categories,
+    }));
+
+  const displayableGroups = await filterNetworkGroups(
+    networkGroupAliases,
+    globalFilters,
+    globallyDisabledGroups,
+    { id: userId } as User,
+    userSpecificFilters
+  );
+
+  const permittedGroupUuids = new Set(displayableGroups.map(g => g.uuid));
+
+  return { hasWildcard, permittedAliasUuids, permittedGroupUuids, localGroupIds };
+}
 
 
 /**

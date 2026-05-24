@@ -668,9 +668,11 @@ curl -X GET "{{SERVER_URL}}/api/opnsense/host-alias-management-admin" \
 
 **Role Access:**
 - **Unauthenticated**: ✅ Can access minimal network groups (for self-service page) - Only allowed from allowed networks
-- **USER**: ✅ Can access minimal network groups - Only sees groups they have permission for
+- **USER**: ✅ Can access minimal network groups - Sees only the groups they have permission for, **except** in the self-service view (see below), where they see the same self-service set as an unauthenticated visitor
 - **ADMIN**: ✅ Can access full network groups - Can see all groups with full details
 - **SUPER_ADMIN**: ✅ Can access full network groups + debug mode - Can see all groups with full details and raw OPNsense data
+
+> **Self-service view (`?context=public`):** The self-service page requests this endpoint with `context=public`. When the caller also qualifies for self-service — the client IP is within the self-service `allowedNetworks` and **Remove Self-Service Page** is not enabled — the response **skips the caller's per-user group filters**, returning the same self-service group set an unauthenticated visitor would see (global filters and globally-disabled groups still apply). Other contexts (e.g. the Device Management page, `context=user`) keep the caller's per-user filtering. This keeps the displayed groups consistent with what self-service assignment actually permits.
 
 **Example Responses:**
 
@@ -1553,9 +1555,11 @@ curl -X GET "{{SERVER_URL}}/api/opnsense/filtered-host-aliases?ipAddress=192.168
 
 **Role Access:**
 - **Unauthenticated**: ✅ Can check own IP membership only (when self-service enabled) - Only allowed for own IP address / ❌ 403 Forbidden (when self-service disabled)
-- **USER**: ✅ Can check own IP membership (when self-service enabled) - Only allowed for own IP address / ❌ 403 Forbidden (when self-service disabled)
-- **ADMIN**: ✅ Can check any IP membership (when self-service enabled) - Can check any IP address / ❌ 403 Forbidden (when self-service disabled)
-- **SUPER_ADMIN**: ✅ Can check any IP membership (when self-service enabled) - Can check any IP address / ❌ 403 Forbidden (when self-service disabled)
+- **USER**: ✅ Can check their own IP, plus any device they have a `GroupHostAliasPermission` for (or `*` wildcard). Querying a non-own IP they are not permitted for returns ❌ 403 Forbidden. ❌ 403 Forbidden when self-service is disabled.
+- **ADMIN**: ✅ Can check any IP membership (admin groups carry the `*` wildcard) - Can check any IP address / ❌ 403 Forbidden (when self-service disabled)
+- **SUPER_ADMIN**: ✅ Can check any IP membership (admin groups carry the `*` wildcard) - Can check any IP address / ❌ 403 Forbidden (when self-service disabled)
+
+> Note: Per-device permission enforcement for authenticated callers is permission-table driven (not role-based). A caller querying a non-own IP must hold permission for a host alias at that IP, or the `*` wildcard. This mirrors the device scope enforced by `/api/opnsense/host-group-management` and `/api/user/devices`.
 
 **Example Responses:**
 
@@ -1608,6 +1612,13 @@ curl -X GET "{{SERVER_URL}}/api/opnsense/filtered-host-aliases?ipAddress=192.168
 ```json
 {
   "error": "Unauthorized: Unauthenticated users can only query their own IP address"
+}
+```
+
+**Access Denied (Authenticated caller lacks device permission):**
+```json
+{
+  "error": "Forbidden: You do not have permission to view this device"
 }
 ```
 

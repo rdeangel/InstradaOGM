@@ -234,7 +234,7 @@ Enterprise-grade security with flexible authentication options.
 - **👥 Role-Based Access**: Granular permissions with three user roles
 - **🕒 Session Management**: Secure sessions with automatic timeout
 - **🔍 Audit Logging**: Complete audit trail for compliance and security
-- **🛡️ API Security**: Rate-limited API keys with configurable permissions and usage tracking
+- **🛡️ API Security**: Rate-limited API keys with configurable permissions, usage tracking, and support for both `Authorization: Bearer` and `x-api-key` headers
 
 ### 🔒 **Global Self-Service Disable**
 Enhanced security feature for environments that don't require self-service functionality.

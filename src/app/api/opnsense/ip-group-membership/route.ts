@@ -8,6 +8,7 @@ import { prisma } from '@/lib/prisma';
 import type { ValidLocalNetwork } from '@/types/settings';
 import { Role } from '@/types/opnsense';
 import { isIpAllowedForSelfService } from '@/lib/network-utils';
+import { resolveUserAliasPermissions } from '@/lib/user-permissions';
 import { toJsonArrayOrUndefined } from '@/lib/utils';
  
 // Helper function to check if an IP is contained in an alias's content
@@ -92,9 +93,9 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'IP address query parameter is required' }, { status: 400 });
   }
 
-  // Get client IP for unauthenticated users (authenticated users already have it from above)
+  // Derive the client IP for all callers so own-IP self-service works for authenticated users too.
   let clientIp: string | undefined = undefined;
-  if (!auth.user) {
+  {
     const forwardedFor = request.headers.get('x-forwarded-for');
     if (forwardedFor) {
       clientIp = forwardedFor.split(',')[0].trim();
@@ -182,7 +183,26 @@ export async function GET(request: Request) {
         }
       }
     }
-    
+
+    // Enforce device-level permission for authenticated users querying a device other than their own IP.
+    // Own-IP self-service and wildcard (admin) users are exempt; everyone else may only view group
+    // membership for host aliases they are permitted to manage.
+    if (auth.user && normalizedTargetIp !== normalizedClientIp) {
+      const { hasWildcard, permittedAliasUuids } = await resolveUserAliasPermissions(auth.user.id);
+      if (!hasWildcard) {
+        const permittedForIp = hostAndNetworkAliasesContainingIp.some(
+          alias => alias.type === 'host' && typeof alias.uuid === 'string' && permittedAliasUuids.has(alias.uuid)
+        );
+        if (!permittedForIp) {
+          logger.warn(`IP group membership denied: user ${auth.user.id} lacks device permission for IP ${ip}`);
+          return NextResponse.json(
+            { error: 'Forbidden: You do not have permission to view this device' },
+            { status: 403 }
+          );
+        }
+      }
+    }
+
     const memberOfGroupNames = new Set<string>();
     const memberOfGroups: NetworkGroup[] = [];
 

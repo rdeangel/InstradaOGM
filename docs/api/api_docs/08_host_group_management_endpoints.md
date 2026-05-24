@@ -53,31 +53,29 @@ The API uses intelligent parameter resolution with the following priority order:
 - **ADMIN**: ✅ Can access with administrative permissions and bypass most restrictions including unmanaged group restrictions.
 - **SUPER_ADMIN**: ✅ Can access with full system permissions and bypass all restrictions including unmanaged group restrictions.
 
+**Per-Device / Per-Group Permission Enforcement (Authenticated Requests):**
+
+Authenticated requests are enforced against the caller's group permissions, not just their role. The check is purely permission-table driven (ADMIN/SUPER_ADMIN see everything only because their groups carry the `*` wildcard):
+- The caller may only assign/unassign a host alias they have a `GroupHostAliasPermission` for (or the `*` wildcard).
+- The caller may only target a network group visible to them under their group filter settings (resolved through the same pipeline as `/api/user/devices`).
+- A `*` wildcard permission bypasses both checks.
+- Unauthenticated/self-service requests are governed by IP-based self-service checks instead of group permissions.
+
+**Own-device self-service grant (authenticated requests):** If an authenticated caller would otherwise be denied for a host alias but is physically operating on **their own device** — the client IP equals the host alias' IP, that IP is within the self-service `allowedNetworks`, and self-service is not globally disabled — the operation is allowed regardless of group permissions. This mirrors the access an unauthenticated visitor would have at the same machine (logging in must never remove self-service access). Such operations are still subject to the unmanaged-groups restriction, exactly like unauthenticated self-service. Genuine permission holders and `*` wildcard callers are unaffected by this path.
+
+When a permission check fails the operation is rejected with `403 Forbidden`. In `batch` operations the denied item fails individually (with an error in its `operationResults` entry) while the rest of the batch continues.
+
+**Self-service globally disabled:** When the **Remove Self-Service Page** global setting is enabled, the self-service page is hidden from everyone. The API enforces this too: **unauthenticated** requests to this endpoint are rejected with `403 Forbidden` (`"Forbidden: Self-service functionality is disabled"`), and the authenticated own-device self-service grant above is suppressed (a no-permission caller is denied as usual). Authenticated callers acting on devices/groups they genuinely have permission for are unaffected.
+
+The raw `batchOperations` payload (low-level operations that bypass host-alias/group resolution) is restricted to wildcard (`*`) callers — i.e. administrators. Non-wildcard callers receive `403 Forbidden`. The resolved `hostAliases` + `groups` batch form remains available to all callers, subject to the per-device/per-group checks above.
+
 **Example Responses:**
 
 **Unauthenticated Success (Self-Service):**
 ```json
 {
   "success": true,
-  "message": "Office_Desk_Screen added to group G_DEVICES_BR_PROTON_OV (Brazil - Proton).",
-  "updatedGroup": {
-    "id": "061613e6-70e7-476c-ba2a-d7e462b115a6",
-    "uuid": "061613e6-70e7-476c-ba2a-d7e462b115a6",
-    "name": "G_DEVICES_BR_PROTON_OV",
-    "friendlyName": "Brazil - Proton",
-    "description": "",
-    "enabled": true,
-    "members": [],
-    "itemCount": 1,
-    "lastUpdated": "2025-07-14T10:19:48.270797",
-    "rawContent": "Office_Desk_Screen",
-    "type": "networkgroup",
-    "proto": "",
-    "interface": "",
-    "counters": "0",
-    "updatefreq": "",
-    "categories": ""
-  }
+  "message": "Office_Desk_Screen added to group G_DEVICES_BR_PROTON_OV (Brazil - Proton)."
 }
 ```
 
@@ -101,23 +99,7 @@ The API uses intelligent parameter resolution with the following priority order:
 ```json
 {
   "success": true,
-  "message": "Successfully added my-laptop to group Employee Devices",
-  "updatedGroup": {
-    "id": "group-uuid-here",
-    "name": "G_DEVICES_EMPLOYEES",
-    "friendlyName": "Employee Devices",
-    "enabled": true,
-    "members": [],
-    "itemCount": 1,
-    "lastUpdated": "2025-07-14T10:19:48.270797",
-    "rawContent": "my-laptop",
-    "type": "networkgroup",
-    "proto": "",
-    "interface": "",
-    "counters": "0",
-    "updatefreq": "",
-    "categories": ""
-  }
+  "message": "Successfully added my-laptop to group Employee Devices"
 }
 ```
 
@@ -125,23 +107,7 @@ The API uses intelligent parameter resolution with the following priority order:
 ```json
 {
   "success": true,
-  "message": "Successfully added device to restricted group",
-  "updatedGroup": {
-    "id": "restricted-group-uuid",
-    "name": "G_RESTRICTED_GROUP",
-    "friendlyName": "Restricted Group",
-    "enabled": true,
-    "members": [],
-    "itemCount": 1,
-    "lastUpdated": "2025-07-14T10:19:48.270797",
-    "rawContent": "device-hostname",
-    "type": "networkgroup",
-    "proto": "",
-    "interface": "",
-    "counters": "0",
-    "updatefreq": "",
-    "categories": ""
-  }
+  "message": "Successfully added device to restricted group"
 }
 ```
 
@@ -432,32 +398,13 @@ curl -X POST "{{SERVER_URL}}/api/opnsense/host-group-management" \
   }'
 ```
 
+> Note: Response bodies may include `removedFromGroups` when a SingleSelect-restricted move occurs (batch with `moveFromExisting: true` and `restrictRemovalToSingleSelect: true`). This array lists the groups the host alias was removed from, using names and friendly names for clarity.
+
 **Success Response**:
 ```json
 {
-
-> Note: Response bodies may include `removedFromGroups` when a SingleSelect-restricted move occurs (batch with `moveFromExisting: true` and `restrictRemovalToSingleSelect: true`). This array lists the groups the host alias was removed from, using names and friendly names for clarity.
-
   "success": true,
-  "message": "Office_Desk_Screen added to group G_DEVICES_BR_PROTON_OV (Brazil - Proton).",
-  "updatedGroup": {
-    "id": "061613e6-70e7-476c-ba2a-d7e462b115a6",
-    "uuid": "061613e6-70e7-476c-ba2a-d7e462b115a6",
-    "name": "G_DEVICES_BR_PROTON_OV",
-    "friendlyName": "Brazil - Proton",
-    "description": "",
-    "enabled": true,
-    "members": [],
-    "itemCount": 1,
-    "lastUpdated": "2025-07-14T10:19:48.270797",
-    "rawContent": "Office_Desk_Screen",
-    "type": "networkgroup",
-    "proto": "",
-    "interface": "",
-    "counters": "0",
-    "updatefreq": "",
-    "categories": ""
-  }
+  "message": "Office_Desk_Screen added to group G_DEVICES_BR_PROTON_OV (Brazil - Proton)."
 }
 ```
 
@@ -466,6 +413,22 @@ curl -X POST "{{SERVER_URL}}/api/opnsense/host-group-management" \
 {
   "success": false,
   "message": "Unauthorized: Unauthenticated users can only operate on their own IP address"
+}
+```
+
+**Error Response** (`403`, authenticated caller lacks permission for the device):
+```json
+{
+  "success": false,
+  "message": "Forbidden: You do not have permission to manage this device"
+}
+```
+
+**Error Response** (`403`, authenticated caller lacks permission for the target group):
+```json
+{
+  "success": false,
+  "message": "Forbidden: You do not have permission to manage this group"
 }
 ```
 
@@ -493,26 +456,17 @@ curl -X POST "{{SERVER_URL}}/api/opnsense/host-group-management" \
 ```json
 {
   "success": true,
-  "message": "{{HOST_ALIAS_NAME}} added to group {{TARGET_GROUP_NAME}} ({{TARGET_GROUP_FRIENDLY_NAME}}).",
+  "message": "Batch operation completed successfully",
   "operationResults": [
     {
-      "hostAlias": {
-        "ipAddress": "{{IP_ADDRESS}}",
-        "hostAliasName": "{{HOST_ALIAS_NAME}}"
-      },
-      "group": {
-        "groupName": "{{TARGET_GROUP_NAME}}",
-        "groupFriendlyName": "{{TARGET_GROUP_FRIENDLY_NAME}}"
-      },
-      "success": true
+      "success": true,
+      "hostAlias": { "hostAliasName": "{{HOST_ALIAS_NAME}}" }
     }
   ],
   "removedFromGroups": [
     { "id": "{{PREVIOUS_GROUP_UUID_1}}", "name": "{{PREVIOUS_GROUP_NAME_1}}", "friendlyName": "{{PREVIOUS_GROUP_FRIENDLY_NAME_1}}" },
     { "id": "{{PREVIOUS_GROUP_UUID_2}}", "name": "{{PREVIOUS_GROUP_NAME_2}}", "friendlyName": "{{PREVIOUS_GROUP_FRIENDLY_NAME_2}}" }
-  ],
-  "moveFromExisting": true,
-  "restrictRemovalToSingleSelect": true
+  ]
 }
 ```
 
@@ -655,25 +609,7 @@ curl -X POST "{{SERVER_URL}}/api/opnsense/host-group-management" \
 ```json
 {
   "success": true,
-  "message": "Office_Desk_Screen removed from group Brazil - Proton.",
-  "updatedGroup": {
-    "id": "061613e6-70e7-476c-ba2a-d7e462b115a6",
-    "uuid": "061613e6-70e7-476c-ba2a-d7e462b115a6",
-    "name": "G_DEVICES_BR_PROTON_OV",
-    "friendlyName": "Brazil - Proton",
-    "description": "",
-    "enabled": true,
-    "members": [],
-    "itemCount": 0,
-    "lastUpdated": "2025-07-14T10:20:15.123456",
-    "rawContent": "",
-    "type": "networkgroup",
-    "proto": "",
-    "interface": "",
-    "counters": "0",
-    "updatefreq": "",
-    "categories": ""
-  }
+  "message": "Office_Desk_Screen removed from group Brazil - Proton."
 }
 ```
 
@@ -819,16 +755,8 @@ curl -X POST "{{SERVER_URL}}/api/opnsense/host-group-management" \
   "success": true,
   "message": "Batch operation completed successfully",
   "operationResults": [
-    {
-      "hostAlias": { "ipAddress": "{{IP_ADDRESS_1}}", "hostAliasName": "{{HOST_ALIAS_NAME_1}}" },
-      "group": { "groupFriendlyName": "{{GROUP_FRIENDLY_NAME_1}}" },
-      "success": true
-    },
-    {
-      "hostAlias": { "ipAddress": "{{IP_ADDRESS_2}}", "hostAliasName": "{{HOST_ALIAS_NAME_2}}" },
-      "group": { "groupName": "{{GROUP_NAME_2}}" },
-      "success": true
-    }
+    { "success": true, "hostAlias": { "hostAliasName": "{{HOST_ALIAS_NAME_1}}" } },
+    { "success": true, "hostAlias": { "hostAliasName": "{{HOST_ALIAS_NAME_2}}" } }
   ]
 }
 ```
@@ -837,19 +765,10 @@ curl -X POST "{{SERVER_URL}}/api/opnsense/host-group-management" \
 ```json
 {
   "success": true,
-  "message": "Batch operation completed with some failures",
+  "message": "Batch operation completed successfully",
   "operationResults": [
-    {
-      "hostAlias": { "ipAddress": "{{IP_ADDRESS_1}}", "hostAliasName": "{{HOST_ALIAS_NAME_1}}" },
-      "group": { "groupFriendlyName": "{{GROUP_FRIENDLY_NAME_1}}" },
-      "success": true
-    },
-    {
-      "hostAlias": { "ipAddress": "{{IP_ADDRESS_2}}", "hostAliasName": "{{HOST_ALIAS_NAME_2}}" },
-      "group": { "groupFriendlyName": "{{NON_EXISTENT_GROUP}}" },
-      "success": false,
-      "error": "Could not resolve group"
-    }
+    { "success": true, "hostAlias": { "hostAliasName": "{{HOST_ALIAS_NAME_1}}" } },
+    { "success": false, "hostAlias": { "hostAliasName": "{{HOST_ALIAS_NAME_2}}" }, "error": "Could not resolve group" }
   ]
 }
 ```
@@ -956,28 +875,10 @@ curl -X POST "{{SERVER_URL}}/api/opnsense/host-group-management" \
 ```json
 {
   "success": true,
-  "message": "Batch unassign operation completed successfully",
+  "message": "Batch operation completed successfully",
   "operationResults": [
-    {
-      "hostAlias": {
-        "ipAddress": "192.168.1.60"
-      },
-      "group": {
-        "groupFriendlyName": "Italy - Proton"
-      },
-      "success": true,
-      "message": "Successfully unassigned IP 192.168.1.60 from group Italy - Proton"
-    },
-    {
-      "hostAlias": {
-        "ipAddress": "192.168.1.61"
-      },
-      "group": {
-        "groupFriendlyName": "Italy - Proton"
-      },
-      "success": true,
-      "message": "Successfully unassigned IP 192.168.1.61 from group Italy - Proton"
-    }
+    { "success": true, "hostAlias": { "hostAliasName": "HOST_192_168_1_60" } },
+    { "success": true, "hostAlias": { "hostAliasName": "HOST_192_168_1_61" } }
   ]
 }
 ```
@@ -1093,6 +994,14 @@ Original Hostname    → Sanitized Hostname
 {
   "success": false,
   "message": "Self-service is restricted: Your device is associated with network groups that are not available for self-service access. Please contact your network administrator for assistance."
+}
+```
+
+**Self-Service Disabled (`403`, unauthenticated request when Remove Self-Service Page is enabled):**
+```json
+{
+  "success": false,
+  "message": "Forbidden: Self-service functionality is disabled"
 }
 ```
 
@@ -1669,4 +1578,4 @@ curl -X POST "{{SERVER_URL}}/api/opnsense/host-group-management" \
 
 ---
 
-**Last Updated**: 2025-11-06 | **API Version**: v1.0.0 | **Category**: API Documentation
+**Last Updated**: 2026-05-23 | **API Version**: v1.0.0 | **Category**: API Documentation
