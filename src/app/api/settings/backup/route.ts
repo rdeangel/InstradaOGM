@@ -8,7 +8,7 @@ import { exec } from 'child_process';
 import { logAuditEvent } from '@/lib/auditLog';
 import { authenticateRequest, handleAuthResponse, trackUsageByAuthMethod } from '@/lib/auth-middleware';
 import { Role } from '@/types/opnsense';
-import { encrypt, decrypt } from '@/lib/encryption'; // Add decrypt import
+import { decrypt, encryptFile, decryptFile } from '@/lib/encryption';
 import { redactConnectionString } from '@/lib/log-redactor';
 import { PrismaClient } from '@prisma/client'; // For type usage
 import { prisma } from '@/lib/prisma'; // Import global Prisma singleton
@@ -392,15 +392,8 @@ async function handleRestoreFlexibleStreaming({ filename, uploadedFilePath, user
       logger.debug(`Encrypted upload file path: ${encryptedUploadFilePath}`);
       logger.debug(`Temporary decrypted restore file path: ${restoreFilePath}`);
 
-      // Decrypt the uploaded file
-      // eslint-disable-next-line security/detect-non-literal-fs-filename
-      const encryptedContent = await fs.readFile(encryptedUploadFilePath, 'utf8');
-      const decryptedContent = decrypt(encryptedContent);
-      if (decryptedContent === null) {
-        throw new Error('Failed to decrypt uploaded backup content.');
-      }
-      // eslint-disable-next-line security/detect-non-literal-fs-filename
-      await fs.writeFile(restoreFilePath, decryptedContent);
+      // Stream-decrypt the uploaded file. New format: [IV][ciphertext][authTag].
+      await decryptFile(encryptedUploadFilePath, restoreFilePath);
       logger.info(`Uploaded backup decrypted to: ${restoreFilePath}`);
     } else if (filename) {
       // Restore from server backup file
@@ -419,16 +412,10 @@ async function handleRestoreFlexibleStreaming({ filename, uploadedFilePath, user
       }
 
       // Read encrypted content, decrypt, and write to a temporary file
-      // eslint-disable-next-line security/detect-non-literal-fs-filename
-      const encryptedContent = await fs.readFile(encryptedBackupFilePath, 'utf8');
-      const decryptedContent = decrypt(encryptedContent);
-      if (decryptedContent === null) {
-        throw new Error('Failed to decrypt server-stored backup content.');
-      }
+      // Stream-decryption avoids materializing the full plaintext in heap.
       // eslint-disable-next-line security/detect-non-literal-fs-filename
       await fs.mkdir(path.dirname(restoreFilePath), { recursive: true });
-      // eslint-disable-next-line security/detect-non-literal-fs-filename
-      await fs.writeFile(restoreFilePath, decryptedContent);
+      await decryptFile(encryptedBackupFilePath, restoreFilePath);
       logger.info(`Server-stored backup decrypted to temporary file: ${restoreFilePath}`);
     } else {
       return NextResponse.json({ message: 'Filename or uploaded file path is required for restore operation' }, { status: 400 });
@@ -851,18 +838,27 @@ async function handleBackup(userId: string, customFilename?: string) {
 
     logger.debug(`Encrypting backup file (${stats.size} bytes)...`);
 
-    // Read the created SQL dump, encrypt it, and overwrite the file
-    // eslint-disable-next-line security/detect-non-literal-fs-filename
-    const sqlContent = await fs.readFile(backupFilePath, 'utf8');
-    const encryptedContent = encrypt(sqlContent);
-
-    if (encryptedContent === null) {
-      throw new Error('Failed to encrypt backup content.');
+    // Stream-encrypt the SQL dump to avoid materializing the full content
+    // (plus its 2x-sized hex encoding) in the JS heap. AES-256-GCM file
+    // layout: [IV (16B)] [ciphertext] [authTag (16B)].
+    const tmpEncryptedPath = `${backupFilePath}.enc.tmp`;
+    try {
+      await encryptFile(backupFilePath, tmpEncryptedPath);
+      // eslint-disable-next-line security/detect-non-literal-fs-filename
+      await fs.rename(tmpEncryptedPath, backupFilePath);
+    } catch (error) {
+      try {
+        // eslint-disable-next-line security/detect-non-literal-fs-filename
+        await fs.unlink(tmpEncryptedPath);
+      } catch {
+        // ignore cleanup errors
+      }
+      throw error;
     }
 
     // eslint-disable-next-line security/detect-non-literal-fs-filename
-    await fs.writeFile(backupFilePath, encryptedContent);
-    logger.info(`Backup file encrypted and saved: ${backupFilePath} (original: ${stats.size} bytes, encrypted: ${encryptedContent.length} bytes)`);
+    const encryptedStats = await fs.stat(backupFilePath);
+    logger.info(`Backup file encrypted and saved: ${backupFilePath} (original: ${stats.size} bytes, encrypted: ${encryptedStats.size} bytes)`);
 
     await logAuditEvent({
       userId: userId,

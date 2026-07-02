@@ -5,7 +5,7 @@
  * This script includes all necessary encryption logic inline to avoid module resolution issues
  */
 
-const fs = require('fs').promises;
+const { createReadStream, createWriteStream } = require('fs');
 const crypto = require('crypto');
 
 const algorithm = 'aes-256-gcm';
@@ -30,34 +30,67 @@ function getSecretKey() {
   return secretKey;
 }
 
-function encrypt(text) {
-  if (!text) {
-    return null;
-  }
-  
-  try {
-    const key = getSecretKey();
-    const iv = crypto.randomBytes(ivLength);
-    const cipher = crypto.createCipheriv(algorithm, key, iv);
-    const encrypted = Buffer.concat([cipher.update(text, 'utf8'), cipher.final()]);
-    const authTag = cipher.getAuthTag();
+// Streaming encryption. Layout: [IV (16B)] [ciphertext] [authTag (16B)].
+async function encryptFile(inputPath, outputPath) {
+  const key = getSecretKey();
+  const iv = crypto.randomBytes(ivLength);
+  const cipher = crypto.createCipheriv(algorithm, key, iv);
 
-    // Combine IV, authTag, and encrypted data, then convert to hex
-    const combined = Buffer.concat([iv, authTag, encrypted]);
-    return combined.toString('hex');
+  const out = createWriteStream(outputPath);
+
+  try {
+    await new Promise((resolve, reject) => {
+      out.write(iv, (err) => (err ? reject(err) : resolve()));
+    });
+
+    const input = createReadStream(inputPath);
+    let sourceError = null;
+    await new Promise((resolve, reject) => {
+      input.on('data', (chunk) => {
+        if (!out.write(cipher.update(chunk))) {
+          input.pause();
+          out.once('drain', () => input.resume());
+        }
+      });
+      input.on('end', () => resolve());
+      input.on('error', (err) => {
+        sourceError = err;
+        reject(err);
+      });
+      out.on('error', reject);
+    });
+
+    const finalCipher = cipher.final();
+    if (finalCipher.length > 0) {
+      await new Promise((resolve, reject) => {
+        out.write(finalCipher, (err) => (err ? reject(err) : resolve()));
+      });
+    }
+
+    const authTag = cipher.getAuthTag();
+    await new Promise((resolve, reject) => {
+      out.write(authTag, (err) => (err ? reject(err) : resolve()));
+    });
+
+    await new Promise((resolve, reject) => {
+      out.end((err) => (err ? reject(err) : resolve()));
+    });
+
+    if (sourceError) throw sourceError;
   } catch (error) {
-    console.error('Encryption failed:', error.message);
-    return null;
+    out.destroy();
+    throw error;
   }
 }
 
-async function encryptFile() {
+async function run() {
   const args = process.argv.slice(2);
 
   if (args.length === 0 || args[0] === '--help') {
     console.log('Usage: node encrypt-backup-standalone.js <input_file_path>');
     console.log('   or: node encrypt-backup-standalone.js --help');
-    console.log('\nEncrypts a plain text file using AES-256-GCM.');
+    console.log('\nEncrypts a file using AES-256-GCM (streaming).');
+    console.log('Output layout: [IV (16B)] [ciphertext] [authTag (16B)].');
     console.log('Requires BACKUP_ENCRYPTION_SECRET_KEY environment variable.');
     console.log('\nThis is a standalone version for use in Docker containers.');
     return;
@@ -67,7 +100,6 @@ async function encryptFile() {
   const outputFilePath = `${inputFilePath}.aes`;
 
   try {
-    // Ensure BACKUP_ENCRYPTION_SECRET_KEY is available
     if (!process.env.BACKUP_ENCRYPTION_SECRET_KEY || Buffer.from(process.env.BACKUP_ENCRYPTION_SECRET_KEY, 'hex').length !== 32) {
       console.error('Error: BACKUP_ENCRYPTION_SECRET_KEY environment variable is missing or not a 32-byte hex string.');
       console.error('Please ensure it is set correctly.');
@@ -76,16 +108,7 @@ async function encryptFile() {
 
     console.log(`Attempting to encrypt '${inputFilePath}'...`);
 
-    const plainTextContent = await fs.readFile(inputFilePath, 'utf8');
-
-    const encryptedContent = encrypt(plainTextContent);
-
-    if (encryptedContent === null) {
-      console.error('Error: Encryption failed.');
-      process.exit(1);
-    }
-
-    await fs.writeFile(outputFilePath, encryptedContent, 'utf8');
+    await encryptFile(inputFilePath, outputFilePath);
     console.log(`Encryption successful! Encrypted content saved to '${outputFilePath}'.`);
 
   } catch (error) {
@@ -97,5 +120,5 @@ async function encryptFile() {
   }
 }
 
-encryptFile();
+run();
 

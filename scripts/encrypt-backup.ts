@@ -1,24 +1,24 @@
 import fs from 'fs/promises';
-import path from 'path';
 import dotenv from 'dotenv';
 
 // Load environment variables from .env
 dotenv.config({ quiet: true });
 
-async function encryptFile() {
+async function encryptBackupFile() {
   const args = process.argv.slice(2);
 
   if (args.length === 0 || args[0] === '--help') {
     console.log('Usage: npm run encrypt-backup <input_file_path>');
     console.log('   or: npx tsx scripts/encrypt-backup.ts <input_file_path>');
     console.log('   or: npx tsx scripts/encrypt-backup.ts --help');
-    console.log('\nEncrypts a plain text file using AES-256-GCM.');
+    console.log('\nEncrypts a file using AES-256-GCM (streaming).');
+    console.log('Output layout: [IV (16B)] [ciphertext] [authTag (16B)].');
     console.log('Requires BACKUP_ENCRYPTION_SECRET_KEY to be set in a .env file in the current directory.');
     return;
   }
 
   // Lazy-load encryption module after help check to avoid premature env validation
-  const { encrypt } = await import('../src/lib/encryption');
+  const { encryptFile } = await import('../src/lib/encryption');
 
   const inputFilePath = args[0];
   const outputFilePath = `${inputFilePath}.aes`; // Add .aes extension for encrypted file
@@ -33,16 +33,7 @@ async function encryptFile() {
 
     console.log(`Attempting to encrypt '${inputFilePath}'...`);
 
-    const plainTextContent = await fs.readFile(inputFilePath, 'utf8');
-
-    const encryptedContent = encrypt(plainTextContent);
-
-    if (encryptedContent === null) {
-      console.error('Error: Encryption failed.');
-      return;
-    }
-
-    await fs.writeFile(outputFilePath, encryptedContent, 'utf8');
+    await encryptFile(inputFilePath, outputFilePath);
     console.log(`Encryption successful! Encrypted content saved to '${outputFilePath}'.`);
 
   } catch (error) {
@@ -54,5 +45,5 @@ async function encryptFile() {
   }
 }
 
-encryptFile();
+encryptBackupFile();
 
