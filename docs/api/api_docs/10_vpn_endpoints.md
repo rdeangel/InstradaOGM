@@ -279,12 +279,13 @@ curl -X GET "https://instrada-ogm.example.com/api/vpn/status" \
 
 ### POST /api/vpn/safe-restart
 
-**Description**: Safely restart a VPN connection.
+**Description**: Safely restart a VPN connection. This is recovery only: it restarts a stuck or disconnected VPN. It refuses to stop or restart a VPN that is already connected.
 
-**Authentication**: Required (session or API key)
+**Authentication**: Mixed. Session or API key for signed-in users. Unauthenticated access is only for self-service: a visitor on the self-service page can recover a stuck or disconnected VPN shown for their groups. Unauthenticated calls are refused with `403` when self-service is disabled, the caller is outside Allowed Networks, or Allowed Networks is empty. Unauthenticated callers still cannot stop a connected VPN.
 
 **Role Access:**
-- **USER**: ✅ Can restart VPN connections
+- **Unauthenticated**: ✅ Can restart a stuck or disconnected group VPN from self-service. Cannot stop or restart a VPN that is already connected.
+- **USER**: ✅ Can restart VPN connections (same already-connected refusal)
 - **ADMIN**: ✅ Can restart VPN connections
 - **SUPER_ADMIN**: ✅ Can restart VPN connections
 

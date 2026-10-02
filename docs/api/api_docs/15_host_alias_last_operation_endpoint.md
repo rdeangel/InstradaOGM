@@ -42,7 +42,8 @@ The `/api/opnsense/host-alias-last-assignment` endpoint retrieves the most recen
 ### Unauthenticated Users
 - Can only query their own detected IP address
 - Subject to Self-Service Access Control network include/exclude rules
-- Blocked if self-service is globally disabled (`ENABLE_SELF_SERVICE=false`)
+- Blocked if the Remove Self-Service Page setting is enabled
+- An empty Allowed Networks list blocks all unauthenticated queries
 - IP address must match the client's detected IP (via `x-forwarded-for` or `x-real-ip` headers)
 - **Do NOT receive `userName` field in responses** (privacy protection)
 
@@ -177,10 +178,18 @@ Missing required parameter:
 ```
 
 #### 403 Forbidden (Self-Service Disabled)
-When self-service is globally disabled for unauthenticated users:
+When the Remove Self-Service Page setting is enabled for unauthenticated users:
 ```json
 {
   "error": "Forbidden: Self-service functionality is disabled"
+}
+```
+
+#### 403 Forbidden (Network)
+When the caller is outside Allowed Networks, or Allowed Networks is empty:
+```json
+{
+  "error": "Unauthorized: IP address is not in allowed networks for self-service access"
 }
 ```
 

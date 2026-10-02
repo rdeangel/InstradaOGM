@@ -307,13 +307,13 @@ curl -X POST "{{SERVER_URL}}/api/opnsense/aliases" \
 - **Without `ipAddress` parameter**: Required (session or API key with ADMIN/SUPER_ADMIN role)
 
 **Role Requirements:**
-- **Unauthenticated**: ✅ Can query specific IP addresses (with restrictions)
+- **Unauthenticated**: ✅ Can query only the caller's own IP, and only when self-service is enabled and the caller's IP is inside Allowed Networks (an empty list means no anonymous access). Otherwise `403`.
 - **USER**: ❌ Cannot access without IP parameter
 - **ADMIN**: ✅ Can read all host aliases
 - **SUPER_ADMIN**: ✅ Can read all host aliases
 
 **Role Access:**
-- **Unauthenticated**: ✅ Can query specific IP addresses (with restrictions) - Only allowed for own IP address
+- **Unauthenticated**: ✅ Can query a specific IP address only when it is the caller's own IP, self-service is enabled, and the caller is inside Allowed Networks. An empty Allowed Networks list blocks all unauthenticated queries (`403`).
 - **USER**: ❌ Cannot access without IP parameter - Requires ADMIN or SUPER_ADMIN role
 - **ADMIN**: ✅ Can read all host aliases with administrative permissions
 - **SUPER_ADMIN**: ✅ Can read all host aliases with full system permissions
@@ -500,6 +500,8 @@ curl -X POST "{{SERVER_URL}}/api/opnsense/host-alias-management" \
 
 **Error Responses**:
 - `400 Bad Request`: Missing required fields (name, type, content)
+- `401 Unauthorized`: Not logged in
+- `403 Forbidden`: Logged in, but not ADMIN or SUPER_ADMIN
 - `409 Conflict`: A host alias already exists with the same IP address
 - `500 Internal Server Error`: Failed to create alias or reconfigure OPNsense
 
@@ -507,7 +509,7 @@ curl -X POST "{{SERVER_URL}}/api/opnsense/host-alias-management" \
 
 **Description**: Rename an existing host alias. This endpoint validates unmanaged group membership to ensure self-service users do not accidentally rename devices that are under strict administrative control.
 
-**Authentication**: Required
+**Authentication**: Optional. Anonymous only when self-service renaming is enabled, self-service is allowed from the caller's network, and the alias's IP is the caller's own IP. USER: needs permission for this host alias, or must be renaming their own device. ADMIN/SUPER_ADMIN: any.
 
 **Query Parameters**:
 | Parameter | Type | Required | Description |
@@ -540,14 +542,15 @@ curl -X PUT "{{SERVER_URL}}/api/opnsense/host-alias-management?uuid=45653f16-70b
 
 **Error Responses**:
 - `400 Bad Request`: Missing `uuid`, or the identifier is not a valid OPNsense id (`[A-Za-z0-9_-]{1,64}`).
-- `403 Forbidden`: Renaming rejected because the host is a member of one or more **unmanaged groups**.
+- `403 Forbidden`: Self-service renaming is off, the caller is outside Allowed Networks, the alias is not the caller's own device, or the caller has no permission for this host alias. Also returned when renaming is rejected because the host is a member of one or more **unmanaged groups**.
 - `404 Not Found`: Host alias with provided UUID does not exist.
+- `503 Service Unavailable`: Could not verify group management status; nothing was changed.
 
 ### DELETE /api/opnsense/host-alias-management
 
 **Description**: Delete a host alias from OPNsense. If deletion is successful, the system automatically performs a **cascading cleanup** of all associated database permissions for that UUID.
 
-**Authentication**: Required
+**Authentication**: Required: ADMIN/SUPER_ADMIN, or a user with permission for this host alias
 
 **Query Parameters**:
 | Parameter | Type | Required | Description |
@@ -579,6 +582,8 @@ curl -X DELETE "{{SERVER_URL}}/api/opnsense/host-alias-management?uuid=45653f16-
 
 **Error Responses**:
 - `400 Bad Request`: Missing `uuid`, or the identifier is not a valid OPNsense id (`[A-Za-z0-9_-]{1,64}`).
+- `401 Unauthorized`: Not logged in
+- `403 Forbidden`: Logged in, but no permission for this host alias and not ADMIN/SUPER_ADMIN
 
 ### GET /api/opnsense/host-alias-management-admin
 

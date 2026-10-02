@@ -308,18 +308,19 @@ INSERT INTO "NetworkDisplayFilter" (
 
 ## Error Handling
 
-### Fail-Open Strategy
+### Error handling
 
-The system implements a fail-open strategy:
-- If unmanaged group checks fail due to errors, operations are allowed to continue
-- This ensures system reliability while maintaining security when checks succeed
-- Errors are logged for debugging and monitoring
+Writes (alias rename, group assign/unassign/batch) are refused (`503`, or a failed batch item) when the unmanaged-group check cannot complete. Nothing is changed in that case.
+
+The status endpoint `check-unmanaged-groups` still answers "not unmanaged" when the check cannot complete.
+
+Errors are logged for debugging and monitoring.
 
 ### Error Types
 
 1. **Globally Disabled**: Groups explicitly marked as disabled
 2. **Filtered Out**: Groups that don't match display filter criteria
-3. **Check Failed**: When the unmanaged group check encounters an error (fail-open)
+3. **Check Failed**: When the unmanaged group check cannot complete (writes refused; status endpoint answers "not unmanaged")
 
 ## Testing
 
@@ -450,7 +451,7 @@ System errors during unmanaged group checks are logged:
 
 ### Error Handling
 
-1. **Fail-Open**: Maintain the fail-open strategy for system reliability
+1. **Writes refuse on check failure**: Alias rename and group assign/unassign/batch are refused when the unmanaged-group check cannot complete. The status endpoint still answers "not unmanaged" on error.
 2. **Monitoring**: Monitor error rates and investigate failures
 3. **Logging**: Ensure adequate logging for troubleshooting
 4. **Alerting**: Set up alerts for high error rates or system issues

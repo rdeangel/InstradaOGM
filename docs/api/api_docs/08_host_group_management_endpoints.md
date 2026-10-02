@@ -42,13 +42,13 @@ The API uses intelligent parameter resolution with the following priority order:
 **Authentication Required:** Mixed (Optional for self-service, Required for managing other IPs)
 
 **Role Requirements:**
-- **Unauthenticated**: ✅ Can access with IP restrictions (own IP only)
+- **Unauthenticated**: ✅ Can access own IP only, and only from inside Allowed Networks
 - **USER**: ✅ Can access with standard permissions and bypass some restrictions
 - **ADMIN**: ✅ Can access with administrative permissions and bypass most restrictions
 - **SUPER_ADMIN**: ✅ Can access with full system permissions and bypass all restrictions
 
 **Role Access:**
-- **Unauthenticated**: ✅ Can access for own IP only (subject to self-service restrictions). Cannot operate on hosts in unmanaged groups.
+- **Unauthenticated**: ✅ Can access for own IP only, and only from inside Allowed Networks (subject to self-service restrictions). Cannot operate on hosts in unmanaged groups.
 - **USER**: ✅ Can access with standard permissions and bypass some IP restrictions. Cannot operate on hosts in unmanaged groups.
 - **ADMIN**: ✅ Can access with administrative permissions and bypass most restrictions including unmanaged group restrictions.
 - **SUPER_ADMIN**: ✅ Can access with full system permissions and bypass all restrictions including unmanaged group restrictions.
@@ -117,8 +117,8 @@ The raw `batchOperations` payload (low-level operations that bypass host-alias/g
 3. **Unauthenticated Access**: For self-service operations (IP restrictions apply)
 
 **Access Control Rules:**
-- **Unauthenticated users**: Can only operate on their own IP address (client IP)
-- **Authenticated users**: Can operate on their own IP address, plus any IP within allowed networks or devices they have permission to manage
+- **Unauthenticated users**: Can only operate on their own IP address (client IP), and only from inside Allowed Networks. Requests must include `ipAddress`, and it must be the caller's own IP. A batch from an unauthenticated caller is refused as a whole if any host isn't the caller's own IP.
+- **Authenticated users**: Can operate on their own device (inside Allowed Networks) or on devices they have permission to manage
 - **IP normalization**: Handles IPv4-mapped IPv6 addresses and whitespace differences for accurate IP matching
 
 **Unmanaged Groups Restrictions:**
@@ -128,7 +128,7 @@ The raw `batchOperations` payload (low-level operations that bypass host-alias/g
   - **Filtered out**: Groups that don't match the Network Display Filter criteria
 - **Restriction applies to**: Unauthenticated users and non-admin authenticated users
 - **Admin users**: Can still perform operations on unmanaged groups
-- **Error response**: Returns HTTP 403 with clear error message explaining the restriction
+- **Error response**: Returns HTTP 403 with clear error message explaining the restriction. If the unmanaged-group check can't complete, the operation is refused with `503`.
 - **Security**: All operations validate IP ownership and network restrictions before allowing access
 
 **Self-Service IP Restrictions:**
@@ -959,13 +959,14 @@ Original Hostname    → Sanitized Hostname
 
 - `400 Bad Request`: Invalid parameters or operation, including an invalid IP address. A present `ipAddress` that is not a string, or a string that is not a dotted-quad IPv4 / normal IPv6 address, is rejected before alias resolution or alias creation.
 - `401 Unauthorized`: Authentication required
-- `403 Forbidden`: IP access denied (for self-service operations)
+- `403 Forbidden`: IP access denied for self-service operations (own-IP mismatch, outside Allowed Networks, empty Allowed Networks, or self-service disabled)
+- `503 Service Unavailable`: Could not verify group management status; nothing was changed (for a batch, that item fails)
 - `500 Internal Server Error`: Server-side error
 - `207 Multi-Status`: Partial success (for unassign from all groups)
 
 ### Access Control Error Responses
 
-**Self-Service IP Restriction:**
+**Self-Service IP Restriction (`403`):**
 ```json
 {
   "success": false,
@@ -973,7 +974,7 @@ Original Hostname    → Sanitized Hostname
 }
 ```
 
-**Network Access Restriction:**
+**Network Access Restriction (`403`):**
 ```json
 {
   "success": false,
@@ -1002,6 +1003,14 @@ Original Hostname    → Sanitized Hostname
 {
   "success": false,
   "message": "Forbidden: Self-service functionality is disabled"
+}
+```
+
+**Unmanaged-group check could not complete (`503`):**
+```json
+{
+  "success": false,
+  "message": "Could not verify group management status. Try again."
 }
 ```
 
