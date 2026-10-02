@@ -14,6 +14,9 @@ import {
 } from "@/components/ui/popover"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { TimeInput } from "@/components/ui/time-input"
+import { isValidHhMm } from "@/lib/time-input"
+import { useCoarsePointer, useIsPhone } from "@/hooks/use-mobile"
 
 interface DateTimePickerProps {
     date: Date | undefined
@@ -21,30 +24,28 @@ interface DateTimePickerProps {
     disabled?: boolean
 }
 
-const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/
+function toDateInputValue(d: Date): string {
+    return format(d, "yyyy-MM-dd")
+}
 
 export function DateTimePicker({ date, setDate, disabled }: DateTimePickerProps) {
+    const isPhone = useIsPhone()
+    const isCoarse = useCoarsePointer()
+    const useNative = isPhone || isCoarse
+
     const [selectedDateTime, setSelectedDateTime] = React.useState<Date | undefined>(date)
-    const [timeInput, setTimeInput] = React.useState<string>(date ? format(date, 'HH:mm') : '')
 
     // Sync with external prop changes only
     React.useEffect(() => {
         setSelectedDateTime(date)
-        setTimeInput(date ? format(date, 'HH:mm') : '')
     }, [date])
 
-    const handleDateSelect = (selectedDate: Date | undefined) => {
-        if (!selectedDate) {
-            setSelectedDateTime(undefined)
-            setDate(undefined)
-            setTimeInput('')
-            return
-        }
+    const timeValue = selectedDateTime ? format(selectedDateTime, "HH:mm") : ""
 
+    const applyDateKeepingTime = (selectedDate: Date) => {
         const newDateTime = new Date(selectedDate)
-        // Preserve the typed time if valid, else fall back to current or now
-        if (TIME_RE.test(timeInput)) {
-            const [h, m] = timeInput.split(':').map(Number)
+        if (isValidHhMm(timeValue)) {
+            const [h, m] = timeValue.split(":").map(Number)
             newDateTime.setHours(h, m, 0, 0)
         } else if (selectedDateTime) {
             newDateTime.setHours(selectedDateTime.getHours(), selectedDateTime.getMinutes(), 0, 0)
@@ -56,26 +57,63 @@ export function DateTimePicker({ date, setDate, disabled }: DateTimePickerProps)
         setDate(newDateTime)
     }
 
-    const handleTimeInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const val = e.target.value
-        // eslint-disable-next-line security/detect-unsafe-regex -- Safe: simple time format validation
-        if (val === '' || /^\d{0,2}(:\d{0,2})?$/.test(val)) {
-            setTimeInput(val)
-            // Commit to Date only when a complete valid time is entered
-            if (TIME_RE.test(val) && selectedDateTime) {
-                const [h, m] = val.split(':').map(Number)
-                const newDateTime = new Date(selectedDateTime)
-                newDateTime.setHours(h, m, 0, 0)
-                setSelectedDateTime(newDateTime)
-                setDate(newDateTime)
-            }
+    const handleDateSelect = (selectedDate: Date | undefined) => {
+        if (!selectedDate) {
+            setSelectedDateTime(undefined)
+            setDate(undefined)
+            return
         }
+        applyDateKeepingTime(selectedDate)
     }
 
-    const handleTimeBlur = () => {
-        if (!TIME_RE.test(timeInput)) {
-            setTimeInput(selectedDateTime ? format(selectedDateTime, 'HH:mm') : '')
+    const handleNativeDateChange = (raw: string) => {
+        if (!raw) {
+            setSelectedDateTime(undefined)
+            setDate(undefined)
+            return
         }
+        const [year, month, day] = raw.split("-").map(Number)
+        if (!year || !month || !day) return
+        applyDateKeepingTime(new Date(year, month - 1, day))
+    }
+
+    const handleTimeChange = (normalized: string) => {
+        if (!selectedDateTime) return
+        const [h, m] = normalized.split(":").map(Number)
+        const newDateTime = new Date(selectedDateTime)
+        newDateTime.setHours(h, m, 0, 0)
+        setSelectedDateTime(newDateTime)
+        setDate(newDateTime)
+    }
+
+    if (useNative) {
+        return (
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                <div className="flex flex-col gap-1 flex-1 min-w-0">
+                    <Label htmlFor="datetime-date" className="text-xs text-muted-foreground">
+                        Date
+                    </Label>
+                    <Input
+                        id="datetime-date"
+                        type="date"
+                        disabled={disabled}
+                        value={selectedDateTime ? toDateInputValue(selectedDateTime) : ""}
+                        onChange={(e) => handleNativeDateChange(e.target.value)}
+                    />
+                </div>
+                <div className="flex flex-col gap-1 flex-1 min-w-0">
+                    <Label htmlFor="datetime-time" className="text-xs text-muted-foreground">
+                        Time
+                    </Label>
+                    <TimeInput
+                        id="datetime-time"
+                        value={timeValue}
+                        onChange={handleTimeChange}
+                        disabled={disabled || !selectedDateTime}
+                    />
+                </div>
+            </div>
+        )
     }
 
     return (
@@ -104,16 +142,12 @@ export function DateTimePicker({ date, setDate, disabled }: DateTimePickerProps)
                     <div className="flex items-center gap-2">
                         <Clock className="h-4 w-4 text-muted-foreground" />
                         <Label htmlFor="time" className="text-sm font-medium">Time</Label>
-                        <Input
+                        <TimeInput
                             id="time"
-                            type="text"
-                            inputMode="numeric"
-                            placeholder="HH:MM"
                             className="h-8"
-                            value={timeInput}
-                            onChange={handleTimeInputChange}
-                            onBlur={handleTimeBlur}
-                            disabled={!selectedDateTime}
+                            value={timeValue}
+                            onChange={handleTimeChange}
+                            disabled={disabled || !selectedDateTime}
                         />
                     </div>
                 </div>

@@ -29,6 +29,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { TimeInput } from '@/components/ui/time-input';
+import { isValidHhMm } from '@/lib/time-input';
 import { Loader2, SearchX } from 'lucide-react';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -125,8 +127,8 @@ export function ScheduleEvaluatorDialog({ open, onOpenChange }: ScheduleEvaluato
   // ── Handlers ───────────────────────────────────────────────────────────────
 
   async function handleEvaluate() {
-    if (!dateValue || !timeValue) {
-      setError('Please select both a date and a time.');
+    if (!dateValue || !isValidHhMm(timeValue)) {
+      setError('Please select both a date and a valid time (HH:MM).');
       return;
     }
 
@@ -200,20 +202,11 @@ export function ScheduleEvaluatorDialog({ open, onOpenChange }: ScheduleEvaluato
             <label className="text-xs text-muted-foreground font-medium" htmlFor="eval-time">
               Time (Local)
             </label>
-            <input
+            <TimeInput
               id="eval-time"
-              type="text"
-              inputMode="numeric"
-              placeholder="HH:MM"
+              className="h-9"
               value={timeValue}
-              onChange={(e) => {
-                const val = e.target.value;
-                // eslint-disable-next-line security/detect-unsafe-regex -- Safe: simple time format validation
-                if (val === '' || /^\d{0,2}(:\d{0,2})?$/.test(val)) {
-                  setTimeValue(val);
-                }
-              }}
-              className="h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              onChange={setTimeValue}
             />
           </div>
 

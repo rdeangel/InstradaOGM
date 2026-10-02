@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { TimeInput } from '@/components/ui/time-input';
 import {
   Dialog,
   DialogContent,
@@ -169,18 +170,9 @@ export function CronBuilderModal({
           <TabsContent value="custom" className="space-y-4 pt-4">
             <div className="space-y-3">
               <Label>Time of Day</Label>
-              <Input
-                type="text"
-                inputMode="numeric"
-                placeholder="HH:MM"
+              <TimeInput
                 value={customTime}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  // eslint-disable-next-line security/detect-unsafe-regex -- Safe: simple time format validation
-                  if (val === '' || /^\d{0,2}(:\d{0,2})?$/.test(val)) {
-                    setCustomTime(val);
-                  }
-                }}
+                onChange={setCustomTime}
               />
 
               <div className="pt-2">
