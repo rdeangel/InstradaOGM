@@ -8,7 +8,7 @@ import type { ValidLocalNetwork } from '@/types/settings'; // Import ValidLocalN
 /**
  * Type for request objects that may have an ip property (like NextRequest)
  */
-type RequestWithIp = Request & { ip?: string };
+type RequestWithIp = { headers: Pick<Headers, 'get'>; ip?: string };
 
 /**
  * Extracts the client's IP address from the request headers or socket.

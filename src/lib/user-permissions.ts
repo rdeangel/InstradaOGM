@@ -58,8 +58,8 @@ export async function resolveUserLocalGroupIds(userId: string): Promise<string[]
 
 /**
  * Resolves the host-alias UUIDs a user is permitted to manage. Cheap: no OPNsense call.
- * A null userId (unauthenticated/self-service) is treated as wildcard — those flows are
- * gated by IP-based self-service checks instead of group permissions.
+ * A null userId (unauthenticated/self-service) is treated as wildcard. Callers MUST gate
+ * null userId with `isAnonSelfServiceAllowed` / `isAnonSelfServiceTarget` first.
  *
  * ADMIN and SUPER_ADMIN are treated as wildcard **by role** (decision D2 / audit step 3a).
  * That restores v1.2.3 for the 652c778 paths that call this helper (host-group-management,

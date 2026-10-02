@@ -79,8 +79,9 @@ describe('host-group-management invalid IP boundary', () => {
     authenticateRequest.mockResolvedValue({ user: { id: 'admin-1', role: 'ADMIN' }, method: 'session' });
     prismaMock.opnsenseGroupDisplay.findMany.mockResolvedValue([]);
     prismaMock.globalSettings.findFirst.mockResolvedValue({
-      allowedNetworks: [],
+      allowedNetworks: [{ type: 'include', network: '192.168.1.0/24' }],
       removeSelfServicePage: false,
+      enableRenamingSelfServicePage: true,
     });
   });
 

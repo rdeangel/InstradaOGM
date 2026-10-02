@@ -1,7 +1,7 @@
 // src/lib/server/global-settings.ts
 import { prisma } from '@/lib/prisma';
 import { GlobalSettings, ValidLocalNetwork, CustomLucideIcon, CustomEmoji, CustomFlag } from '@/types/settings';
-import { isIpInallowedNetworks } from '@/lib/network-utils';
+import { getClientIp, isIpInallowedNetworks, isOwnDeviceSelfService } from '@/lib/network-utils';
 import { Prisma } from '@prisma/client'; // Import Prisma namespace
 import { toJsonArrayOrUndefined } from '@/lib/utils';
 
@@ -131,4 +131,32 @@ export async function getGlobalSettings(clientIp?: string | null): Promise<Globa
     manageNetworkAliasesEnabled: transformedGlobalSettings.manageNetworkAliasesEnabled || false,
     isSelfServiceAllowed,
   };
+}
+
+export interface AnonSelfServiceGate {
+  allowed: boolean;               // === getGlobalSettings(clientIp).isSelfServiceAllowed
+  clientIp: string | null;        // getClientIp(request)
+  settings: GlobalSettingsResponse;
+  message: string;                // denial text when !allowed
+}
+
+/** Same expression the UI uses (ui/config → isSelfServiceAllowed). Callers MUST use this for anonymous self-service. */
+export async function isAnonSelfServiceAllowed(
+  request: { headers: Pick<Headers, 'get'>; ip?: string }
+): Promise<AnonSelfServiceGate> {
+  const clientIp = getClientIp(request);
+  const settings = await getGlobalSettings(clientIp);
+  return {
+    allowed: settings.isSelfServiceAllowed,
+    clientIp,
+    settings,
+    message: settings.removeSelfServicePage
+      ? 'Forbidden: Self-service functionality is disabled'
+      : 'Unauthorized: IP address is not in allowed networks for self-service access',
+  };
+}
+
+/** Gate allowed AND target is the caller's own IP (::ffff:-normalised) inside allowed networks. */
+export function isAnonSelfServiceTarget(gate: AnonSelfServiceGate, targetIp: string | null | undefined): boolean {
+  return gate.allowed && isOwnDeviceSelfService(gate.clientIp, targetIp ?? null, gate.settings.allowedNetworks ?? []);
 } 

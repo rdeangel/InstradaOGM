@@ -35,78 +35,64 @@ export async function isHostInUnmanagedGroups(
   user?: User | null,
   userSpecificFilters?: GroupSpecificFilterSetting[] | null
 ): Promise<UnmanagedGroupResult> {
-  try {
-    // If host has no groups, it's not unmanaged
-    if (!hostGroups || hostGroups.length === 0) {
-      return {
-        isUnmanaged: false,
-        unmanagedGroups: [],
-        reason: 'none',
-        message: 'Host is not associated with any network groups.'
-      };
-    }
-
-    // Use existing filterNetworkGroups to determine what groups would be "managed"
-    const managedGroups = await filterNetworkGroups(
-      hostGroups,
-      globalFilters,
-      globallyDisabledGroups,
-      user,
-      userSpecificFilters
-    );
-
-    // Create a set of managed group IDs for efficient lookup
-    const managedGroupIds = new Set(managedGroups.map(g => g.id));
-    
-    // Find groups that are not in the managed set (i.e., would be filtered out)
-    const unmanagedGroups = hostGroups.filter(g => !managedGroupIds.has(g.id));
-
-    // If no unmanaged groups found, host is fully managed
-    if (unmanagedGroups.length === 0) {
-      return {
-        isUnmanaged: false,
-        unmanagedGroups: [],
-        reason: 'none',
-        message: 'All host groups are available for self-service.'
-      };
-    }
-
-    // Determine the primary reason for being unmanaged
-    const globallyDisabledIds = new Set(globallyDisabledGroups.map(g => g.opnsenseUuid));
-    const hasGloballyDisabled = unmanagedGroups.some(g => globallyDisabledIds.has(g.uuid));
-
-    let reason: 'globally_disabled' | 'filtered_out';
-    let message: string;
-
-    if (hasGloballyDisabled) {
-      reason = 'globally_disabled';
-      message = 'Your device is associated with network groups that have been disabled by administrators. Self-service modifications are not allowed.';
-    } else {
-      reason = 'filtered_out';
-      message = 'Your device is associated with network groups that are not available for self-service access. Please contact your network administrator for assistance.';
-    }
-
-    logger.debug(`Host has unmanaged groups: ${unmanagedGroups.map(g => g.name).join(', ')} (reason: ${reason})`);
-
-    return {
-      isUnmanaged: true,
-      unmanagedGroups,
-      reason,
-      message
-    };
-
-  } catch (error) {
-    logger.error('Error checking unmanaged group status:', error);
-    
-    // Fail open - if we can't determine the status, allow self-service
-    // This ensures the feature degrades gracefully
+  // If host has no groups, it's not unmanaged
+  if (!hostGroups || hostGroups.length === 0) {
     return {
       isUnmanaged: false,
       unmanagedGroups: [],
       reason: 'none',
-      message: 'Unable to determine group management status. Self-service is available.'
+      message: 'Host is not associated with any network groups.'
     };
   }
+
+  // Use existing filterNetworkGroups to determine what groups would be "managed"
+  const managedGroups = await filterNetworkGroups(
+    hostGroups,
+    globalFilters,
+    globallyDisabledGroups,
+    user,
+    userSpecificFilters
+  );
+
+  // Create a set of managed group IDs for efficient lookup
+  const managedGroupIds = new Set(managedGroups.map(g => g.id));
+
+  // Find groups that are not in the managed set (i.e., would be filtered out)
+  const unmanagedGroups = hostGroups.filter(g => !managedGroupIds.has(g.id));
+
+  // If no unmanaged groups found, host is fully managed
+  if (unmanagedGroups.length === 0) {
+    return {
+      isUnmanaged: false,
+      unmanagedGroups: [],
+      reason: 'none',
+      message: 'All host groups are available for self-service.'
+    };
+  }
+
+  // Determine the primary reason for being unmanaged
+  const globallyDisabledIds = new Set(globallyDisabledGroups.map(g => g.opnsenseUuid));
+  const hasGloballyDisabled = unmanagedGroups.some(g => globallyDisabledIds.has(g.uuid));
+
+  let reason: 'globally_disabled' | 'filtered_out';
+  let message: string;
+
+  if (hasGloballyDisabled) {
+    reason = 'globally_disabled';
+    message = 'Your device is associated with network groups that have been disabled by administrators. Self-service modifications are not allowed.';
+  } else {
+    reason = 'filtered_out';
+    message = 'Your device is associated with network groups that are not available for self-service access. Please contact your network administrator for assistance.';
+  }
+
+  logger.debug(`Host has unmanaged groups: ${unmanagedGroups.map(g => g.name).join(', ')} (reason: ${reason})`);
+
+  return {
+    isUnmanaged: true,
+    unmanagedGroups,
+    reason,
+    message
+  };
 }
 
 /**
@@ -117,59 +103,47 @@ export async function isHostInUnmanagedGroups(
  * @returns Promise with filter data needed for unmanaged group checking
  */
 export async function fetchUnmanagedGroupFilterData(user?: User | null) {
-  try {
-    // Fetch global filters
-    const globalFilters = (await prisma.groupFilterSetting.findMany({
-      orderBy: { createdAt: 'asc' }
-    })).map(filter => ({
-      ...filter,
-      type: filter.type as "include" | "exclude",
-    }));
+  // Fetch global filters
+  const globalFilters = (await prisma.groupFilterSetting.findMany({
+    orderBy: { createdAt: 'asc' }
+  })).map(filter => ({
+    ...filter,
+    type: filter.type as "include" | "exclude",
+  }));
 
-    // Fetch globally disabled groups
-    const globallyDisabledGroups = await prisma.globallyDisabledGroup.findMany();
+  // Fetch globally disabled groups
+  const globallyDisabledGroups = await prisma.globallyDisabledGroup.findMany();
 
-    // Fetch user-specific filters if user is provided
-    let userSpecificFilters: GroupSpecificFilterSetting[] | null = null;
-    if (user) {
-      // Get user's local group IDs
-      const userWithGroups = await prisma.user.findUnique({
-        where: { id: user.id },
-        include: { groups: true }
-      });
+  // Fetch user-specific filters if user is provided
+  let userSpecificFilters: GroupSpecificFilterSetting[] | null = null;
+  if (user) {
+    // Get user's local group IDs
+    const userWithGroups = await prisma.user.findUnique({
+      where: { id: user.id },
+      include: { groups: true }
+    });
 
-      const allLocalGroupIds = userWithGroups?.groups.map(g => g.id) || [];
+    const allLocalGroupIds = userWithGroups?.groups.map(g => g.id) || [];
 
-      if (allLocalGroupIds.length > 0) {
-        userSpecificFilters = (await prisma.groupSpecificFilterSetting.findMany({
-          where: {
-            groupId: {
-              in: allLocalGroupIds,
-            },
+    if (allLocalGroupIds.length > 0) {
+      userSpecificFilters = (await prisma.groupSpecificFilterSetting.findMany({
+        where: {
+          groupId: {
+            in: allLocalGroupIds,
           },
-        })).map(f => ({
-          ...f,
-          type: f.type as 'include' | 'exclude',
-        }));
-      }
+        },
+      })).map(f => ({
+        ...f,
+        type: f.type as 'include' | 'exclude',
+      }));
     }
-
-    return {
-      globalFilters,
-      globallyDisabledGroups,
-      userSpecificFilters
-    };
-
-  } catch (error) {
-    logger.error('Error fetching unmanaged group filter data:', error);
-
-    // Return empty data on error
-    return {
-      globalFilters: [],
-      globallyDisabledGroups: [],
-      userSpecificFilters: null
-    };
   }
+
+  return {
+    globalFilters,
+    globallyDisabledGroups,
+    userSpecificFilters
+  };
 }
 
 /**

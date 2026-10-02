@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/logger';
 import { authenticateRequest, handleAuthResponse } from '@/lib/auth-middleware';
 import { buildJsonFilter, supportsArrayContains } from '@/lib/db-helpers';
+import { isAnonSelfServiceAllowed, isAnonSelfServiceTarget } from '@/lib/server/global-settings';
 
 /**
  * GET /api/opnsense/host-alias-last-assignment?ipAddress=<ip>
@@ -27,12 +28,7 @@ import { buildJsonFilter, supportsArrayContains } from '@/lib/db-helpers';
  */
 export async function GET(request: NextRequest) {
   const auth = await authenticateRequest(request);
-  // Extract client IP using standardized helper
-  const { getClientIp } = await import('@/lib/network-utils');
-  const rawClientIp = getClientIp(request);
-
-  // Normalize client IP for comparison (remove IPv4-mapped IPv6 prefix)
-  const clientIp = rawClientIp?.startsWith('::ffff:') ? rawClientIp.substring(7) : (rawClientIp || 'unknown');
+  const gate = await isAnonSelfServiceAllowed(request);
 
   // Check for rate limiting errors for authenticated users
   if (auth.user) {
@@ -40,33 +36,24 @@ export async function GET(request: NextRequest) {
     if (authError) return authError;
   }
 
-  // Check if self-service is globally disabled for unauthenticated users only
-  const globalSettings = await prisma.globalSettings.findFirst({
-    orderBy: { id: 'asc' },
-  });
-
-  if (!auth.user && globalSettings?.removeSelfServicePage) {
-    logger.info(`Unauthenticated last assignment query blocked - self-service functionality is globally disabled`);
+  if (!auth.user && !gate.allowed) {
+    logger.info(`Unauthenticated last assignment query blocked: ${gate.message}`);
     return NextResponse.json({
-      error: 'Forbidden: Self-service functionality is disabled'
+      error: gate.message
     }, { status: 403 });
   }
 
   const { searchParams } = new URL(request.url);
   const ipAddress = searchParams.get('ipAddress');
   const excludeMultiSelectGroups = searchParams.get('excludeMultiSelectGroups') === 'true'; // Filter out MultiSelect group operations
-  const normalizedRequestedIp = ipAddress?.startsWith('::ffff:') ? ipAddress.substring(7) : ipAddress;
 
   if (!ipAddress) {
     return NextResponse.json({ error: 'ipAddress parameter is required' }, { status: 400 });
   }
 
-  // If not authenticated, verify the request is for the client's own IP
-  if (!auth.user) {
-    if (normalizedRequestedIp !== clientIp) {
-      logger.warn(`Unauthorized attempt to query last assignment for IP ${ipAddress} from client IP ${clientIp}.`);
-      return new NextResponse(JSON.stringify({ error: 'Forbidden: You can only query for your own device.' }), { status: 403 });
-    }
+  if (!auth.user && !isAnonSelfServiceTarget(gate, ipAddress)) {
+    logger.warn(`Unauthorized attempt to query last assignment for IP ${ipAddress} from client IP ${gate.clientIp}.`);
+    return new NextResponse(JSON.stringify({ error: 'Forbidden: You can only query for your own device.' }), { status: 403 });
   }
 
   try {

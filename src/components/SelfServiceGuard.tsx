@@ -1,9 +1,10 @@
 import { redirect } from 'next/navigation';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
-import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/logger';
 import { isUserIpInDeviceManagementScopeOptimized } from '@/lib/user-permissions';
+import { getClientIp } from '@/lib/network-utils';
+import { getGlobalSettings } from '@/lib/server/global-settings';
 
 import { headers } from 'next/headers';
 
@@ -18,14 +19,9 @@ interface SelfServiceGuardProps {
  */
 export default async function SelfServiceGuard({ children }: SelfServiceGuardProps) {
   try {
-    // Get client IP from headers
     const headersList = await headers();
-    const clientIp = headersList.get('x-forwarded-for') || headersList.get('x-real-ip') || null;
-
-    // Check global settings server-side
-    const globalSettings = await prisma.globalSettings.findFirst({
-      orderBy: { id: 'asc' },
-    });
+    const clientIp = getClientIp({ headers: headersList });
+    const settings = await getGlobalSettings(clientIp);
 
     // Get server session to determine authentication status
     const session = await getServerSession(authOptions);
@@ -35,7 +31,7 @@ export default async function SelfServiceGuard({ children }: SelfServiceGuardPro
     let redirectReason = '';
 
     // 1. Check global setting
-    if (globalSettings?.removeSelfServicePage) {
+    if (settings.removeSelfServicePage) {
       shouldBlockSelfService = true;
       redirectReason = 'Self-service is globally disabled';
     }
@@ -55,9 +51,10 @@ export default async function SelfServiceGuard({ children }: SelfServiceGuardPro
         }
       }
     }
-    // 3. For unauthenticated users, no additional IP checks needed at server-side guard level
-    // The global settings check above is sufficient for unauthenticated access
-    // IP-based restrictions for unauthenticated users are handled by the API routes and client-side guards
+    else if (!settings.isSelfServiceAllowed) {
+      shouldBlockSelfService = true;
+      redirectReason = 'Self-service not allowed from this network';
+    }
 
     // If self-service should be blocked, redirect based on authentication status
     if (shouldBlockSelfService) {

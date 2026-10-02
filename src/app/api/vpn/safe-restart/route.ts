@@ -9,9 +9,7 @@ import { isOpnsenseIpsecConnection } from '@/types/opnsense';
 import { VpnClientType } from '@prisma/client';
 import { fetchUnmanagedGroupFilterData, isHostInUnmanagedGroups } from '@/lib/unmanaged-group-utils';
 import { prisma } from '@/lib/prisma';
-import { isIpAllowedForSelfService } from '@/lib/network-utils';
-import type { ValidLocalNetwork } from '@/types/settings';
-import { toJsonArrayOrUndefined } from '@/lib/utils';
+import { isAnonSelfServiceAllowed } from '@/lib/server/global-settings';
 
 interface OpnsenseAliasDetail {
   uuid?: string;
@@ -132,33 +130,20 @@ export async function POST(req: Request) {
 
     const vpnId = assertOpnsenseId(vpnUuid);
 
-    // Check if this is a self-service operation and if the host is in unmanaged groups
+    // Anonymous self-service: recover a stuck/disconnected group VPN. Already-connected
+    // VPNs still cannot be stopped or restarted (checked below). The gate only tightens
+    // access (disabled / empty networks / outside networks → 403).
     if (!auth.user) {
       try {
-        // Get client IP address for validation
-        const { getClientIp } = await import('@/lib/network-utils');
-        const clientIp = getClientIp(req) || '0.0.0.0';
-
-        // Get global settings to check allowed networks
-        const globalSettings = await prisma.globalSettings.findFirst({
-          orderBy: { id: 'asc' },
-        });
-        const allowedNetworks = toJsonArrayOrUndefined<ValidLocalNetwork>(globalSettings?.allowedNetworks) || [];
-
-        // Check if the client IP is allowed for self-service operations
-        const ipValidation = isIpAllowedForSelfService(
-          clientIp,
-          clientIp,
-          allowedNetworks,
-          false // unauthenticated
-        );
-
-        if (!ipValidation.isAllowed) {
-          logger.warn(`Self-service VPN restart denied for IP ${clientIp}: ${ipValidation.reason}`);
+        const gate = await isAnonSelfServiceAllowed(req);
+        if (!gate.allowed) {
+          logger.warn(`Self-service VPN restart denied for IP ${gate.clientIp}: ${gate.message}`);
           return new NextResponse(JSON.stringify({
-            error: `Forbidden: ${ipValidation.reason}`
+            error: gate.message
           }), { status: 403 });
         }
+
+        const clientIp = gate.clientIp || '0.0.0.0';
 
         // Get current group memberships for the VPN
         const currentGroups = await getIpGroupMembershipForVpn(vpnUuid, clientIp);

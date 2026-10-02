@@ -18,6 +18,8 @@ import { lookupMacVendor } from '@/lib/server/network-utils'; // Import lookupMa
 import { authenticateRequest, handleAuthResponse, trackUsageByAuthMethod } from '@/lib/auth-middleware';
 import { logApiAccess } from '@/lib/auditLog';
 import { fetchUnmanagedGroupFilterData, isHostInUnmanagedGroups } from '@/lib/unmanaged-group-utils';
+import { isAnonSelfServiceAllowed, isAnonSelfServiceTarget } from '@/lib/server/global-settings';
+import { resolveUserAliasPermissions } from '@/lib/user-permissions';
 
 
 // Helper function to get IP group membership for a host alias
@@ -73,13 +75,7 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const ipAddress = searchParams.get('ipAddress');
   const auth = await authenticateRequest(request);
-  // Extract client IP using standardized helper
-  const { getClientIp } = await import('@/lib/network-utils');
-  const rawClientIp = getClientIp(request);
-
-  // Normalize client IP for comparison (remove IPv4-mapped IPv6 prefix)
-  const clientIp = rawClientIp?.startsWith('::ffff:') ? rawClientIp.substring(7) : (rawClientIp || 'UNKNOWN_IP');
-  const normalizedRequestedIp = ipAddress?.startsWith('::ffff:') ? ipAddress.substring(7) : ipAddress;
+  const gate = await isAnonSelfServiceAllowed(request);
 
   // Check for rate limiting errors for authenticated users
   if (auth.user) {
@@ -87,30 +83,18 @@ export async function GET(request: Request) {
     if (authError) return authError;
   }
 
-  // Check if self-service is globally disabled for unauthenticated users only
-  // Authenticated admin users should still be able to access this endpoint for admin functionality
-  const globalSettings = await prisma.globalSettings.findFirst({
-    orderBy: { id: 'asc' },
-  });
-
-  if (!auth.user && globalSettings?.removeSelfServicePage) {
-    logger.info(`Unauthenticated host alias management blocked - self-service functionality is globally disabled`);
+  if (!auth.user && !gate.allowed) {
+    logger.info(`Unauthenticated host alias management blocked: ${gate.message}`);
     return NextResponse.json({
-      error: 'Forbidden: Self-service functionality is disabled'
+      error: gate.message
     }, { status: 403 });
   }
 
-  // For authenticated users, no additional IP-based restrictions
-  // (Device management scope is only enforced for self-service functionality)
-
   try {
     if (ipAddress) {
-      // If not authenticated, verify the request is for the client's own IP
-      if (!auth.user) {
-        if (normalizedRequestedIp !== clientIp) {
-          logger.warn(`Unauthorized attempt to search host alias for IP ${ipAddress} from client IP ${clientIp}.`);
-          return new NextResponse(JSON.stringify({ error: 'Forbidden: You can only query for your own device.' }), { status: 403 });
-        }
+      if (!auth.user && !isAnonSelfServiceTarget(gate, ipAddress)) {
+        logger.warn(`Unauthorized attempt to search host alias for IP ${ipAddress} from client IP ${gate.clientIp}.`);
+        return new NextResponse(JSON.stringify({ error: 'Forbidden: You can only query for your own device.' }), { status: 403 });
       }
 
       const hostAliases = await getHostAliases();
@@ -192,19 +176,23 @@ export async function DELETE(request: Request) {
 
   assertOpnsenseId(uuid);
 
-  // Use mixed tracking since this might support both authenticated and unauthenticated access
   const auth = await authenticateRequest(request);
 
-  // Check for rate limiting errors BEFORE proceeding
-  if (auth.user) {
-    const authError = handleAuthResponse(auth);
-    if (authError) return authError;
+  if (!auth.user) {
+    return NextResponse.json({ message: 'Authentication required' }, { status: 401 });
   }
 
-  // Track usage for authenticated requests
-  if (auth && auth.user) {
-    await trackUsageByAuthMethod(request, auth, 200);
+  const authError = handleAuthResponse(auth);
+  if (authError) return authError;
+
+  const perms = await resolveUserAliasPermissions(auth.user.id);
+  if (!perms.hasWildcard && !perms.permittedAliasUuids.has(uuid)) {
+    return NextResponse.json({
+      message: 'Forbidden: You do not have permission to manage this device'
+    }, { status: 403 });
   }
+
+  await trackUsageByAuthMethod(request, auth, 200);
 
   try {
 
@@ -348,6 +336,15 @@ export async function PUT(request: Request) {
       return NextResponse.json({ message: 'Missing required field: name' }, { status: 400 });
     }
 
+    const gate = await isAnonSelfServiceAllowed(request);
+
+    if (!auth.user && (!gate.allowed || !gate.settings.enableRenamingSelfServicePage)) {
+      const message = !gate.allowed
+        ? gate.message
+        : 'Forbidden: Renaming is not enabled for self-service';
+      return NextResponse.json({ error: message, message }, { status: 403 });
+    }
+
     // Fetch the existing alias details
     const allAliases = await getHostAliases();
     const existingAlias = allAliases.find(alias => alias.uuid === uuid);
@@ -356,22 +353,41 @@ export async function PUT(request: Request) {
       return NextResponse.json({ message: `Host alias with UUID ${uuid} not found.` }, { status: 404 });
     }
 
-    // Check if this is a self-service operation and if the host is in unmanaged groups
-    // Self-service operations are typically performed by non-admin users
-    if (auth.user && (auth.user.role !== Role.SUPER_ADMIN && auth.user.role !== Role.ADMIN)) {
+    const contentEntries = existingAlias.content.split(/[\s]+/).map((entry: string) => entry.trim()).filter(Boolean);
+    const aliasIp = contentEntries.length === 1 ? contentEntries[0] : null;
+
+    if (!auth.user) {
+      if (existingAlias.type !== 'host' || !isAnonSelfServiceTarget(gate, aliasIp)) {
+        return NextResponse.json({
+          message: 'Forbidden: You can only rename your own device'
+        }, { status: 403 });
+      }
+    } else {
+      const perms = await resolveUserAliasPermissions(auth.user.id);
+      const allowedByPermission = perms.hasWildcard || perms.permittedAliasUuids.has(uuid);
+      const allowedByOwnDevice = isAnonSelfServiceTarget(gate, aliasIp);
+      if (!allowedByPermission && !allowedByOwnDevice) {
+        return NextResponse.json({
+          message: 'Forbidden: You do not have permission to manage this device'
+        }, { status: 403 });
+      }
+    }
+
+    // Unmanaged-group check: anonymous callers plus non-admin roles
+    if (!auth.user || (auth.user.role !== Role.SUPER_ADMIN && auth.user.role !== Role.ADMIN)) {
       try {
         // Get current group memberships for the host alias
         const currentGroups = await getIpGroupMembershipForAlias(existingAlias.name);
 
         // Fetch filter data
-        const filterData = await fetchUnmanagedGroupFilterData(auth.user);
+        const filterData = await fetchUnmanagedGroupFilterData(auth.user ?? null);
 
         // Check if host is in unmanaged groups
         const unmanagedResult = await isHostInUnmanagedGroups(
           currentGroups,
           filterData.globalFilters,
           filterData.globallyDisabledGroups,
-          auth.user,
+          auth.user ?? null,
           filterData.userSpecificFilters
         );
 
@@ -398,7 +414,17 @@ export async function PUT(request: Request) {
         }
       } catch (error) {
         logger.error('Error checking unmanaged group status for host alias rename:', error);
-        // Continue with operation if check fails (fail open)
+        await logApiAccess(auth, 'HOST_ALIAS_RENAME_FAILURE', {
+          aliasName: existingAlias.name,
+          aliasUuid: uuid,
+          newName: newName,
+          reason: 'Could not verify group management status',
+          validationFailure: 'UNMANAGED_CHECK_FAILED',
+        }, request, 'Could not verify group management status');
+        return NextResponse.json({
+          success: false,
+          message: 'Could not verify group management status. Try again.'
+        }, { status: 503 });
       }
     }
 
@@ -539,13 +565,19 @@ export async function PUT(request: Request) {
 }
 
 export async function POST(request: Request) {
-  // Authenticate the request to get user info for audit logging
   const auth = await authenticateRequest(request);
 
-  // Check for rate limiting errors BEFORE proceeding
-  if (auth.user) {
-    const authError = handleAuthResponse(auth);
-    if (authError) return authError;
+  if (!auth.user) {
+    return NextResponse.json({ message: 'Authentication required' }, { status: 401 });
+  }
+
+  const authError = handleAuthResponse(auth);
+  if (authError) return authError;
+
+  if (auth.user.role !== Role.ADMIN && auth.user.role !== Role.SUPER_ADMIN) {
+    return NextResponse.json({
+      message: 'Forbidden: Creating host aliases requires ADMIN or SUPER_ADMIN'
+    }, { status: 403 });
   }
 
   // Track usage for authenticated requests

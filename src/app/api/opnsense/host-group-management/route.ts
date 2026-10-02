@@ -26,10 +26,10 @@ import * as ipaddr from 'ipaddr.js';
 import { prisma } from '@/lib/prisma';
 import type { NetworkGroup } from '@/types/opnsense';
 import type { ValidLocalNetwork } from '@/types/settings';
-import { firstInvalidIpAddress, InvalidIpAddressError, isIpAllowedForSelfService, isOwnDeviceSelfService, trimmedProvidedIpAddress } from '@/lib/network-utils';
+import { firstInvalidIpAddress, InvalidIpAddressError, isOwnDeviceSelfService, trimmedProvidedIpAddress } from '@/lib/network-utils';
 import { fetchUnmanagedGroupFilterData, isHostInUnmanagedGroups } from '@/lib/unmanaged-group-utils';
-import { toJsonArrayOrUndefined } from '@/lib/utils';
 import { resolveUserAliasPermissions, resolveUserPermissions, type ResolvedUserPermissions } from '@/lib/user-permissions';
+import { isAnonSelfServiceAllowed } from '@/lib/server/global-settings';
 
 /**
  * Validates a single operation against already-resolved permissions.
@@ -443,10 +443,6 @@ async function getIpGroupMembership(ipAddress: string): Promise<NetworkGroup[]> 
 }
 
 export async function POST(request: Request) {
-  // Get client IP address for validation
-  const forwardedFor = request.headers.get('x-forwarded-for');
-  const clientIp = forwardedFor ? forwardedFor.split(',')[0].trim() : '0.0.0.0';
-
   // Authenticate the request (works with both session and API key)
   const auth = await authenticateRequest(request);
 
@@ -457,7 +453,15 @@ export async function POST(request: Request) {
     if (authError) return authError;
   }
 
+  let clientIp = '';
   try {
+    const gate = await isAnonSelfServiceAllowed(request);
+    clientIp = gate.clientIp ?? '';
+    const allowedNetworks = gate.settings.allowedNetworks ?? [];
+    // Self-service grants are only honored when the self-service page is not globally disabled,
+    // mirroring the access an unauthenticated user would have at the same machine.
+    const selfServiceEnabled = !gate.settings.removeSelfServicePage;
+
     const body = await request.json();
     const {
       operation,
@@ -487,15 +491,6 @@ export async function POST(request: Request) {
       groupType: d.groupType === 'MultiSelect' ? 'MultiSelect' : 'SingleSelect'
     }));
 
-    // Get allowed networks for self-service validation
-    const globalSettings = await prisma.globalSettings.findFirst({
-      orderBy: { id: 'asc' },
-    });
-    const allowedNetworks = toJsonArrayOrUndefined<ValidLocalNetwork>(globalSettings?.allowedNetworks) || [];
-    // Self-service grants are only honored when the self-service page is not globally disabled,
-    // mirroring the access an unauthenticated user would have at the same machine.
-    const selfServiceEnabled = !globalSettings?.removeSelfServicePage;
-
     // Log the authentication method if user is authenticated
     const authMethod = auth.user
       ? (auth.method === 'apiKey' ? `API Key (${auth.apiKeyId})` : 'Session')
@@ -503,24 +498,22 @@ export async function POST(request: Request) {
 
     const userId = auth.user?.id || null;
 
-    // Self-service is the only legitimate use of the unauthenticated path. When the self-service
-    // page is globally disabled it is hidden from everyone in the UI, so block unauthenticated
-    // callers here too — mirroring the read-side self-service endpoints.
-    if (!auth.user && !selfServiceEnabled) {
-      logger.warn(`[host-group-management] Unauthenticated request blocked - self-service is globally disabled (clientIp: ${clientIp})`);
+    // Anonymous callers need the same expression the UI uses (disabled, empty list, or outside networks).
+    if (!auth.user && !gate.allowed) {
+      logger.warn(`[host-group-management] Unauthenticated request blocked (clientIp: ${clientIp}): ${gate.message}`);
       await logAuditEvent({
         userId: null,
         action: 'OPNSENSE_GROUP_IP_OPERATION_FAILURE',
         details: {
-          reason: 'Self-service functionality is disabled',
+          reason: gate.message,
           authMethod,
           clientIp,
-          validationFailure: 'SELF_SERVICE_DISABLED',
+          validationFailure: gate.settings.removeSelfServicePage ? 'SELF_SERVICE_DISABLED' : 'NETWORK_NOT_ALLOWED',
         },
       });
       return NextResponse.json({
         success: false,
-        message: 'Forbidden: Self-service functionality is disabled',
+        message: gate.message,
       }, { status: 403 });
     }
 
@@ -620,11 +613,49 @@ async function handleAssignOperation(
   }
   const ipAddress = trimmedProvidedIpAddress(rawIpAddress);
 
+  if (userId === null && !isOwnDeviceSelfService(clientIp, ipAddress ?? null, allowedNetworks)) {
+    logger.warn(`[host-group-management] Unauthenticated assign blocked: client ${clientIp} cannot operate on ${ipAddress ?? '(missing ipAddress)'}`);
+    await logAuditEvent({
+      userId: null,
+      action: 'OPNSENSE_GROUP_IP_ASSIGN_FAILURE',
+      details: {
+        reason: 'Unauthenticated users can only operate on their own IP address',
+        ipAddress: ipAddress ?? null,
+        clientIp,
+        authMethod,
+        validationFailure: 'OWN_IP_REQUIRED',
+      },
+    });
+    return NextResponse.json({
+      success: false,
+      message: 'Unauthorized: Unauthenticated users can only operate on their own IP address',
+    }, { status: 403 });
+  }
+
   // Resolve host alias identifier from various parameter combinations
   let resolvedHostAlias = await resolveHostAliasIdentifier(ipAddress, hostAliasName, hostAliasHostName);
 
   // If host alias cannot be resolved, create it
   if (!resolvedHostAlias) {
+    if (userId !== null && !(await resolveUserAliasPermissions(userId)).hasWildcard
+        && !(selfServiceEnabled && isOwnDeviceSelfService(clientIp, ipAddress ?? null, allowedNetworks))) {
+      logger.warn(`[host-group-management] Create-before-permission denied for user ${userId} on ${ipAddress ?? '(missing ipAddress)'}`);
+      await logAuditEvent({
+        userId,
+        action: 'OPNSENSE_GROUP_IP_ASSIGN_FAILURE',
+        details: {
+          reason: 'User does not have permission to manage this host alias',
+          ipAddress: ipAddress ?? null,
+          authMethod,
+          validationFailure: 'HOST_ALIAS_PERMISSION_DENIED',
+        },
+      });
+      return NextResponse.json({
+        success: false,
+        message: 'Forbidden: You do not have permission to manage this device',
+      }, { status: 403 });
+    }
+
     // Case 1: hostname is provided, create from hostname
     if (hostname) {
       try {
@@ -729,20 +760,23 @@ async function handleAssignOperation(
 
   const { ipAddress: resolvedIpAddress, hostAliasName: resolvedHostAliasName } = resolvedHostAlias;
 
-  // Check if the IP is allowed for self-service operations
-  const ipValidation = isIpAllowedForSelfService(
-    clientIp,
-    resolvedIpAddress,
-    allowedNetworks,
-    true // Assume authenticated for now
-  );
-
-  if (!ipValidation.isAllowed) {
-    logger.warn(`Self-service access denied for IP ${resolvedIpAddress} from client IP ${clientIp}: ${ipValidation.reason}`);
+  if (userId === null && !isOwnDeviceSelfService(clientIp, resolvedIpAddress, allowedNetworks)) {
+    logger.warn(`[host-group-management] Unauthenticated assign blocked after resolve: client ${clientIp} cannot operate on ${resolvedIpAddress}`);
+    await logAuditEvent({
+      userId: null,
+      action: 'OPNSENSE_GROUP_IP_ASSIGN_FAILURE',
+      details: {
+        reason: 'Unauthenticated users can only operate on their own IP address',
+        ipAddress: resolvedIpAddress,
+        clientIp,
+        authMethod,
+        validationFailure: 'OWN_IP_REQUIRED',
+      },
+    });
     return NextResponse.json({
       success: false,
-      message: `Unauthorized: ${ipValidation.reason}`
-    }, { status: 401 });
+      message: 'Unauthorized: Unauthenticated users can only operate on their own IP address',
+    }, { status: 403 });
   }
 
   // Resolve group identifier from various parameter combinations
@@ -883,7 +917,23 @@ async function handleAssignOperation(
       }
     } catch (error) {
       logger.error('Error checking unmanaged group status:', error);
-      // Continue with operation if check fails (fail open)
+      await logAuditEvent({
+        userId,
+        action: 'OPNSENSE_GROUP_IP_ASSIGN_FAILURE',
+        details: {
+          operationType: 'assign',
+          groupId: resolvedGroupId,
+          ipAddress: resolvedIpAddress,
+          hostAliasName: resolvedHostAliasName,
+          reason: 'Could not verify group management status',
+          authMethod,
+          validationFailure: 'UNMANAGED_CHECK_FAILED',
+        },
+      });
+      return NextResponse.json({
+        success: false,
+        message: 'Could not verify group management status. Try again.',
+      }, { status: 503 });
     }
   }
 
@@ -1149,6 +1199,25 @@ async function handleUnassignOperation(
   }
   const ipAddress = trimmedProvidedIpAddress(rawIpAddress);
 
+  if (userId === null && !isOwnDeviceSelfService(clientIp, ipAddress ?? null, allowedNetworks)) {
+    logger.warn(`[host-group-management] Unauthenticated unassign blocked: client ${clientIp} cannot operate on ${ipAddress ?? '(missing ipAddress)'}`);
+    await logAuditEvent({
+      userId: null,
+      action: 'OPNSENSE_GROUP_IP_UNASSIGN_FAILURE',
+      details: {
+        reason: 'Unauthenticated users can only operate on their own IP address',
+        ipAddress: ipAddress ?? null,
+        clientIp,
+        authMethod,
+        validationFailure: 'OWN_IP_REQUIRED',
+      },
+    });
+    return NextResponse.json({
+      success: false,
+      message: 'Unauthorized: Unauthenticated users can only operate on their own IP address',
+    }, { status: 403 });
+  }
+
   // Resolve host alias identifier from various parameter combinations
   const resolvedHostAlias = await resolveHostAliasIdentifier(ipAddress, hostAliasName, hostAliasHostName);
 
@@ -1164,20 +1233,23 @@ async function handleUnassignOperation(
   // Resolve the caller's permissions once; reused for the unmanaged-group check and both unassign paths.
   const validator = await buildPermissionValidator(userId, authMethod, clientIp, allowedNetworks, selfServiceEnabled);
 
-  // Check if the IP is allowed for self-service operations
-  const ipValidation = isIpAllowedForSelfService(
-    clientIp,
-    resolvedIpAddress,
-    allowedNetworks,
-    true // Assume authenticated for now
-  );
-
-  if (!ipValidation.isAllowed) {
-    logger.warn(`Self-service access denied for IP ${resolvedIpAddress} from client IP ${clientIp}: ${ipValidation.reason}`);
+  if (userId === null && !isOwnDeviceSelfService(clientIp, resolvedIpAddress, allowedNetworks)) {
+    logger.warn(`[host-group-management] Unauthenticated unassign blocked after resolve: client ${clientIp} cannot operate on ${resolvedIpAddress}`);
+    await logAuditEvent({
+      userId: null,
+      action: 'OPNSENSE_GROUP_IP_UNASSIGN_FAILURE',
+      details: {
+        reason: 'Unauthenticated users can only operate on their own IP address',
+        ipAddress: resolvedIpAddress,
+        clientIp,
+        authMethod,
+        validationFailure: 'OWN_IP_REQUIRED',
+      },
+    });
     return NextResponse.json({
       success: false,
-      message: `Unauthorized: ${ipValidation.reason}`
-    }, { status: 401 });
+      message: 'Unauthorized: Unauthenticated users can only operate on their own IP address',
+    }, { status: 403 });
   }
 
   // Check if the host is in unmanaged groups for self-service operations.
@@ -1232,7 +1304,22 @@ async function handleUnassignOperation(
       }
     } catch (error) {
       logger.error('Error checking unmanaged group status:', error);
-      // Continue with operation if check fails (fail open)
+      await logAuditEvent({
+        userId,
+        action: 'OPNSENSE_GROUP_IP_UNASSIGN_FAILURE',
+        details: {
+          operationType: 'unassign',
+          ipAddress: resolvedIpAddress,
+          hostAliasName: resolvedHostAliasName,
+          reason: 'Could not verify group management status',
+          authMethod,
+          validationFailure: 'UNMANAGED_CHECK_FAILED',
+        },
+      });
+      return NextResponse.json({
+        success: false,
+        message: 'Could not verify group management status. Try again.',
+      }, { status: 503 });
     }
   }
 
@@ -1541,6 +1628,24 @@ async function handleBatchOperation(
     }
   }
 
+  if (userId === null && (!hostAliases?.length || hostAliases.some(h => !isOwnDeviceSelfService(clientIp, h.ipAddress ?? null, allowedNetworks)))) {
+    logger.warn(`[host-group-management] Unauthenticated batch blocked: client ${clientIp} sent a foreign or missing IP`);
+    await logAuditEvent({
+      userId: null,
+      action: 'OPNSENSE_GROUP_IP_OPERATION_FAILURE',
+      details: {
+        reason: 'Unauthenticated users can only operate on their own IP address',
+        clientIp,
+        authMethod,
+        validationFailure: 'OWN_IP_REQUIRED',
+      },
+    });
+    return NextResponse.json({
+      success: false,
+      message: 'Unauthorized: Unauthenticated users can only operate on their own IP address',
+    }, { status: 403 });
+  }
+
   // The raw `batchOperations` payload bypasses host-alias/group resolution and is not used by the UI.
   // Restrict it to wildcard (administrative) callers so it cannot be used to skip permission checks.
   // Unauthenticated/self-service callers (userId === null) are never permitted — they only ever use
@@ -1592,6 +1697,7 @@ async function handleBatchOperation(
 
   // Resolve the caller's permissions once and reuse the validator for every batch item.
   const validator = await buildPermissionValidator(userId, authMethod, clientIp, allowedNetworks, selfServiceEnabled);
+  const batchHasWildcard = userId !== null && (await resolveUserAliasPermissions(userId)).hasWildcard;
 
   // Take a SINGLE OPNsense export snapshot and resolve every item in memory. This replaces the
   // previous per-item exports (host-alias resolution, group resolution, per-group lookup, and the
@@ -1633,6 +1739,19 @@ async function handleBatchOperation(
 
         // If host alias cannot be resolved, create it (only for assign operations)
         if (hostAlias.ipAddress || hostAlias.hostname) {
+          if (userId !== null && !batchHasWildcard
+              && !(selfServiceEnabled && isOwnDeviceSelfService(clientIp, hostAlias.ipAddress ?? null, allowedNetworks))) {
+            operationResults.push({
+              hostAlias: {
+                ipAddress: hostAlias.ipAddress || '',
+                hostAliasName: hostAlias.hostAliasName || ''
+              },
+              success: false,
+              error: 'Forbidden: You do not have permission to manage this device'
+            });
+            continue;
+          }
+
           try {
             let aliasName: string;
             let descriptionText: string;
@@ -1782,19 +1901,11 @@ async function handleBatchOperation(
 
       const { ipAddress: resolvedIpAddress, hostAliasName: resolvedHostAliasName } = resolvedHostAlias;
 
-      // Check IP validation
-      const ipValidation = isIpAllowedForSelfService(
-        clientIp,
-        resolvedIpAddress,
-        allowedNetworks,
-        true
-      );
-
-      if (!ipValidation.isAllowed) {
+      if (userId === null && !isOwnDeviceSelfService(clientIp, resolvedIpAddress, allowedNetworks)) {
         operationResults.push({
-          hostAlias: resolvedHostAlias, // Use resolved alias here
+          hostAlias: resolvedHostAlias,
           success: false,
-          error: `Unauthorized: ${ipValidation.reason}`
+          error: 'Unauthorized: Unauthenticated users can only operate on their own IP address'
         });
         continue;
       }
@@ -1831,7 +1942,12 @@ async function handleBatchOperation(
           }
         } catch (error) {
           logger.error('Error checking unmanaged group status in batch operation:', error);
-          // Continue with operation if check fails (fail open)
+          operationResults.push({
+            hostAlias: resolvedHostAlias,
+            success: false,
+            error: 'Could not verify group management status'
+          });
+          continue;
         }
       }
 
