@@ -4,9 +4,7 @@ import path from 'path';
 import { authenticateRequest, handleAuthResponse, trackUsageByAuthMethod } from '@/lib/auth-middleware';
 import { Role } from '@/types/opnsense';
 import { logger } from '@/lib/logger';
-import { getDataPath } from '@/lib/server/data-paths';
-
-const backupsDirectory = getDataPath('backups');
+import { findExistingBackup, isValidNewBackupName, resolveInBackups } from '@/lib/server/backup-files';
 
 export async function GET(
   request: Request,
@@ -32,14 +30,11 @@ export async function GET(
   await trackUsageByAuthMethod(request, auth, 200);
 
   const { filename } = await params;
-  // Ensure the filename has the .aes extension for consistency, or handle both .sql and .aes
-  const actualFilename = filename.endsWith('.aes') ? filename : `${filename}.aes`;
-  const filePath = path.join(backupsDirectory, actualFilename);
-
-  // Basic security check: prevent directory traversal
-  if (!filePath.startsWith(backupsDirectory)) {
-    return new NextResponse(JSON.stringify({ error: 'Invalid file path.' }), { status: 400 });
+  const filePath = await findExistingBackup(filename);
+  if (!filePath) {
+    return new NextResponse(JSON.stringify({ error: 'File not found.' }), { status: 404 });
   }
+  const actualFilename = path.basename(filePath);
 
   try {
     // Path is validated against backupsDirectory
@@ -79,14 +74,11 @@ export async function PATCH(
   await trackUsageByAuthMethod(request, auth, 200);
 
   const { filename } = await params;
-  // Ensure the filename has the .aes extension for consistency, or handle both .sql and .aes
-  const actualFilename = filename.endsWith('.aes') ? filename : `${filename}.aes`;
-  const currentFilePath = path.join(backupsDirectory, actualFilename);
-
-  // Basic security check: prevent directory traversal
-  if (!currentFilePath.startsWith(backupsDirectory)) {
-    return new NextResponse(JSON.stringify({ error: 'Invalid file path.' }), { status: 400 });
+  const currentFilePath = await findExistingBackup(filename);
+  if (!currentFilePath) {
+    return new NextResponse(JSON.stringify({ error: 'Original backup file not found.' }), { status: 404 });
   }
+  const actualFilename = path.basename(currentFilePath);
 
   try {
     const body = await request.json();
@@ -96,8 +88,7 @@ export async function PATCH(
       return new NextResponse(JSON.stringify({ error: 'New filename is required.' }), { status: 400 });
     }
 
-    // Validate new filename (basic validation)
-    if (newFilename.includes('/') || newFilename.includes('\\') || newFilename.includes('..')) {
+    if (!isValidNewBackupName(newFilename)) {
       return new NextResponse(JSON.stringify({ error: 'Invalid filename.' }), { status: 400 });
     }
 
@@ -110,7 +101,7 @@ export async function PATCH(
       finalNewFilename = `${baseName}.${fileExtension}`;
     }
 
-    const newFilePath = path.join(backupsDirectory, finalNewFilename);
+    const newFilePath = resolveInBackups(finalNewFilename);
 
     // Check if new file already exists
     try {
@@ -118,13 +109,6 @@ export async function PATCH(
       return new NextResponse(JSON.stringify({ error: 'A backup with this name already exists.' }), { status: 409 });
     } catch {
       // File doesn't exist, which is what we want
-    }
-
-    // Check if current file exists
-    try {
-      await fs.access(currentFilePath);
-    } catch {
-      return new NextResponse(JSON.stringify({ error: 'Original backup file not found.' }), { status: 404 });
     }
 
     // Rename the file
@@ -156,13 +140,9 @@ export async function DELETE(
   await trackUsageByAuthMethod(request, session, 200);
 
   const { filename } = await params;
-  // Ensure the filename has the .aes extension for consistency, or handle both .sql and .aes
-  const actualFilename = filename.endsWith('.aes') ? filename : `${filename}.aes`;
-  const filePath = path.join(backupsDirectory, actualFilename);
-
-  // Basic security check: prevent directory traversal
-  if (!filePath.startsWith(backupsDirectory)) {
-    return new NextResponse(JSON.stringify({ error: 'Invalid file path.' }), { status: 400 });
+  const filePath = await findExistingBackup(filename);
+  if (!filePath) {
+    return new NextResponse(JSON.stringify({ error: 'File not found.' }), { status: 404 });
   }
 
   try {
