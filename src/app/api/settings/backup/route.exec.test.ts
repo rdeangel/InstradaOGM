@@ -12,12 +12,8 @@ const { runTool, tmpRoot } = vi.hoisted(() => {
   fsSync.mkdirSync(pathMod.join(tmpRoot, 'backups'), { recursive: true });
   process.env.DATA_FOLDER_PATH = tmpRoot;
   return {
-    runTool: vi.fn(
-      async (
-        _cmd: string,
-        _args: string[],
-        _opts?: { env?: NodeJS.ProcessEnv; stdinFile?: string; stdoutFile?: string },
-      ) => ({ stderr: '' }),
+    runTool: vi.fn<typeof import('@/lib/server/backup-files').runTool>(
+      async () => ({ stderr: '' }),
     ),
     tmpRoot,
   };
