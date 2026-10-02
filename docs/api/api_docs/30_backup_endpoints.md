@@ -84,12 +84,14 @@ curl -X POST "https://your-server.com/api/settings/backup" \
 - `filename` (string, optional): Backup filename. Behavior depends on format:
   - **Without extension** (e.g., `daily`, `weekly`): Treated as prefix, timestamp is auto-added
   - **With `.aes` extension** (e.g., `backup.sqlite.aes`): Used as-is, no timestamp added
+  - Allowed characters: letters, digits, `.`, `_`, `-`. Max 100. Other names return `400 Invalid filename`.
 
 ### Notes
 - The system automatically adds the appropriate file extension (`.sqlite.aes` or `.postgresql.aes`) when no extension is provided
 - Backup files are encrypted at rest
 - Supports both SQLite and PostgreSQL databases
 - Timestamp format: `YYYY_MM_DDTHH_MM_SS_SSSZ` (ISO 8601 with underscores)
+- Backups now work when the database password contains special characters.
 
 ## 2. Download Backup
 
@@ -111,7 +113,7 @@ curl -X GET "https://your-server.com/api/settings/backup/versions/backup_2024_01
 ```
 
 ### Parameters
-- `filename` (string): The backup filename to download
+- `filename` (string): The backup filename to download. The name must exactly match an existing backup file (as shown in the list). Backups created by older versions with other characters still work.
 
 ### Response
 - Binary file download with appropriate headers:
@@ -196,9 +198,11 @@ curl -X PATCH "https://your-server.com/api/settings/backup/versions/backup_2025_
 ```
 
 ### Parameters
+- `filename` (path): The name must exactly match an existing backup file (as shown in the list). Backups created by older versions with other characters still work.
 - `newFilename` (string): New filename for the backup. Behavior depends on format:
   - **Without extension** (e.g., `daily`, `weekly`): Treated as prefix, timestamp is auto-added
   - **With `.aes` extension** (e.g., `backup.sqlite.aes`): Used as-is, no timestamp added
+  - Allowed characters: letters, digits, `.`, `_`, `-`. Max 100. Other names return `400 Invalid filename`.
 
 ## 5. Delete Backup
 
@@ -217,6 +221,9 @@ curl -X DELETE "https://your-server.com/api/settings/backup/versions/backup_2025
   "message": "Backup file backup_2025_11_21T10_56_58_839Z.sqlite.aes deleted successfully."
 }
 ```
+
+### Parameters
+- `filename` (string): The name must exactly match an existing backup file (as shown in the list). Backups created by older versions with other characters still work.
 
 ## 6. Restore from Backup
 
@@ -305,7 +312,7 @@ curl -X POST "https://your-server.com/api/settings/backup" \
 ### Parameters
 - `action` (string, required): Must be set to "restore"
 - `file` (file, optional): The `.aes` backup file to restore (Method A)
-- `filename` (string, optional): Name of existing backup file on server (Method B)
+- `filename` (string, optional): Name of existing backup file on server (Method B). The name must exactly match an existing backup file (as shown in the list). Backups created by older versions with other characters still work.
 
 **Note**: Either `file` or `filename` must be provided, but not both.
 
@@ -550,7 +557,7 @@ if __name__ == "__main__":
   "error": "Invalid filename"
 }
 ```
-**Cause**: Filename contains invalid characters or path traversal attempts.
+**Cause**: Name contains characters outside letters, digits, `.`, `_`, `-`, or is longer than 100.
 
 #### 400 Bad Request - Invalid File Type
 ```json
