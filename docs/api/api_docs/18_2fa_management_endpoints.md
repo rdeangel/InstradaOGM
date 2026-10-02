@@ -225,7 +225,7 @@ curl -X GET "{{SERVER_URL}}/api/auth/change-password-required" \
 
 **Response Headers**:
 ```
-Set-Cookie: password_change_email=user@example.com; Path=/; HttpOnly; Secure; SameSite=Strict
+Set-Cookie: password_change_token=user@example.com; Path=/; HttpOnly; Secure; SameSite=Strict
 ```
 
 ### Usage Case 2: Password Change Not Required
@@ -282,7 +282,7 @@ Set-Cookie: password_change_email=user@example.com; Path=/; HttpOnly; Secure; Sa
 
 **Description**: Verify the password change session and validate that the user has proper authorization to change their password. This endpoint validates the session cookie set by `/api/auth/change-password-required` and ensures the user can proceed with password change.
 
-**Authentication**: Not required (uses cookie-based session management with `password_change_email` cookie)
+**Authentication**: Not required (uses cookie-based session management with `password_change_token` cookie)
 
 **HTTP Methods Supported**: GET
 
@@ -294,7 +294,7 @@ Set-Cookie: password_change_email=user@example.com; Path=/; HttpOnly; Secure; Sa
 ```bash
 curl -X GET "{{SERVER_URL}}/api/auth/check-password-change" \
   -H "Content-Type: application/json" \
-  -H "Cookie: password_change_email=user@example.com"
+  -H "Cookie: password_change_token=user@example.com"
 ```
 
 **Success Response (200)**:
@@ -345,7 +345,7 @@ curl -X GET "{{SERVER_URL}}/api/auth/check-password-change" \
 **Request Parameters**: None
 
 **Request Validation**: 
-- Requires valid `password_change_email` cookie
+- Requires valid `password_change_token` cookie
 - Cookie must contain valid email address
 - User must exist in database
 - User must have `mustChangePassword: true` flag
@@ -828,7 +828,7 @@ curl -X GET "https://your-server.com/api/auth/change-password-required" \
 # Test password change session validation
 curl -X GET "https://your-server.com/api/auth/check-password-change" \
   -H "Content-Type: application/json" \
-  -H "Cookie: password_change_email=user@example.com"
+  -H "Cookie: password_change_token=user@example.com"
 ```
 
 ### Testing Rate Limits
@@ -849,7 +849,7 @@ curl -X GET "https://your-server.com/api/test-rate-limit" \
    - Verify backup codes are entered correctly (case-insensitive)
 
 2. **Password Change Session Issues**
-   - Ensure the `password_change_email` cookie is set correctly
+   - Ensure the `password_change_token` cookie is set correctly
    - Check that the session hasn't expired (1-hour timeout)
    - Verify the user has the `mustChangePassword` flag set
 

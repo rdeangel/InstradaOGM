@@ -1411,9 +1411,27 @@ curl -X GET "{{SERVER_URL}}/api/admin/group-mappings" \
 ### User Management Features
 
 1. **Full User Lifecycle**: Create, read, update, and delete user accounts
-2. **Role Management**: Assign and modify user roles (USER, ADMIN, SUPER_ADMIN)
+2. **Role Management**: Assign and modify user roles (USER, ADMIN, SUPER_ADMIN). An ADMIN cannot create or promote SUPER_ADMIN, and cannot change a SUPER_ADMIN's password, email, or 2FA (`403`).
 3. **Group Membership**: Manage user group assignments and mappings
 4. **Authentication Methods**: Support for local and external authentication
+
+### POST /api/admin/users
+
+**Description**: Create a local user. ADMIN and SUPER_ADMIN. ADMIN cannot set `role` to `SUPER_ADMIN`.
+
+**Authentication**: Required (session or API key with ADMIN/SUPER_ADMIN)
+
+### PUT /api/admin/users/{id}
+
+**Description**: Update a user (name, username, email, role, password, mustChangePassword). ADMIN cannot assign SUPER_ADMIN or change a SUPER_ADMIN password/email.
+
+**Authentication**: Required (session or API key with ADMIN/SUPER_ADMIN)
+
+### POST /api/admin/users/{id}/disable-2fa
+
+**Description**: Recovery path to disable 2FA for another user. SUPER_ADMIN only. Users disable their own 2FA at `POST /api/auth/2fa/disable`.
+
+**Authentication**: Required (session or API key with SUPER_ADMIN)
 
 ### Audit and Monitoring
 

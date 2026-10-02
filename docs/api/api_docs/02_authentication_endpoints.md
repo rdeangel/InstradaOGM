@@ -169,7 +169,7 @@ curl -X POST "{{SERVER_URL}}/api/auth/register" \
 - `email`: User's email address
 - `name`: User's display name
 - `username`: User's username
-- `role`: User's role (`PENDING` if verification required, `USER` if not, `SUPER_ADMIN` for first user)
+- `role`: User's role (`PENDING` if verification required, `USER` if not, `SUPER_ADMIN` only when this is the first user in an empty table)
 - `emailVerified`: Timestamp when email was verified (null if pending, current date if verification disabled)
 - `createdAt`: Account creation timestamp
 - `requiresVerification`: Boolean indicating if email verification is required
@@ -179,8 +179,8 @@ curl -X POST "{{SERVER_URL}}/api/auth/register" \
 - Passwords are hashed using bcrypt with 10 salt rounds
 - Rate limiting applies to prevent abuse
 - Email verification behavior controlled by `AUTH_REQUIRE_VERIFIED_EMAIL_LOCAL` environment variable
-- First user automatically receives `SUPER_ADMIN` role
-- Subsequent users receive `PENDING` role (if verification required) or `USER` role (if not)
+- The first registrant receives `SUPER_ADMIN` only when the user table is empty. If seed already created the initial admin, later registrations receive `PENDING` (if verification is required) or `USER`.
+- Email verification for local accounts is controlled by `AUTH_REQUIRE_VERIFIED_EMAIL_LOCAL` (default: false). Leave this off unless every local user verifies email; admin-created local users start with an unverified email and would be locked out of login if the flag is enabled.
 - Username must be unique across all users
 - Audit logging for all registration attempts
 
@@ -916,14 +916,16 @@ curl -X POST "{{SERVER_URL}}/api/auth/2fa/backup-codes" \
 
 ### POST /api/auth/2fa/disable
 
-**Description**: Disable 2FA for the authenticated user. Requires TOTP verification.
+**Description**: Disable 2FA for the authenticated user. Requires an interactive session plus the current password or a TOTP/backup code. API keys are rejected. Other stored sessions and API keys for the user are disabled after a successful disable.
 
-**Authentication**: Required (session or API key)
+**Authentication**: Required (session only)
 
 **Role Access:**
-- **USER**: ✅ Can disable 2FA
-- **ADMIN**: ✅ Can disable 2FA
-- **SUPER_ADMIN**: ✅ Can disable 2FA
+- **USER**: ✅ Can disable own 2FA
+- **ADMIN**: ✅ Can disable own 2FA
+- **SUPER_ADMIN**: ✅ Can disable own 2FA
+
+Administrators recover a lost authenticator with `POST /api/admin/users/{id}/disable-2fa` (super-admin only).
 
 #### Usage Case 1: Successful 2FA Disable
 
@@ -932,10 +934,9 @@ curl -X POST "{{SERVER_URL}}/api/auth/2fa/backup-codes" \
 **Example Request**:
 ```bash
 curl -X POST "{{SERVER_URL}}/api/auth/2fa/disable" \
-  -H "Authorization: Bearer {{API_KEY}}" \
   -H "Content-Type: application/json" \
   -d '{
-    "code": "123456"
+    "totpCode": "123456"
   }'
 ```
 
@@ -955,27 +956,29 @@ curl -X POST "{{SERVER_URL}}/api/auth/2fa/disable" \
 
 ### POST /api/auth/change-password-required
 
-**Description**: Change password for users who are required to change their password. This endpoint is used when a user has `mustChangePassword: true` flag set by an administrator. The user must provide their current password and a new password. The endpoint validates credentials, enforces password policies, and prevents password reuse.
+**Description**: Change password for users who are required to change their password. This endpoint is used when a user has `mustChangePassword: true` flag set by an administrator. The user must provide their current password and a new password. If 2FA is enabled, an authenticator or backup code is also required. The endpoint validates credentials, enforces password policies, and prevents password reuse.
 
-**Authentication**: Not required (uses cookie-based session management with `password_change_email` cookie set by `/api/auth/check-password-change`)
+**Authentication**: Not a logged-in session. Requires the httpOnly `password_change_token` cookie issued by `POST /api/auth/check-password-change` after a successful password check. A client-settable email cookie is not accepted.
 
 **Request Body**:
 ```json
 {
   "currentPassword": "current-password",
-  "newPassword": "new-secure-password"
+  "newPassword": "new-secure-password",
+  "totpCode": "123456"
 }
 ```
 
 **Request Fields**:
 - `currentPassword` (string, required): User's current password
 - `newPassword` (string, required): New password (must meet minimum length requirements and be different from current password)
+- `totpCode` (string, required when 2FA is enabled): Authenticator or backup code
 
 **Example Request**:
 ```bash
 curl -X POST "${SERVER_URL}/api/auth/change-password-required" \
   -H "Content-Type: application/json" \
-  -H "Cookie: password_change_email=user@example.com" \
+  -H "Cookie: password_change_token=<signed-token>" \
   -d '{
     "currentPassword": "oldPassword123",
     "newPassword": "MyNewSecurePassword123"
@@ -1061,7 +1064,7 @@ curl -X POST "${SERVER_URL}/api/auth/change-password-required" \
 **Related Flow**:
 1. User attempts to login with valid credentials
 2. System detects `mustChangePassword: true` flag
-3. `/api/auth/check-password-change` endpoint sets `password_change_email` cookie
+3. `/api/auth/check-password-change` endpoint sets an httpOnly `password_change_token` cookie
 4. User is redirected to `/auth/change-password-required` page
 5. User submits current and new password via this endpoint
 6. System validates credentials and password policies

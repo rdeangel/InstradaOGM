@@ -10,6 +10,12 @@ This document outlines the configuration required for InstradaOGM to integrate w
 
 InstradaOGM supports OIDC authentication and can map external groups from your OIDC provider to local groups within the application. To configure an OIDC provider, you need to set environment variables following the pattern `AUTH_OIDC_PROVIDER_<ALIAS>_<SETTING>`.
 
+### Email ownership
+
+InstradaOGM trusts the email address returned by the identity provider. It does **not** require an `email_verified` claim. That is safe only while users of the identity provider cannot set or change their own email to an arbitrary value. In Authentik, keep self-enrollment and the user-settings email field locked down, or make sure enrollment flows verify the address.
+
+A new OIDC identity is auto-linked to an existing **regular** local user when the emails match. Admin and super-admin accounts are not auto-linked by email; those accounts must already have the provider linked (existing links continue to work) or an administrator must create the link.
+
 The following settings are generally required for any OIDC provider:
 
 *   `AUTH_OIDC_PROVIDER_<ALIAS>_ENABLED=true`: Enables the OIDC provider with the specified alias.

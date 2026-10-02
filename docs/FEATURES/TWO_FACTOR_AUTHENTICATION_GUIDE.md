@@ -103,9 +103,11 @@ Backup codes are single-use recovery codes that allow you to access your account
 **⚠️ Warning**: Disabling 2FA reduces your account security.
 
 1. **Go to** Account Settings → Two-Factor Authentication
-2. **Click** "Disable 2FA" button
-3. **Enter** a current TOTP code from your authenticator app
-4. **Confirm** the action
+2. **Click** "Disable 2FA"
+3. **Enter** your current password **or** an authenticator / backup code
+4. **Click** "Confirm disable 2FA"
+
+If you have lost both your authenticator and backup codes, ask a super-admin to disable 2FA for your account from User Management.
 
 ## 🔒 Best Practices for Backup Codes
 

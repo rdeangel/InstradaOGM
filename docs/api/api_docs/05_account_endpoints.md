@@ -1024,13 +1024,13 @@ curl -X PUT "{{SERVER_URL}}/api/account/update-profile" \
 
 ### POST /api/account/set-password
 
-**Description**: Set a new password for the authenticated user. This endpoint validates the password meets minimum length requirements and prevents password reuse (new password must be different from current password).
+**Description**: Set a new password for the authenticated user. Requires an interactive session plus the current password or a TOTP/backup code. If the account has no password yet, a login in the last 10 minutes is accepted instead of the current password. API keys are rejected. Other stored sessions and API keys for the user are disabled after a successful change.
 
-**Authentication**: Required (session or API key)
+**Authentication**: Required (session only)
 
 **Restrictions**:
-- Only available for local users (users with passwords)
-- SSO users cannot use this endpoint
+- Interactive session only (no API key)
+- Current password or authenticator code required when a password is already set
 
 **Role Access:**
 - **USER**: ✅ Can set own password
@@ -1040,20 +1040,23 @@ curl -X PUT "{{SERVER_URL}}/api/account/update-profile" \
 **Request Body**:
 ```json
 {
-  "password": "newSecurePassword456!"
+  "password": "newSecurePassword456!",
+  "currentPassword": "existingPassword123"
 }
 ```
 
 **Request Fields**:
 - `password` (string, required): New password (must meet minimum length requirements and be different from current password)
+- `currentPassword` (string, required when a password is already set): Current password
+- `totpCode` (string, optional): Authenticator or backup code instead of current password
 
 **Example Request**:
 ```bash
 curl -X POST "{{SERVER_URL}}/api/account/set-password" \
-  -H "Authorization: Bearer {{API_KEY}}" \
   -H "Content-Type: application/json" \
   -d '{
-    "password": "newSecurePassword456!"
+    "password": "newSecurePassword456!",
+    "currentPassword": "existingPassword123"
   }'
 ```
 
@@ -1179,35 +1182,7 @@ curl -X POST "{{SERVER_URL}}/api/account/2fa/verify" \
 
 ### POST /api/account/2fa/disable
 
-**Description**: Disable 2FA for the authenticated user.
-
-**Authentication**: Required (session or API key)
-
-**Role Access:**
-- **USER**: ✅ Can disable 2FA
-- **ADMIN**: ✅ Can disable 2FA
-- **SUPER_ADMIN**: ✅ Can disable 2FA
-
-**Example Request**:
-```bash
-curl -X POST "{{SERVER_URL}}/api/account/2fa/disable" \
-  -H "Authorization: Bearer {{API_KEY}}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "code": "123456"
-  }'
-```
-
-**Example Response**:
-```json
-{
-  "success": true,
-  "message": "2FA disabled successfully"
-}
-```
-
-**Required Fields**:
-- `code`: Current TOTP code or backup code
+This path does not exist. Disable 2FA at `POST /api/auth/2fa/disable` (session plus current password or authenticator code). See the authentication endpoints document.
 
 ## Error Responses
 

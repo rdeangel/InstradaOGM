@@ -528,7 +528,9 @@ INTERNAL_APP_URL="http://192.168.1.151:9002"
   - Only applies to local email/password authentication, not OIDC/SSO
 - `AUTH_ALLOW_LOCAL_2FA` - Enable 2FA (default: true)
 - `AUTH_PASSWORD_MIN_LENGTH` - Min password length (default: 8)
+- `INITIAL_ADMIN_PASSWORD` - Password for the first seeded admin when the user table is empty. If unset, seed generates a random password and prints it once. The seed admin is created only on an empty user table.
 - `AUTH_ALLOW_OIDC_LOGIN` - Enable OIDC/SSO (default: false)
+  - The identity provider is trusted for email ownership. InstradaOGM does not require a verified-email claim from SSO. Keep IdP self-service email changes locked down. Admin accounts are not auto-linked to a new SSO identity by email. See [SSO Provider Config](../CONFIGURATION/SSO_PROVIDER_CONFIG.md).
 - `SSO_MAX_AGE` - Session max age in seconds (default: 2592000)
 
 ### Backup & Security

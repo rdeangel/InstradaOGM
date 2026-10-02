@@ -398,6 +398,9 @@ pg_dump --version  # Should show 16.x
  # 3. Generate Client & Seed
  npm run prisma:generate
  npm run prisma:seed
+ # Seed creates the first admin only when the user table is empty.
+ # Set INITIAL_ADMIN_PASSWORD, or copy the generated password printed once in the logs.
+ # First login requires a password change.
  
  # 4. Start Server
  npm run dev

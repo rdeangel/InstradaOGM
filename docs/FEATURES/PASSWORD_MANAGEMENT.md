@@ -68,11 +68,12 @@ If an administrator has required you to change your password, you will be automa
 1. **Enter** your username/email and current password on the login page
 2. **You will be automatically redirected** to the "Password Change Required" page
 3. **Enter** your current password (the one you just used to log in)
-4. **Enter** your new password (must meet minimum length requirements)
-5. **Confirm** your new password by entering it again
-6. **Click** "Change Password"
-7. **You will be redirected** to the login page
-8. **Log in** with your new password
+4. **If 2FA is enabled**, enter an authenticator or backup code
+5. **Enter** your new password (must meet minimum length requirements)
+6. **Confirm** your new password by entering it again
+7. **Click** "Change Password"
+8. **You will be redirected** to the login page
+9. **Log in** with your new password
 
 ### Password Requirements
 
