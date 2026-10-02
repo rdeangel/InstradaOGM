@@ -24,6 +24,8 @@ A single fire-and-forget execution at a future date and time. The schedule **aut
 
 Best for ad-hoc one-off events: *"Block gaming VPN access during tomorrow's exam at 9 AM"*.
 
+From the schedule list (ONCE rows) or the create/edit form, **Run in…** offers presets (30 minutes, 1 hour, 3 hours) plus a clock-style hours:minutes field (up to 7 days). On the list it calls `POST /api/admin/schedules/[id]/run-in` to set `executeAt = now + delay` and enable the schedule; on the form it only updates the local `executeAt` field before save.
+
 ### 3. Recurring
 A repeating trigger defined by a standard cron expression. Actions execute at each cron tick.
 
@@ -107,7 +109,7 @@ Using `HOST_ALIAS` ensures the schedule always operates on the current IP of the
 The **Scheduling** tab in the Admin panel provides a full management interface.
 
 ### Schedule List
-View all configured schedules in a sortable table. Columns show type, status (enabled/disabled), target aliases, priority, and last execution time. Schedules can be toggled on/off inline without opening the editor.
+View all configured schedules in a sortable table. Columns show type, status (enabled/disabled), target aliases, priority, and last execution time. Schedules can be toggled on/off inline without opening the editor. **Duplicate** (all types) creates a disabled copy named `Copy of …` via `POST /api/admin/schedules/[id]/duplicate` and stays on the list — it copies config (targets, timezone, priority, type-specific days/windows/actions) but not execution history.
 
 ### Creating / Editing a Schedule
 
@@ -199,4 +201,4 @@ For full endpoint documentation including request/response schemas, query parame
 
 ---
 
-**Last Updated:** 2026-03-11 | **Category:** Automation
+**Last Updated:** 2026-09-15 | **Category:** Automation
