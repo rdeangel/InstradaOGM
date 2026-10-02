@@ -66,3 +66,18 @@ export function useIsPhone() {
 
   return !!isPhone
 }
+
+/** True when the primary pointer is coarse (typical touch devices). */
+export function useCoarsePointer() {
+  const [isCoarse, setIsCoarse] = React.useState(false)
+
+  React.useEffect(() => {
+    const mql = window.matchMedia("(pointer: coarse)")
+    const onChange = () => setIsCoarse(mql.matches)
+    onChange()
+    mql.addEventListener("change", onChange)
+    return () => mql.removeEventListener("change", onChange)
+  }, [])
+
+  return isCoarse
+}
