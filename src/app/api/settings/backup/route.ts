@@ -4,21 +4,25 @@ import { promises as fs } from 'fs';
 import { createWriteStream } from 'fs';
 import { Readable } from 'stream';
 import path from 'path';
-import { exec } from 'child_process';
 import { logAuditEvent } from '@/lib/auditLog';
 import { authenticateRequest, handleAuthResponse, trackUsageByAuthMethod } from '@/lib/auth-middleware';
 import { Role } from '@/types/opnsense';
-import { decrypt, encryptFile, decryptFile } from '@/lib/encryption';
+import { encryptFile, decryptFile } from '@/lib/encryption';
 import { redactConnectionString } from '@/lib/log-redactor';
-import { PrismaClient } from '@prisma/client'; // For type usage
 import { prisma } from '@/lib/prisma'; // Import global Prisma singleton
 import busboy from 'busboy';
 import { pipeline } from 'stream/promises';
 import { getDataPath } from '@/lib/server/data-paths';
+import {
+  findExistingBackup,
+  isValidNewBackupName,
+  resolveInBackups,
+  runTool,
+} from '@/lib/server/backup-files';
 
 /**
  * Redacts sensitive information from error objects before logging.
- * This prevents password leakage when exec() errors contain the full command.
+ * This prevents password leakage when child-process errors contain the full command.
  */
 function redactError(error: unknown): unknown {
   if (error instanceof Error) {
@@ -65,6 +69,26 @@ const getDatabaseType = () => {
   }
   throw new Error(`Unsupported database type in DATABASE_URL: ${databaseUrl}`);
 };
+
+function decodeUrlPart(raw: string): string {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
+function pgConnFromUrl(databaseUrl: string) {
+  const url = new URL(databaseUrl);
+  const user = decodeUrlPart(url.username);
+  const password = decodeUrlPart(url.password);
+  const host = url.hostname;
+  const port = url.port || '5432';
+  const database = decodeUrlPart(url.pathname.slice(1));
+  const pgConn = ['-h', host, '-p', port, '-U', user];
+  const env = { ...process.env, PGPASSWORD: password };
+  return { host, port, database, pgConn, env };
+}
 
 export async function POST(request: Request) {
   const auth = await authenticateRequest(request);
@@ -396,20 +420,17 @@ async function handleRestoreFlexibleStreaming({ filename, uploadedFilePath, user
       await decryptFile(encryptedUploadFilePath, restoreFilePath);
       logger.info(`Uploaded backup decrypted to: ${restoreFilePath}`);
     } else if (filename) {
-      // Restore from server backup file
-      const encryptedFilename = filename.endsWith('.aes') ? filename : `${filename}.aes`;
-      const encryptedBackupFilePath = path.join(getDataPath('backups'), encryptedFilename);
+      // Restore from server backup file (exact listing match; legacy names still work)
+      const encryptedBackupFilePath = await findExistingBackup(filename);
+      if (!encryptedBackupFilePath) {
+        logger.error(`Encrypted backup file not found or inaccessible: ${filename}`);
+        return NextResponse.json({ error: `Backup file not found or inaccessible: ${filename}` }, { status: 404 });
+      }
       const tempDecryptedFileName = `decrypted_restore_temp_${Date.now()}.sql`;
       restoreFilePath = path.join(getDataPath('temp'), tempDecryptedFileName);
       tempFilesToCleanup.push(restoreFilePath);
 
       logger.debug(`Attempting to read encrypted server backup: ${encryptedBackupFilePath}`);
-      try {
-        await fs.access(encryptedBackupFilePath);
-      } catch (error) {
-        logger.error(`Encrypted backup file not found or inaccessible at ${encryptedBackupFilePath}:`, error);
-        return NextResponse.json({ error: `Backup file not found or inaccessible: ${filename}` }, { status: 404 });
-      }
 
       // Read encrypted content, decrypt, and write to a temporary file
       // Stream-decryption avoids materializing the full plaintext in heap.
@@ -457,120 +478,95 @@ async function handleRestoreFlexibleStreaming({ filename, uploadedFilePath, user
         }
       }
 
-      // Step 2: Create a new database from the SQL dump
-      const command = `sqlite3 ${dbPath} < ${restoreFilePath}`;
-      logger.info(`Executing SQLite restore command: ${command}`);
-
-      await new Promise<void>((resolve, reject) => {
-        // eslint-disable-next-line security/detect-child-process
-        exec(command, (error, _stdout, stderr) => {
-          if (error) {
-            const redactedError = redactError(error);
-            logger.error('SQLite restore exec error:', redactedError);
-            return reject(error);
-          }
-          if (stderr) {
-            logger.warn(`SQLite restore stderr: ${stderr}`);
-          }
-          logger.info(`SQLite database restored successfully from: ${restoreFilePath}`);
-          resolve();
-        });
-      });
+      // Step 2: Create a new database from the SQL dump (stdin, no shell)
+      logger.info('Restoring SQLite database from dump');
+      try {
+        const { stderr } = await runTool('sqlite3', [dbPath], { stdinFile: restoreFilePath });
+        if (stderr) {
+          logger.warn(`SQLite restore stderr: ${stderr}`);
+        }
+        logger.info('SQLite database restored successfully from dump');
+      } catch (error) {
+        logger.error('SQLite restore exec error:', redactError(error));
+        throw error;
+      }
     } else if (dbType === 'postgresql') {
       const databaseUrl = process.env.DATABASE_URL;
       if (!databaseUrl) {
         throw new Error('DATABASE_URL is not set for PostgreSQL restore.');
       }
-      const url = new URL(databaseUrl);
-      const user = url.username;
-      const password = url.password;
-      const host = url.hostname;
-      const port = url.port || '5432';
-      const database = url.pathname.substring(1);
+      const { database, pgConn, env } = pgConnFromUrl(databaseUrl);
+      const qIdent = (s: string) => '"' + s.replace(/"/g, '""') + '"';
+      const terminateSql = (db: string) =>
+        `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${db.replace(/'/g, "''")}' AND pid <> pg_backend_pid();`;
 
       logger.info('Starting PostgreSQL restore: terminating connections, dropping and recreating database...');
 
-      // Step 1: Terminate all connections to the database
-      const terminateCommand = `PGPASSWORD=${password} psql -h ${host} -p ${port} -U ${user} -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${database}' AND pid <> pg_backend_pid();"`;
-
-      await new Promise<void>((resolve) => {
-        // eslint-disable-next-line security/detect-child-process
-        exec(terminateCommand, { env: { ...process.env, PGPASSWORD: password } }, (error, _stdout, stderr) => {
-          if (error) {
-            const redactedError = redactError(error);
-            logger.warn('Terminate connections warning:', redactedError);
-            // Don't reject - continue even if termination fails
-          }
-          if (stderr) {
-            logger.warn(`Terminate connections stderr: ${stderr}`);
-          }
-          logger.info(`Terminated active connections to database "${database}".`);
-          resolve();
-        });
-      });
+      // Step 1: Terminate all connections to the database (failure only logs a warning)
+      try {
+        const { stderr } = await runTool(
+          'psql',
+          [...pgConn, '-d', 'postgres', '-c', terminateSql(database)],
+          { env },
+        );
+        if (stderr) {
+          logger.warn(`Terminate connections stderr: ${stderr}`);
+        }
+        logger.info(`Terminated active connections to database "${database}".`);
+      } catch (error) {
+        logger.warn('Terminate connections warning:', redactError(error));
+      }
 
       // Step 2: Drop the database
-      const dropCommand = `PGPASSWORD=${password} psql -h ${host} -p ${port} -U ${user} -d postgres -c "DROP DATABASE IF EXISTS \\"${database}\\";"`;
+      try {
+        const { stderr } = await runTool(
+          'psql',
+          [...pgConn, '-d', 'postgres', '-c', `DROP DATABASE IF EXISTS ${qIdent(database)};`],
+          { env },
+        );
+        if (stderr) {
+          logger.warn(`Drop database stderr: ${stderr}`);
+        }
+        logger.info(`Database "${database}" dropped successfully.`);
+      } catch (error) {
+        logger.error('Failed to drop database:', redactError(error));
+        const sanitizedError = new Error(redactConnectionString(error instanceof Error ? error.message : String(error)));
+        throw sanitizedError;
+      }
 
-      await new Promise<void>((resolve, reject) => {
-        // eslint-disable-next-line security/detect-child-process
-        exec(dropCommand, { env: { ...process.env, PGPASSWORD: password } }, (error, _stdout, stderr) => {
-          if (error) {
-            const redactedError = redactError(error);
-            logger.error('Failed to drop database:', redactedError);
-            const sanitizedError = new Error(redactConnectionString(error.message));
-            sanitizedError.name = error.name;
-            return reject(sanitizedError);
-          }
-          if (stderr) {
-            logger.warn(`Drop database stderr: ${stderr}`);
-          }
-          logger.info(`Database "${database}" dropped successfully.`);
-          resolve();
-        });
-      });
+      // Step 3: Create the database
+      try {
+        const { stderr } = await runTool(
+          'psql',
+          [...pgConn, '-d', 'postgres', '-c', `CREATE DATABASE ${qIdent(database)};`],
+          { env },
+        );
+        if (stderr) {
+          logger.warn(`Create database stderr: ${stderr}`);
+        }
+        logger.info(`Database "${database}" created successfully.`);
+      } catch (error) {
+        logger.error('Failed to create database:', redactError(error));
+        const sanitizedError = new Error(redactConnectionString(error instanceof Error ? error.message : String(error)));
+        throw sanitizedError;
+      }
 
-      // Step 2: Create the database
-      const createCommand = `PGPASSWORD=${password} psql -h ${host} -p ${port} -U ${user} -d postgres -c "CREATE DATABASE \\"${database}\\";"`;
-
-      await new Promise<void>((resolve, reject) => {
-        // eslint-disable-next-line security/detect-child-process
-        exec(createCommand, { env: { ...process.env, PGPASSWORD: password } }, (error, _stdout, stderr) => {
-          if (error) {
-            const redactedError = redactError(error);
-            logger.error('Failed to create database:', redactedError);
-            const sanitizedError = new Error(redactConnectionString(error.message));
-            sanitizedError.name = error.name;
-            return reject(sanitizedError);
-          }
-          if (stderr) {
-            logger.warn(`Create database stderr: ${stderr}`);
-          }
-          logger.info(`Database "${database}" created successfully.`);
-          resolve();
-        });
-      });
-
-      // Step 3: Restore the backup
-      const restoreCommand = `PGPASSWORD=${password} psql -h ${host} -p ${port} -U ${user} -d ${database} -f ${restoreFilePath}`;
-
-      await new Promise<void>((resolve, reject) => {
-        // eslint-disable-next-line security/detect-child-process
-        exec(restoreCommand, { env: { ...process.env, PGPASSWORD: password } }, (error, _stdout, stderr) => {
-          if (error) {
-            const redactedError = redactError(error);
-            logger.error('Failed to restore database:', redactedError);
-            const sanitizedError = new Error(redactConnectionString(error.message));
-            sanitizedError.name = error.name;
-            return reject(sanitizedError);
-          }
-          if (stderr) {
-            logger.warn(`Restore stderr: ${stderr}`);
-          }
-          logger.info(`Database "${database}" restored successfully.`);
-          resolve();
-        });
-      });
+      // Step 4: Restore the backup
+      try {
+        const { stderr } = await runTool(
+          'psql',
+          [...pgConn, '-d', database, '-f', restoreFilePath],
+          { env },
+        );
+        if (stderr) {
+          logger.warn(`Restore stderr: ${stderr}`);
+        }
+        logger.info(`Database "${database}" restored successfully.`);
+      } catch (error) {
+        logger.error('Failed to restore database:', redactError(error));
+        const sanitizedError = new Error(redactConnectionString(error instanceof Error ? error.message : String(error)));
+        throw sanitizedError;
+      }
     } else {
       return NextResponse.json({ message: 'Unsupported database type for restore.' }, { status: 400 });
     }
@@ -688,6 +684,11 @@ async function handleBackup(userId: string, customFilename?: string) {
     // Use custom filename if provided, otherwise generate default
     let backupFileName: string;
     if (customFilename) {
+      if (!isValidNewBackupName(customFilename)) {
+        return NextResponse.json({
+          error: 'Invalid filename. Use only letters, digits, ".", "_" and "-" (max 100).',
+        }, { status: 400 });
+      }
       logger.debug(`Custom filename provided: ${customFilename}`);
       // Check if filename contains extension (has .aes at the end)
       const hasExtension = customFilename.endsWith(`.${dbType}.aes`) ||
@@ -707,7 +708,7 @@ async function handleBackup(userId: string, customFilename?: string) {
     }
 
     logger.debug(`Final backup filename: ${backupFileName}`);
-    const backupFilePath = path.join(getDataPath('backups'), backupFileName);
+    const backupFilePath = resolveInBackups(backupFileName);
     logger.debug(`Backup file path: ${backupFilePath}`);
 
     // Ensure the backups directory exists
@@ -735,31 +736,18 @@ async function handleBackup(userId: string, customFilename?: string) {
           await new Promise(resolve => setTimeout(resolve, retryDelays[attempt - 1]));
         }
 
-        // Command uses validated paths from environment and controlled sources
-        const command = `sqlite3 ${dbPath} ".dump" > ${backupFilePath}`;
-
         try {
-          await new Promise<void>((resolve, reject) => {
-            // eslint-disable-next-line security/detect-child-process
-            exec(command, async (error, stdout, stderr) => {
-              if (error) {
-                logger.error(`exec error: ${error}`);
-                return reject(error);
-              }
+          const { stderr } = await runTool('sqlite3', [dbPath, '.dump'], { stdoutFile: backupFilePath });
 
-              // Check for database lock errors in stderr
-              if (stderr && stderr.includes('database is locked')) {
-                logger.warn(`stderr: ${stderr}`);
-                return reject(new Error('Database is locked. Please try again.'));
-              }
+          // Check for database lock errors in stderr
+          if (stderr && stderr.includes('database is locked')) {
+            logger.warn(`stderr: ${stderr}`);
+            throw new Error('Database is locked. Please try again.');
+          }
 
-              if (stderr) {
-                logger.warn(`stderr: ${stderr}`);
-              }
-
-              resolve();
-            });
-          });
+          if (stderr) {
+            logger.warn(`stderr: ${stderr}`);
+          }
 
           // Validate backup file size before proceeding
           // eslint-disable-next-line security/detect-non-literal-fs-filename
@@ -794,36 +782,22 @@ async function handleBackup(userId: string, customFilename?: string) {
       if (!databaseUrl) {
         throw new Error('DATABASE_URL is not set for PostgreSQL backup.');
       }
-      const url = new URL(databaseUrl);
-      const user = url.username;
-      const password = url.password;
-      const host = url.hostname;
-      const port = url.port || '5432';
-      const database = url.pathname.substring(1);
+      const { database, pgConn, env } = pgConnFromUrl(databaseUrl);
 
-      // Command uses validated paths and credentials from DATABASE_URL
-
-      const command = `PGPASSWORD=${password} pg_dump -h ${host} -p ${port} -U ${user} -d ${database} -Fp > ${backupFilePath}`;
-
-      await new Promise<void>((resolve, reject) => {
-        // eslint-disable-next-line security/detect-child-process
-        exec(command, { env: { ...process.env, PGPASSWORD: password } }, async (error, stdout, stderr) => {
-          if (error) {
-            // Redact the error before logging or rejecting
-            const redactedError = redactError(error);
-            logger.error('exec error:', redactedError);
-
-            // Create a sanitized error to reject with
-            const sanitizedError = new Error(redactConnectionString(error.message));
-            sanitizedError.name = error.name;
-            return reject(sanitizedError);
-          }
-          if (stderr) {
-            logger.warn(`stderr: ${stderr}`);
-          }
-          resolve();
-        });
-      });
+      try {
+        const { stderr } = await runTool(
+          'pg_dump',
+          [...pgConn, '-d', database, '-Fp', '-f', backupFilePath],
+          { env },
+        );
+        if (stderr) {
+          logger.warn(`stderr: ${stderr}`);
+        }
+      } catch (error) {
+        logger.error('exec error:', redactError(error));
+        const sanitizedError = new Error(redactConnectionString(error instanceof Error ? error.message : String(error)));
+        throw sanitizedError;
+      }
     } else {
       return NextResponse.json({ message: 'Unsupported database type for backup.' }, { status: 400 });
     }
@@ -884,282 +858,5 @@ async function handleBackup(userId: string, customFilename?: string) {
     return NextResponse.json({
       error: `Failed to create backup: ${errorMessage}`
     }, { status: 500 });
-  }
-}
-
-// DEPRECATED: Old non-streaming restore handler (kept for reference, not used)
-// Use handleRestoreFlexibleStreaming instead
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-async function handleRestoreFlexible({ filename, file, userId }: { filename?: string | null, file?: File | null, userId: string }) {
-  const dbType = getDatabaseType();
-  let restoreFilePath: string | undefined;
-  const tempFilesToCleanup: string[] = [];
-
-  // Disconnect Prisma before restore
-  const prisma = new PrismaClient();
-  logger.debug('Disconnecting Prisma client before restore...');
-  await prisma.$disconnect();
-  logger.debug('Prisma client disconnected.');
-
-  try {
-    if (file) {
-      // Handle uploaded file restore
-      const arrayBuffer = await file.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
-      const tempFileName = `restore_temp_${Date.now()}.sql`;
-      const encryptedUploadFilePath = path.join(getDataPath('temp'), `encrypted_${tempFileName}`);
-      restoreFilePath = path.join(getDataPath('temp'), tempFileName);
-      tempFilesToCleanup.push(encryptedUploadFilePath, restoreFilePath);
-
-      logger.debug(`Temporary encrypted upload file path: ${encryptedUploadFilePath}`);
-      logger.debug(`Temporary decrypted restore file path: ${restoreFilePath}`);
-
-      // Paths are constructed from controlled sources (process.cwd() + timestamp)
-      // eslint-disable-next-line security/detect-non-literal-fs-filename
-      await fs.mkdir(path.dirname(encryptedUploadFilePath), { recursive: true });
-      // eslint-disable-next-line security/detect-non-literal-fs-filename
-      await fs.writeFile(encryptedUploadFilePath, buffer);
-
-      // Decrypt the uploaded file
-      // eslint-disable-next-line security/detect-non-literal-fs-filename
-      const encryptedContent = await fs.readFile(encryptedUploadFilePath, 'utf8');
-      const decryptedContent = decrypt(encryptedContent);
-      if (decryptedContent === null) {
-        throw new Error('Failed to decrypt uploaded backup content.');
-      }
-      // eslint-disable-next-line security/detect-non-literal-fs-filename
-      await fs.writeFile(restoreFilePath, decryptedContent);
-      logger.info(`Uploaded backup decrypted to: ${restoreFilePath}`);
-
-      // Internal ls -l for debugging
-      logger.debug(`Running internal 'ls -l' on decrypted temp file: ${restoreFilePath}`);
-      await new Promise<void>((resolve, reject) => {
-        // Command uses validated path from controlled sources
-        // eslint-disable-next-line security/detect-child-process
-        exec(`ls -l ${restoreFilePath}`, (lsError, lsStdout, lsStderr) => {
-          if (lsError) {
-            logger.error(`Internal 'ls -l' error on decrypted temp file: ${lsError.message}`);
-            logger.error(`Internal 'ls -l' stderr: ${lsStderr}`);
-            return reject(lsError);
-          }
-          logger.info(`Internal 'ls -l' stdout for decrypted temp file: ${lsStdout}`);
-          resolve();
-        });
-      });
-    } else if (filename) {
-      // Restore from server backup file
-      const encryptedFilename = filename.endsWith('.aes') ? filename : `${filename}.aes`;
-      const encryptedBackupFilePath = path.join(getDataPath('backups'), encryptedFilename);
-      const tempDecryptedFileName = `decrypted_restore_temp_${Date.now()}.sql`;
-      restoreFilePath = path.join(getDataPath('temp'), tempDecryptedFileName);
-      tempFilesToCleanup.push(restoreFilePath);
-
-      logger.debug(`Attempting to read encrypted server backup: ${encryptedBackupFilePath}`);
-      try {
-        await fs.access(encryptedBackupFilePath);
-        logger.debug(`Encrypted backup file found at: ${encryptedBackupFilePath}`);
-      } catch (error) {
-        logger.error(`Encrypted backup file not found or inaccessible at ${encryptedBackupFilePath}:`, error);
-        return NextResponse.json({ error: `Backup file not found or inaccessible: ${filename}` }, { status: 404 });
-      }
-
-      // Read encrypted content, decrypt, and write to a temporary file
-      // Path is constructed from controlled sources
-      // eslint-disable-next-line security/detect-non-literal-fs-filename
-      const encryptedContent = await fs.readFile(encryptedBackupFilePath, 'utf8');
-      const decryptedContent = decrypt(encryptedContent);
-      if (decryptedContent === null) {
-        throw new Error('Failed to decrypt server-stored backup content.');
-      }
-      // eslint-disable-next-line security/detect-non-literal-fs-filename
-      await fs.mkdir(path.dirname(restoreFilePath), { recursive: true });
-      // eslint-disable-next-line security/detect-non-literal-fs-filename
-      await fs.writeFile(restoreFilePath, decryptedContent);
-      logger.info(`Server-stored backup decrypted to temporary file: ${restoreFilePath}`);
-
-      // Internal ls -l for debugging
-      logger.debug(`Running internal 'ls -l' on decrypted temp file: ${restoreFilePath}`);
-      await new Promise<void>((resolve, reject) => {
-        // Command uses validated path from controlled sources
-        // eslint-disable-next-line security/detect-child-process
-        exec(`ls -l ${restoreFilePath}`, (lsError, lsStdout, lsStderr) => {
-          if (lsError) {
-            logger.error(`Internal 'ls -l' error on decrypted temp file: ${lsError.message}`);
-            logger.error(`Internal 'ls -l' stderr: ${lsStderr}`);
-            return reject(lsError);
-          }
-          logger.info(`Internal 'ls -l' stdout for decrypted temp file: ${lsStdout}`);
-          resolve();
-        });
-      });
-    } else {
-      logger.warn('No file or filename provided for restore.');
-      return NextResponse.json({ error: 'No file or filename provided for restore.' }, { status: 400 });
-    }
-
-    // Now restore from restoreFilePath (which is always a decrypted SQL file at this point)
-    if (dbType === 'sqlite') {
-      const databaseUrl = process.env.DATABASE_URL;
-      if (!databaseUrl) {
-        throw new Error('DATABASE_URL is not set for SQLite restore.');
-      }
-      const dbFileName = databaseUrl.replace('file:', '');
-      const dbPath = dbFileName;
-      logger.debug(`Final SQLite DB path for restore: ${dbPath}`);
-      // Delete existing SQLite DB file before restoring
-      try {
-        // Path is from DATABASE_URL environment variable
-        // eslint-disable-next-line security/detect-non-literal-fs-filename
-        await fs.unlink(dbPath);
-        logger.info(`Existing SQLite DB file deleted: ${dbPath}`);
-      } catch (unlinkError) {
-        if (unlinkError && typeof unlinkError === 'object' && 'code' in unlinkError && (unlinkError as { code?: string }).code === 'ENOENT') {
-          logger.warn(`SQLite DB file not found, proceeding with restore: ${dbPath}`);
-        } else {
-          logger.error(`Failed to delete existing SQLite DB file: ${dbPath}`, unlinkError);
-          throw new Error(`Failed to prepare database for restore: ${unlinkError instanceof Error ? unlinkError.message : String(unlinkError)}`);
-        }
-      }
-      // Command uses validated paths from environment and controlled sources
-
-      const command = `sqlite3 ${dbPath} ".read ${restoreFilePath}"`;
-      logger.debug(`Executing SQLite restore command: "${command}"`);
-      await new Promise<void>((resolve, reject) => {
-        // eslint-disable-next-line security/detect-child-process
-        exec(command, (error, stdout, stderr) => {
-          if (error) {
-            logger.error(`Database restore exec error: ${error.message}`);
-            logger.error(`Command executed: "${command}"`);
-            logger.error(`Stderr from exec: ${stderr}`);
-            return reject(error);
-          }
-          if (stderr) {
-            logger.warn(`Database restore stderr: ${stderr}`);
-          }
-          logger.info(`Database restore stdout: ${stdout}`);
-          resolve();
-        });
-      });
-    } else if (dbType === 'postgresql') {
-      const databaseUrl = process.env.DATABASE_URL;
-      if (!databaseUrl) {
-        logger.error('DATABASE_URL is not set for PostgreSQL restore.');
-        throw new Error('DATABASE_URL is not set for PostgreSQL restore.');
-      }
-      const url = new URL(databaseUrl);
-      const user = url.username;
-      const password = url.password;
-      const host = url.hostname;
-      const port = url.port || '5432';
-      const database = url.pathname.substring(1);
-
-      // Terminate all connections to the database before dropping it
-      // Command uses validated credentials from DATABASE_URL
-
-      const terminateConnectionsCommand = `PGPASSWORD=${password} psql -h ${host} -p ${port} -U ${user} -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${database}' AND pid <> pg_backend_pid();"`;
-      logger.debug(`Executing PostgreSQL terminate connections command: "${terminateConnectionsCommand}"`);
-      await new Promise<void>((resolve) => {
-        // eslint-disable-next-line security/detect-child-process
-        exec(terminateConnectionsCommand, { env: { ...process.env, PGPASSWORD: password } }, async (error, stdout, stderr) => {
-          if (error) {
-            logger.warn(`Terminate connections warning: ${error.message}. Stderr: ${stderr}`);
-          }
-          logger.info(`Terminate connections stdout: ${stdout}`);
-          resolve(); // Always resolve, even on warning, to attempt dropdb
-        });
-      });
-
-      // Use dropdb and createdb utilities
-      // Commands use validated credentials from DATABASE_URL
-
-      const dropDbCommand = `PGPASSWORD=${password} dropdb -h ${host} -p ${port} -U ${user} ${database}`;
-
-      const createDbCommand = `PGPASSWORD=${password} createdb -h ${host} -p ${port} -U ${user} ${database}`;
-
-      const restoreCommand = `PGPASSWORD=${password} psql -h ${host} -p ${port} -U ${user} -d ${database} < ${restoreFilePath}`;
-      logger.debug(`Executing PostgreSQL drop DB command: "${dropDbCommand}"`);
-      await new Promise<void>((resolve, reject) => {
-        // eslint-disable-next-line security/detect-child-process
-        exec(dropDbCommand, { env: { ...process.env, PGPASSWORD: password } }, (error, stdout, stderr) => {
-          if (error) {
-            if (stderr && stderr.includes('does not exist')) {
-              logger.warn(`Database ${database} does not exist, proceeding to create.`);
-              resolve();
-            } else {
-              logger.error(`PostgreSQL drop DB exec error: ${error.message}`);
-              logger.error(`Stderr from dropdb: ${stderr}`);
-              return reject(error);
-            }
-          } else {
-            logger.info(`PostgreSQL drop DB stdout: ${stdout}`);
-            resolve();
-          }
-        });
-      });
-      logger.debug(`Executing PostgreSQL create DB command: "${createDbCommand}"`);
-      await new Promise<void>((resolve, reject) => {
-        // eslint-disable-next-line security/detect-child-process
-        exec(createDbCommand, { env: { ...process.env, PGPASSWORD: password } }, (error, stdout, stderr) => {
-          if (error) {
-            logger.error(`PostgreSQL create DB exec error: ${error.message}`);
-            logger.error(`Stderr from createdb: ${stderr}`);
-            return reject(error);
-          }
-          logger.info(`PostgreSQL create DB stdout: ${stdout}`);
-          resolve();
-        });
-      });
-      logger.debug(`Executing PostgreSQL restore command: "${restoreCommand}"`);
-      await new Promise<void>((resolve, reject) => {
-        // eslint-disable-next-line security/detect-child-process
-        exec(restoreCommand, { env: { ...process.env, PGPASSWORD: password } }, (error, stdout, stderr) => {
-          if (error) {
-            logger.error(`Database restore exec error: ${error.message}`);
-            logger.error(`Command executed: "${restoreCommand}"`);
-            logger.error(`Stderr from exec: ${stderr}`);
-            return reject(error);
-          }
-          if (stderr) {
-            logger.warn(`Database restore stderr: ${stderr}`);
-          }
-          logger.info(`Database restore stdout: ${stdout}`);
-          resolve();
-        });
-      });
-    } else {
-      logger.error(`Unsupported database type for restore: ${dbType}`);
-      return NextResponse.json({ error: 'Unsupported database type for restore.' }, { status: 400 });
-    }
-
-    // Clean up temp files
-    for (const tempFile of tempFilesToCleanup) {
-      try {
-        // Path is from controlled sources
-        // eslint-disable-next-line security/detect-non-literal-fs-filename
-        await fs.unlink(tempFile);
-        logger.debug(`Deleted temporary file: ${tempFile}`);
-      } catch (cleanupError) {
-        logger.warn(`Could not delete temporary file: ${tempFile}`, cleanupError);
-      }
-    }
-
-    // Reconnect Prisma
-    await prisma.$connect();
-    logger.debug('Prisma client reconnected after restore.');
-    await logAuditEvent({
-      userId: userId,
-      action: 'BACKUP_RESTORED',
-      details: { filename: filename || file?.name },
-    });
-    return NextResponse.json({ message: `Database restored successfully${filename ? ` from ${filename}` : ''}.` });
-  } catch (error) {
-    // Reconnect Prisma even if restore failed
-    try {
-      await prisma.$connect();
-    } catch (reconnectError) {
-      logger.error('Failed to reconnect Prisma after restore error:', reconnectError);
-    }
-    logger.error('Failed to restore database:', error);
-    return NextResponse.json({ error: (error as Error).message || 'Failed to restore database.' }, { status: 500 });
   }
 }
