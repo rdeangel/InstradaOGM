@@ -77,6 +77,8 @@ AGENTS.md
 .claude/*
 .opencode/*
 .mcp.json
+.keleon/
+docs/superpowers/
 
 # Traefik runtime files (generated, contains secrets)
 traefik/runtime/
