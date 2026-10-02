@@ -27,7 +27,7 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { formatDistanceToNow } from 'date-fns';
-import { Edit, Trash2, Search, Info } from 'lucide-react';
+import { Edit, Trash2, Search, Info, Copy } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { ScheduleInfoModal } from './ScheduleInfoModal';
 
@@ -99,6 +99,7 @@ export function ScheduleListTable({ schedules, onRefresh, onEnabledFilterChange 
   const [infoTarget, setInfoTarget] = useState<ScheduleListItem | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
 
   function handleEnabledFilterChange(value: string) {
     setEnabledFilter(value);
@@ -143,6 +144,33 @@ export function ScheduleListTable({ schedules, onRefresh, onEnabledFilterChange 
     } finally {
       setDeletingId(null);
       setDeleteTarget(null);
+    }
+  }
+
+  async function handleDuplicate(schedule: ScheduleListItem) {
+    setDuplicatingId(schedule.id);
+    try {
+      const res = await fetch(`/api/admin/schedules/${schedule.id}/duplicate`, { method: 'POST' });
+      if (!res.ok) {
+        let message = 'Failed to duplicate schedule.';
+        try {
+          const data = await res.json();
+          if (typeof data?.message === 'string') message = data.message;
+        } catch {
+          // ignore parse errors
+        }
+        toast({ variant: 'destructive', title: 'Error', description: message });
+        return;
+      }
+      toast({
+        title: 'Duplicated',
+        description: `Created a disabled copy of "${schedule.name}".`,
+      });
+      onRefresh();
+    } catch {
+      toast({ variant: 'destructive', title: 'Error', description: 'Failed to duplicate schedule.' });
+    } finally {
+      setDuplicatingId(null);
     }
   }
 
@@ -250,7 +278,17 @@ export function ScheduleListTable({ schedules, onRefresh, onEnabledFilterChange 
                   </div>
 
                   {/* Action buttons */}
-                  <div className="flex items-center gap-2 pt-1">
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1"
+                      disabled={duplicatingId === schedule.id}
+                      onClick={() => handleDuplicate(schedule)}
+                    >
+                      <Copy className="h-4 w-4 mr-2" />
+                      Duplicate
+                    </Button>
                     <Button
                       variant="outline"
                       size="sm"
@@ -348,6 +386,16 @@ export function ScheduleListTable({ schedules, onRefresh, onEnabledFilterChange 
                       </td>
                       <td className="p-3">
                         <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            disabled={duplicatingId === schedule.id}
+                            onClick={() => handleDuplicate(schedule)}
+                            title="Duplicate"
+                          >
+                            <Copy className="h-4 w-4" />
+                          </Button>
                           <Button
                             variant="ghost"
                             size="icon"
