@@ -32,6 +32,7 @@ export async function findExistingBackup(
 ): Promise<string | null> {
   if (typeof name !== 'string' || !name) return null;
   // ponytail: readdir per call, fine for a backups dir
+  // eslint-disable-next-line security/detect-non-literal-fs-filename
   const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
   const files = new Set(entries.filter((e) => e.isFile()).map((e) => e.name));
   const hit = [name, `${name}.aes`].find((c) => files.has(c));
@@ -51,7 +52,6 @@ export function runTool(
       fn();
     };
 
-    // eslint-disable-next-line security/detect-child-process
     const child = spawn(cmd, args, {
       env: opts.env ?? process.env,
       stdio: [
@@ -69,9 +69,11 @@ export function runTool(
     const streams: Promise<unknown>[] = [];
     if (opts.stdoutFile && child.stdout) {
       // Wait for the write stream to finish so callers can fs.stat immediately.
+      // eslint-disable-next-line security/detect-non-literal-fs-filename
       streams.push(pipeline(child.stdout, createWriteStream(opts.stdoutFile)));
     }
     if (opts.stdinFile && child.stdin) {
+      // eslint-disable-next-line security/detect-non-literal-fs-filename
       streams.push(pipeline(createReadStream(opts.stdinFile), child.stdin));
     }
 

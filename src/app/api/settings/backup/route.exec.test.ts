@@ -3,14 +3,22 @@ import path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { runTool, tmpRoot } = vi.hoisted(() => {
+  /* eslint-disable @typescript-eslint/no-require-imports -- vi.hoisted runs before ESM imports */
   const fsSync = require('fs') as typeof import('fs');
   const osMod = require('os') as typeof import('os');
   const pathMod = require('path') as typeof import('path');
+  /* eslint-enable @typescript-eslint/no-require-imports */
   const tmpRoot = fsSync.mkdtempSync(pathMod.join(osMod.tmpdir(), 'p6-route-'));
   fsSync.mkdirSync(pathMod.join(tmpRoot, 'backups'), { recursive: true });
   process.env.DATA_FOLDER_PATH = tmpRoot;
   return {
-    runTool: vi.fn(async () => ({ stderr: '' })),
+    runTool: vi.fn(
+      async (
+        _cmd: string,
+        _args: string[],
+        _opts?: { env?: NodeJS.ProcessEnv; stdinFile?: string; stdoutFile?: string },
+      ) => ({ stderr: '' }),
+    ),
     tmpRoot,
   };
 });
@@ -83,11 +91,7 @@ describe('POST /api/settings/backup exec hardening', () => {
     expect(response.status).toBe(200);
 
     expect(runTool).toHaveBeenCalledTimes(1);
-    const [cmd, args, opts] = runTool.mock.calls[0] as [
-      string,
-      string[],
-      { env?: NodeJS.ProcessEnv; stdoutFile?: string },
-    ];
+    const [cmd, args, opts] = runTool.mock.calls[0];
     expect(cmd).toBe('pg_dump');
     expect(args[0]).toBe('-h');
     expect(args[1]).toBe('db');
@@ -102,7 +106,7 @@ describe('POST /api/settings/backup exec hardening', () => {
     const dumpPath = args[10];
     expect(dumpPath.startsWith(path.join(tmpRoot, 'backups') + path.sep)).toBe(true);
     expect(dumpPath).toMatch(/daily_\d{4}.+\.postgresql\.aes$/);
-    expect(opts.env?.PGPASSWORD).toBe('p@ss;$(id)');
+    expect(opts?.env?.PGPASSWORD).toBe('p@ss;$(id)');
     expect(args.join(' ')).not.toContain('p@ss');
   });
 
@@ -130,13 +134,9 @@ describe('POST /api/settings/backup exec hardening', () => {
     expect(response.status).toBe(200);
 
     expect(runTool).toHaveBeenCalledTimes(1);
-    const [cmd, args, opts] = runTool.mock.calls[0] as [
-      string,
-      string[],
-      { stdoutFile?: string },
-    ];
+    const [cmd, args, opts] = runTool.mock.calls[0];
     expect(cmd).toBe('sqlite3');
     expect(args).toEqual([dbPath, '.dump']);
-    expect(opts.stdoutFile?.startsWith(path.join(tmpRoot, 'backups') + path.sep)).toBe(true);
+    expect(opts?.stdoutFile?.startsWith(path.join(tmpRoot, 'backups') + path.sep)).toBe(true);
   });
 });
