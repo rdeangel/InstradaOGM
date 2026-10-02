@@ -92,6 +92,7 @@ export async function POST(req: Request) {
         is2FAEnabled: false,
         totpSecret: null,
         backupCodes: null,
+        passwordChangedAt: new Date(),
       },
     });
 

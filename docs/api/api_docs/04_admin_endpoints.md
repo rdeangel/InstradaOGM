@@ -1423,7 +1423,7 @@ curl -X GET "{{SERVER_URL}}/api/admin/group-mappings" \
 
 ### PUT /api/admin/users/{id}
 
-**Description**: Update a user (name, username, email, role, password, mustChangePassword). ADMIN cannot assign SUPER_ADMIN or change a SUPER_ADMIN password/email.
+**Description**: Update a user (name, username, email, role, password, mustChangePassword). ADMIN cannot assign SUPER_ADMIN or change a SUPER_ADMIN password/email. An admin cannot change their own password or email here (including with an API key); use `POST /api/account/set-password` for your own password. Changing another user's password updates `passwordChangedAt`, which invalidates that user's JWT cookies on the next session refresh.
 
 **Authentication**: Required (session or API key with ADMIN/SUPER_ADMIN)
 

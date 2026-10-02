@@ -34,6 +34,20 @@ describe('canActorModifyTarget', () => {
   it('blocks SUPER_ADMIN changing their own role', () => {
     expect(canActorModifyTarget(superAdmin, superAdmin, { role: 'ADMIN' }).allowed).toBe(false);
   });
+
+  it('blocks ADMIN changing their own password or email', () => {
+    expect(canActorModifyTarget(admin, admin, { password: true }).allowed).toBe(false);
+    expect(canActorModifyTarget(admin, admin, { email: true }).allowed).toBe(false);
+  });
+
+  it('blocks SUPER_ADMIN changing their own password or email', () => {
+    expect(canActorModifyTarget(superAdmin, superAdmin, { password: true }).allowed).toBe(false);
+    expect(canActorModifyTarget(superAdmin, superAdmin, { email: true }).allowed).toBe(false);
+  });
+
+  it('allows ADMIN to change another USER password', () => {
+    expect(canActorModifyTarget(admin, user, { password: true }).allowed).toBe(true);
+  });
 });
 
 describe('shouldAutoLinkOidcByEmail', () => {

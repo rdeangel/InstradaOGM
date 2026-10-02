@@ -73,4 +73,54 @@ describe('POST /api/auth/change-password-required token', () => {
     expect(response.status).toBe(200);
     expect(prismaMock.user.update).toHaveBeenCalled();
   });
+
+  it('requires TOTP in addition to the current password when 2FA is enabled', async () => {
+    verifyPasswordChangeToken.mockReturnValue({ userId: 'user-1', email: 'admin@example.com' });
+    prismaMock.user.findUnique.mockResolvedValue({
+      id: 'user-1',
+      email: 'admin@example.com',
+      password: 'hash',
+      mustChangePassword: true,
+      is2FAEnabled: true,
+      totpSecret: 'secret',
+      backupCodes: null,
+    });
+    verifySensitiveReauth.mockResolvedValue({
+      ok: false,
+      status: 400,
+      message: 'Current password or authenticator code is required',
+    });
+
+    const response = await POST(requestWithCookie({
+      currentPassword: 'old-pass',
+      newPassword: 'new-pass-12',
+    }) as never);
+
+    expect(response.status).toBe(400);
+    expect(verifySensitiveReauth).toHaveBeenCalled();
+    expect(prismaMock.user.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects a valid TOTP when the current password is wrong', async () => {
+    verifyPasswordChangeToken.mockReturnValue({ userId: 'user-1', email: 'admin@example.com' });
+    prismaMock.user.findUnique.mockResolvedValue({
+      id: 'user-1',
+      email: 'admin@example.com',
+      password: 'hash',
+      mustChangePassword: true,
+      is2FAEnabled: true,
+      totpSecret: 'secret',
+      backupCodes: null,
+    });
+
+    const response = await POST(requestWithCookie({
+      currentPassword: 'wrong-pass',
+      newPassword: 'new-pass-12',
+      totpCode: '123456',
+    }) as never);
+
+    expect(response.status).toBe(400);
+    expect(verifySensitiveReauth).not.toHaveBeenCalled();
+    expect(prismaMock.user.update).not.toHaveBeenCalled();
+  });
 });

@@ -109,4 +109,62 @@ describe('admin user role escalation', () => {
       }),
     }));
   });
+
+  it('returns 403 when ADMIN changes their own password', async () => {
+    prismaMock.user.findUnique.mockResolvedValue({
+      id: 'admin-1',
+      role: 'ADMIN',
+      username: 'admin',
+      email: 'admin@example.com',
+      password: 'hash',
+      accounts: [],
+    });
+
+    const response = await PUT(
+      jsonRequest('http://localhost/api/admin/users/admin-1', { password: 'newpassword12' }),
+      { params: Promise.resolve({ id: 'admin-1' }) },
+    );
+
+    expect(response.status).toBe(403);
+    expect(prismaMock.user.update).not.toHaveBeenCalled();
+  });
+
+  it('returns 403 when ADMIN uses an API key to change their own password', async () => {
+    authenticateRequest.mockResolvedValue({ user: { id: 'admin-1', role: 'ADMIN' }, method: 'apiKey' });
+    prismaMock.user.findUnique.mockResolvedValue({
+      id: 'admin-1',
+      role: 'ADMIN',
+      username: 'admin',
+      email: 'admin@example.com',
+      password: 'hash',
+      accounts: [],
+    });
+
+    const response = await PUT(
+      jsonRequest('http://localhost/api/admin/users/admin-1', { password: 'newpassword12' }),
+      { params: Promise.resolve({ id: 'admin-1' }) },
+    );
+
+    expect(response.status).toBe(403);
+    expect(prismaMock.user.update).not.toHaveBeenCalled();
+  });
+
+  it('returns 403 when ADMIN changes their own email', async () => {
+    prismaMock.user.findUnique.mockResolvedValue({
+      id: 'admin-1',
+      role: 'ADMIN',
+      username: 'admin',
+      email: 'admin@example.com',
+      password: 'hash',
+      accounts: [],
+    });
+
+    const response = await PUT(
+      jsonRequest('http://localhost/api/admin/users/admin-1', { email: 'attacker@example.com' }),
+      { params: Promise.resolve({ id: 'admin-1' }) },
+    );
+
+    expect(response.status).toBe(403);
+    expect(prismaMock.user.update).not.toHaveBeenCalled();
+  });
 });

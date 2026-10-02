@@ -31,6 +31,7 @@ declare module "next-auth" {
     provider?: string; // Add provider to JWT for OIDC
     groups?: { id: string; name: string }[]; // Add groups to JWT
     externalGroups?: string[]; // Add externalGroups to JWT
+    authTime?: number; // Unix seconds of the actual sign-in; not refreshed with iat
   }
 }
 

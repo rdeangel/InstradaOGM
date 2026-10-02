@@ -1024,7 +1024,7 @@ curl -X PUT "{{SERVER_URL}}/api/account/update-profile" \
 
 ### POST /api/account/set-password
 
-**Description**: Set a new password for the authenticated user. Requires an interactive session plus the current password or a TOTP/backup code. If the account has no password yet, a login in the last 10 minutes is accepted instead of the current password. API keys are rejected. Other stored sessions and API keys for the user are disabled after a successful change.
+**Description**: Set a new password for the authenticated user. Requires an interactive session plus the current password or a TOTP/backup code. If the account has no password yet, a sign-in in the last 10 minutes is accepted instead of the current password (the JWT `authTime` claim, set only at login — not the refreshed `iat` on `GET /api/auth/session`). API keys are rejected. After a successful change, `passwordChangedAt` is updated so existing JWT cookies become unauthenticated on the next session refresh, stored database sessions are deleted, and all of the user's API keys are disabled. The caller must sign in again.
 
 **Authentication**: Required (session only)
 
@@ -1103,6 +1103,8 @@ curl -X POST "{{SERVER_URL}}/api/account/set-password" \
 - Only works for local users (not SSO users)
 - Comprehensive audit logging
 - Password hashed with bcrypt (10 salt rounds)
+- Updates `passwordChangedAt` so JWT cookies issued before the change are unauthenticated on the next session refresh
+- Deletes stored database sessions and disables all of the user's API keys
 
 **Audit Events**:
 - `SET_PASSWORD_SUCCESS`: When password is successfully set

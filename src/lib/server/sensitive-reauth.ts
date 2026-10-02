@@ -44,7 +44,7 @@ export async function getSessionIssuedAt(req: Request): Promise<number | null> {
     req: req as NextRequest,
     secret: process.env.NEXTAUTH_SECRET,
   });
-  return typeof token?.iat === 'number' ? token.iat : null;
+  return typeof token?.authTime === 'number' ? token.authTime : null;
 }
 
 async function verifyTotpOrBackup(user: ReauthUser, code: string, isBackupCode: boolean): Promise<boolean> {
@@ -52,7 +52,7 @@ async function verifyTotpOrBackup(user: ReauthUser, code: string, isBackupCode: 
     return false;
   }
 
-  if (isBackupCode || (code.length > 6 && /[A-Za-z]/.test(code))) {
+  if (isBackupCode || code.length > 6) {
     const verification = await verifyAndConsumeBackupCode(user.id, code, user.backupCodes);
     if (verification.isValid && verification.updatedCodes !== null) {
       await prisma.user.update({
@@ -77,7 +77,7 @@ async function verifyTotpOrBackup(user: ReauthUser, code: string, isBackupCode: 
 export async function verifySensitiveReauth(
   user: ReauthUser,
   input: ReauthInput,
-  sessionIat: number | null,
+  sessionAuthTime: number | null,
 ): Promise<ReauthResult> {
   const currentPassword = asNonEmptyString(input.currentPassword);
   const totpCode = asNonEmptyString(input.totpCode) ?? asNonEmptyString(input.code);
@@ -104,7 +104,7 @@ export async function verifySensitiveReauth(
     return { ok: true };
   }
 
-  if (!user.password && isRecentLogin(sessionIat)) {
+  if (!user.password && isRecentLogin(sessionAuthTime)) {
     return { ok: true };
   }
 

@@ -916,7 +916,7 @@ curl -X POST "{{SERVER_URL}}/api/auth/2fa/backup-codes" \
 
 ### POST /api/auth/2fa/disable
 
-**Description**: Disable 2FA for the authenticated user. Requires an interactive session plus the current password or a TOTP/backup code. API keys are rejected. Other stored sessions and API keys for the user are disabled after a successful disable.
+**Description**: Disable 2FA for the authenticated user. Requires an interactive session plus the current password or a TOTP/backup code. API keys are rejected. After a successful disable, `passwordChangedAt` is updated so existing JWT cookies become unauthenticated on the next session refresh, stored database sessions are deleted, and all of the user's API keys are disabled. The caller must sign in again.
 
 **Authentication**: Required (session only)
 

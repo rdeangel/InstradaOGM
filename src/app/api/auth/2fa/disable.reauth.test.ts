@@ -81,7 +81,15 @@ describe('POST /api/auth/2fa/disable re-auth', () => {
 
     const response = await POST(jsonRequest({ totpCode: '123456' }));
     expect(response.status).toBe(200);
-    expect(prismaMock.user.update).toHaveBeenCalled();
+    expect(prismaMock.user.update).toHaveBeenCalledWith({
+      where: { id: 'user-1' },
+      data: expect.objectContaining({
+        is2FAEnabled: false,
+        totpSecret: null,
+        backupCodes: null,
+        passwordChangedAt: expect.any(Date),
+      }),
+    });
     expect(revokeOtherCredentials).toHaveBeenCalledWith('user-1');
   });
 });

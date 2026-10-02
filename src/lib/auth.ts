@@ -14,6 +14,11 @@ import { getCaseInsensitiveMode } from '@/lib/prisma-utils';
 import { getTotpSecretWithMigration } from './totp-encryption';
 import { verifyAndConsumeBackupCode } from './backup-codes';
 import { shouldAutoLinkOidcByEmail } from './server/user-role-guards';
+import {
+  applySignInAuthTime,
+  isJwtInvalidatedByPasswordChange,
+  stripInvalidatedJwt,
+} from './server/jwt-auth-time';
 
 // Extended interfaces for better type safety
 interface ExtendedProfile extends Profile {
@@ -46,6 +51,7 @@ interface ExtendedJWT {
   groups?: { id: string; name: string }[];
   authMethod?: string;
   provider?: string;
+  authTime?: number;
   [key: string]: unknown;
 }
 
@@ -849,10 +855,12 @@ export const authOptions: AuthOptions = {
       let userLocalGroups: { id: string; name: string }[] = []; // Initialize userLocalGroups
       const extendedToken = token as ExtendedJWT;
 
-      // On initial sign-in, user object is available. Set token.id.
+      // On initial sign-in, user object is available. Set token.id and authTime.
+      // authTime is the real sign-in instant; NextAuth refreshes iat on every session poll.
       if (user) {
         extendedToken.id = user.id;
       }
+      applySignInAuthTime(extendedToken, Boolean(user));
 
       // If this is the initial sign-in (account object is present),
       // store the external groups fetched in the signIn callback.
@@ -886,6 +894,7 @@ export const authOptions: AuthOptions = {
           select: {
             role: true,
             username: true,
+            passwordChangedAt: true,
             groups: { // Include directly assigned groups
               select: {
                 id: true,
@@ -894,6 +903,11 @@ export const authOptions: AuthOptions = {
             },
           },
         });
+
+        if (isJwtInvalidatedByPasswordChange(dbUser?.passwordChangedAt, extendedToken.authTime)) {
+          logger.info(`JWT callback: ending session for user ${extendedToken.id} after passwordChangedAt`);
+          return stripInvalidatedJwt(extendedToken) as typeof token;
+        }
 
         extendedToken.role = dbUser?.role as Role ?? Role.USER; // Default to USER if lookup fails
         extendedToken.username = dbUser?.username || undefined; // Add username to the token
@@ -990,7 +1004,11 @@ export const authOptions: AuthOptions = {
         const extendedToken = token as ExtendedJWT;
         const extendedUser = session.user as ExtendedUser;
 
-        extendedUser.id = extendedToken.id || '';
+        if (!extendedToken.id) {
+          return session;
+        }
+
+        extendedUser.id = extendedToken.id;
 
         const dbUser = await prisma.user.findUnique({
           where: { id: extendedToken.id || '' },

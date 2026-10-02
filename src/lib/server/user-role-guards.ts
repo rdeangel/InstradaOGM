@@ -39,6 +39,13 @@ export function canActorModifyTarget(
     return { allowed: true };
   }
 
+  if (actor.id === target.id && (change.password || change.email)) {
+    return {
+      allowed: false,
+      reason: 'Cannot change your own password or email through this endpoint.',
+    };
+  }
+
   const roleChanging = change.role !== undefined && change.role !== target.role;
   const sensitiveOnSuperAdmin = target.role === 'SUPER_ADMIN'
     && !!(change.password || change.email || change.twoFactor);
