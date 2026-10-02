@@ -3,6 +3,12 @@ import { prisma } from '@/lib/prisma';
 import { logAuditEvent } from '@/lib/auditLog';
 import bcrypt from 'bcryptjs';
 import { authenticateAndTrackRequest } from '@/lib/auth-middleware';
+import {
+  getSessionIssuedAt,
+  revokeOtherCredentials,
+  sessionAuthDenied,
+  verifySensitiveReauth,
+} from '@/lib/server/sensitive-reauth';
 
 export async function POST(req: Request) {
   return authenticateAndTrackRequest(req, async (auth) => {
@@ -10,17 +16,15 @@ export async function POST(req: Request) {
       return NextResponse.json({ message: auth.authError || 'Unauthorized' }, { status: 401 });
     }
 
-  // Only allow local users to set password
-  // Type guard to check if user has password property (local user)
-  const hasPassword = 'password' in auth.user;
-  if (!hasPassword) {
-    await logAuditEvent({
-      userId: auth.user.id,
-      action: 'SET_PASSWORD_FAILURE',
-      reason: 'Forbidden: Only local users can set password.',
-    });
-    return NextResponse.json({ message: 'Only local users can set password.' }, { status: 403 });
-  }
+    const sessionDenied = sessionAuthDenied(auth.method);
+    if (sessionDenied) {
+      await logAuditEvent({
+        userId: auth.user.id,
+        action: 'SET_PASSWORD_FAILURE',
+        reason: sessionDenied.message,
+      });
+      return NextResponse.json({ message: sessionDenied.message }, { status: sessionDenied.status });
+    }
 
   let data;
   try {
@@ -46,13 +50,38 @@ export async function POST(req: Request) {
   }
 
   try {
-    // Check if new password is the same as current password
     const currentUser = await prisma.user.findUnique({
       where: { id: auth.user.id },
-      select: { password: true },
+      select: {
+        id: true,
+        password: true,
+        is2FAEnabled: true,
+        totpSecret: true,
+        backupCodes: true,
+      },
     });
 
-    if (currentUser?.password) {
+    if (!currentUser) {
+      await logAuditEvent({
+        userId: auth.user.id,
+        action: 'SET_PASSWORD_FAILURE',
+        reason: 'User not found',
+      });
+      return NextResponse.json({ message: 'User not found' }, { status: 404 });
+    }
+
+    const sessionIat = await getSessionIssuedAt(req);
+    const reauth = await verifySensitiveReauth(currentUser, data, sessionIat);
+    if (!reauth.ok) {
+      await logAuditEvent({
+        userId: auth.user.id,
+        action: 'SET_PASSWORD_FAILURE',
+        reason: reauth.message,
+      });
+      return NextResponse.json({ message: reauth.message }, { status: reauth.status });
+    }
+
+    if (currentUser.password) {
       const isSamePassword = await bcrypt.compare(password, currentUser.password);
       if (isSamePassword) {
         await logAuditEvent({
@@ -67,8 +96,9 @@ export async function POST(req: Request) {
     const hashedPassword = await bcrypt.hash(password, 10);
     await prisma.user.update({
       where: { id: auth.user.id },
-      data: { password: hashedPassword },
+      data: { password: hashedPassword, passwordChangedAt: new Date() },
     });
+    await revokeOtherCredentials(auth.user.id);
     await logAuditEvent({
       userId: auth.user.id,
       action: 'SET_PASSWORD_SUCCESS',

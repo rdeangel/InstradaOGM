@@ -93,13 +93,13 @@ export async function POST(request: Request) {
     // Hash the password
     const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
 
-    // Determine role based on email verification requirement
+    // First registrant is SUPER_ADMIN only when the user table is empty.
+    // Seed creates the initial admin on empty databases before the app listens, so a
+    // later registration never races into a second SUPER_ADMIN on a seeded install.
     const userCount = await prisma.user.count();
     const isFirstUser = userCount === 0;
     const requireEmailVerification = process.env.AUTH_REQUIRE_VERIFIED_EMAIL_LOCAL === 'true';
 
-    // First user is always SUPER_ADMIN
-    // Subsequent users: PENDING if email verification required, USER if not
     const initialRole = isFirstUser ? 'SUPER_ADMIN' : (requireEmailVerification ? 'PENDING' : 'USER');
 
     // Create the user

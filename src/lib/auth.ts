@@ -13,6 +13,7 @@ import { logger } from '@/lib/logger';
 import { getCaseInsensitiveMode } from '@/lib/prisma-utils';
 import { getTotpSecretWithMigration } from './totp-encryption';
 import { verifyAndConsumeBackupCode } from './backup-codes';
+import { shouldAutoLinkOidcByEmail } from './server/user-role-guards';
 
 // Extended interfaces for better type safety
 interface ExtendedProfile extends Profile {
@@ -570,14 +571,7 @@ export const authOptions: AuthOptions = {
         }
 
         // Provider specific enabled check is handled by loadOidcProviders
-
-        // Optional: Check email verification status from provider
-        // const requireVerifiedEmail = process.env.REQUIRE_VERIFIED_EMAIL_OIDC === 'true';
-        // if (requireVerifiedEmail && !(profile as any)?.email_verified) {
-        //     logger.warn(`OIDC login denied for ${profile?.email}: Email not verified by provider ${account.provider}.`);
-        //     await logAuditEvent({ action: 'USER_SIGNIN_FAILURE', event: 'SIGNIN_FAILURE', ...auditData, reason: 'OIDC email not verified' });
-        //     return '/auth/error?error=EmailNotVerified';
-        // }
+        // OIDC does not require email_verified; the identity provider is the trust anchor for email.
 
         try {
           // --- Fetch External Group Memberships ---
@@ -699,6 +693,18 @@ export const authOptions: AuthOptions = {
           });
 
           if (existingUserByEmail) {
+            if (!shouldAutoLinkOidcByEmail(existingUserByEmail.role)) {
+              logger.warn(`OIDC Signin: Refusing to auto-link ${account.provider} to privileged account ${existingUserByEmail.id} by email.`);
+              await logAuditEvent({
+                action: 'USER_SIGNIN_FAILURE',
+                event: 'SIGNIN_FAILURE',
+                ...auditData,
+                userId: existingUserByEmail.id,
+                reason: 'OIDC auto-link is not allowed for admin accounts',
+              });
+              return '/auth/error?error=OidcAdminLinkRequired';
+            }
+
             // 3. User exists by email, link this new OIDC account
             logger.debug(`OIDC Signin: Found existing user ${existingUserByEmail.id} by email ${profile.email}. Linking account for provider ${account.provider}.`);
 

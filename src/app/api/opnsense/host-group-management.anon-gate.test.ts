@@ -7,6 +7,9 @@ const {
   createHostAliasFromHostname,
   addAliasItem,
   removeIpFromGroup,
+  resolveGroupIdentifier,
+  batchAliasOperations,
+  resolveHostAliasFromSnapshot,
   authenticateRequest,
   prismaMock,
   fetchUnmanagedGroupFilterData,
@@ -19,6 +22,9 @@ const {
   createHostAliasFromHostname: vi.fn(),
   addAliasItem: vi.fn(),
   removeIpFromGroup: vi.fn(),
+  resolveGroupIdentifier: vi.fn(),
+  batchAliasOperations: vi.fn(),
+  resolveHostAliasFromSnapshot: vi.fn(),
   authenticateRequest: vi.fn(async (): Promise<{ user: { id: string; role: string } | null; method?: string }> => ({
     user: null,
   })),
@@ -46,8 +52,8 @@ vi.mock('@/lib/opnsense-api', () => ({
   getBestHostAliasName,
   exportAliases,
   removeIpFromGroup,
-  resolveGroupIdentifier: vi.fn(),
-  batchAliasOperations: vi.fn(),
+  resolveGroupIdentifier,
+  batchAliasOperations,
   getNetworkGroupById: vi.fn(),
   getHostAliasesByName: vi.fn(),
   createHostAliasFromHostname,
@@ -57,7 +63,7 @@ vi.mock('@/lib/opnsense-api', () => ({
 vi.mock('@/lib/host-group-batch', () => ({
   buildBatchSnapshot: vi.fn(() => ({ aliases: [], groups: [] })),
   resolveGroupFromSnapshot: vi.fn(),
-  resolveHostAliasFromSnapshot: vi.fn(),
+  resolveHostAliasFromSnapshot,
   findGroupsContainingAlias: vi.fn(),
 }));
 vi.mock('@/lib/prisma', () => ({ prisma: prismaMock }));
@@ -299,5 +305,52 @@ describe('host-group-management anonymous self-service gate', () => {
       message: 'Could not verify group management status. Try again.',
     });
     expect(removeIpFromGroup).not.toHaveBeenCalled();
+  });
+
+  it('returns 503 and does not assign when the unmanaged-group check cannot complete', async () => {
+    resolveHostAliasIdentifier.mockResolvedValue({
+      ipAddress: '192.168.1.10',
+      hostAliasName: 'HOST_192_168_1_10',
+    });
+    resolveGroupIdentifier.mockResolvedValue({
+      groupId: 'g-test',
+      group: { name: 'G_TEST', enabled: true },
+    });
+    exportAliases.mockResolvedValue({ aliases: { alias: {} } });
+    fetchUnmanagedGroupFilterData.mockRejectedValue(new Error('filter lookup failed'));
+
+    const response = await POST(requestWithBody({
+      operation: 'assign',
+      ipAddress: '192.168.1.10',
+      groupName: 'G_TEST',
+    }));
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({
+      success: false,
+      message: 'Could not verify group management status. Try again.',
+    });
+    expect(addAliasItem).not.toHaveBeenCalled();
+    expect(batchAliasOperations).not.toHaveBeenCalled();
+  });
+
+  it('fails the batch item and does not write when the unmanaged-group check cannot complete', async () => {
+    exportAliases.mockResolvedValue({ aliases: { alias: {} } });
+    resolveHostAliasFromSnapshot.mockReturnValue({
+      ipAddress: '192.168.1.10',
+      hostAliasName: 'HOST_192_168_1_10',
+    });
+    fetchUnmanagedGroupFilterData.mockRejectedValue(new Error('filter lookup failed'));
+
+    const response = await POST(requestWithBody({
+      operation: 'batch',
+      operationType: 'assign',
+      hostAliases: [{ ipAddress: '192.168.1.10' }],
+      groups: [{ groupName: 'G_TEST' }],
+    }));
+
+    expect(response.status).not.toBe(503);
+    expect(batchAliasOperations).not.toHaveBeenCalled();
+    expect(addAliasItem).not.toHaveBeenCalled();
   });
 });

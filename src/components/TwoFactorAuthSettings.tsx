@@ -38,6 +38,9 @@ export default function TwoFactorAuthSettings() {
   const [backupCodesStatus, setBackupCodesStatus] = useState<{ hasBackupCodes: boolean; backupCodesCount: number; isLowOnCodes: boolean } | null>(null);
   const [isRegeneratingCodes, setIsRegeneratingCodes] = useState(false);
   const [copySuccess, setCopySuccess] = useState('');
+  const [disablePassword, setDisablePassword] = useState('');
+  const [disableCode, setDisableCode] = useState('');
+  const [showDisableConfirm, setShowDisableConfirm] = useState(false);
 
   // Fetch backup codes status
   const fetchBackupCodesStatus = useCallback(async () => {
@@ -160,20 +163,36 @@ export default function TwoFactorAuthSettings() {
   };
 
   const handleDisableClick = async () => {
-    // Optional: Add a confirmation dialog here
+    if (!showDisableConfirm) {
+      setShowDisableConfirm(true);
+      setError(null);
+      return;
+    }
+    if (!disablePassword && !disableCode) {
+      setError('Enter your current password or an authenticator/backup code to disable 2FA.');
+      return;
+    }
     setIsLoading(true);
     setError(null);
-    setShowBackupCodes(false); // Hide backup codes if shown
+    setShowBackupCodes(false);
     setBackupCodes(null);
     try {
-      const response = await fetch('/api/auth/2fa/disable', { method: 'POST' });
+      const response = await fetch('/api/auth/2fa/disable', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...(disablePassword ? { currentPassword: disablePassword } : {}),
+          ...(disableCode ? { totpCode: disableCode } : {}),
+        }),
+      });
       const data = await response.json();
       if (!response.ok || !data.success) {
-        throw new Error(data.message || 'Failed to disable 2FA.');
+        throw new Error(data.message || data.error || 'Failed to disable 2FA.');
       }
-      // Success! 2FA is disabled.
       setStatus({ is2FAEnabled: false });
-      // Optionally display success message: setError('2FA disabled successfully.')
+      setShowDisableConfirm(false);
+      setDisablePassword('');
+      setDisableCode('');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to disable 2FA.');
     } finally {
@@ -327,13 +346,64 @@ export default function TwoFactorAuthSettings() {
 
                 {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
 
-                <Button
-                  onClick={handleDisableClick}
-                  disabled={isLoading}
-                  variant="destructive" // Use the destructive variant for disabling
-                >
-                  {isLoading ? 'Disabling...' : 'Disable 2FA'}
-                </Button>
+                {showDisableConfirm && (
+                  <div className="space-y-3 p-4 border border-red-200 rounded-lg dark:border-red-800">
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      Confirm by entering your current password or an authenticator / backup code.
+                    </p>
+                    <div>
+                      <label htmlFor="disablePassword" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Current password
+                      </label>
+                      <input
+                        id="disablePassword"
+                        type="password"
+                        autoComplete="current-password"
+                        value={disablePassword}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDisablePassword(e.target.value)}
+                        className="block w-full h-10 max-w-xs p-2 mt-1 bg-white border border-gray-300 rounded-md shadow-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="disableCode" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Authenticator or backup code
+                      </label>
+                      <input
+                        id="disableCode"
+                        type="text"
+                        autoComplete="one-time-code"
+                        value={disableCode}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDisableCode(e.target.value)}
+                        className="block w-full h-10 max-w-xs p-2 mt-1 bg-white border border-gray-300 rounded-md shadow-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                        placeholder="123456"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex space-x-3">
+                  <Button
+                    onClick={handleDisableClick}
+                    disabled={isLoading}
+                    variant="destructive"
+                  >
+                    {isLoading ? 'Disabling...' : showDisableConfirm ? 'Confirm disable 2FA' : 'Disable 2FA'}
+                  </Button>
+                  {showDisableConfirm && (
+                    <Button
+                      onClick={() => {
+                        setShowDisableConfirm(false);
+                        setDisablePassword('');
+                        setDisableCode('');
+                        setError(null);
+                      }}
+                      disabled={isLoading}
+                      variant="outline"
+                    >
+                      Cancel
+                    </Button>
+                  )}
+                </div>
               </div>
             ) : setupData ? (
               // --- 2FA Setup View ---

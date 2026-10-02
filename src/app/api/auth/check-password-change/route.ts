@@ -3,6 +3,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import bcrypt from 'bcryptjs';
 import { logger } from '@/lib/logger';
+import {
+  LEGACY_PASSWORD_CHANGE_COOKIE,
+  PASSWORD_CHANGE_COOKIE,
+  passwordChangeCookieOptions,
+  signPasswordChangeToken,
+} from '@/lib/server/password-change-token';
 
 export async function POST(request: NextRequest) {
   try {
@@ -29,6 +35,7 @@ export async function POST(request: NextRequest) {
         email: true,
         password: true,
         mustChangePassword: true,
+        is2FAEnabled: true,
       },
     });
 
@@ -49,27 +56,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Return whether password change is required
     const response = NextResponse.json(
-      { mustChangePassword: user.mustChangePassword },
+      {
+        mustChangePassword: user.mustChangePassword,
+        requires2FA: !!(user.mustChangePassword && user.is2FAEnabled),
+      },
       { status: 200 }
     );
 
-    // If password change is required, set a cookie with the user's email
-    // This cookie will be used by the password change page to identify the user
     if (user.mustChangePassword) {
-      logger.debug('[CHECK-PASSWORD-CHANGE] Setting password_change_email cookie for:', email);
-
-      // Set cookie with appropriate security settings
-      // Respect ALLOW_HTTP setting - if HTTP is allowed, don't require secure cookies
-      const allowHttp = process.env.ALLOW_HTTP === 'true';
-      response.cookies.set('password_change_email', email, {
-        path: '/',
-        maxAge: 600, // 10 minutes
-        httpOnly: false, // Allow client-side access for debugging
-        sameSite: 'lax',
-        secure: !allowHttp, // Only require HTTPS if HTTP is not explicitly allowed
-      });
+      const token = signPasswordChangeToken(user.id, user.email || email);
+      const cookieOptions = passwordChangeCookieOptions();
+      response.cookies.set(PASSWORD_CHANGE_COOKIE, token, cookieOptions);
+      response.cookies.set(LEGACY_PASSWORD_CHANGE_COOKIE, '', { ...cookieOptions, maxAge: 0 });
     }
 
     return response;

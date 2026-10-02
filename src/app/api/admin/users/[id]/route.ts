@@ -5,6 +5,7 @@ import { logAuditEvent } from '@/lib/auditLog';
 import { logger } from '@/lib/logger';
 import { authenticateRequest, handleAuthResponse, trackUsageByAuthMethod } from '@/lib/auth-middleware';
 import bcrypt from 'bcryptjs';
+import { canActorModifyTarget } from '@/lib/server/user-role-guards';
 
 // Define the type for the auth object returned by authenticateRequest
 interface AuthenticatedRequest {
@@ -228,7 +229,10 @@ export async function PUT(
     action: 'USER_UPDATE_ATTEMPT',
     details: {
       targetUserId: userId,
-      updateData: data,
+      updateData: {
+        ...data,
+        password: data.password ? '[REDACTED]' : undefined,
+      },
     },
   });
 
@@ -301,56 +305,23 @@ export async function PUT(
       }, { status: 400 });
     }
 
-    // Scenario 1: ADMIN trying to change their own role.
-    if (auth.user.role === Role.ADMIN && auth.user.id === userId) {
-      if (role && role !== currentUser.role) {
-        await logAuditEvent({
-          userId: auth.user.id,
-          action: 'USER_UPDATE_FAILURE',
-          details: { targetUserId: userId, requestedRole: role, currentRole: currentUser.role },
-          reason: 'ADMIN cannot change their own role.',
-        });
-        return NextResponse.json({ message: 'ADMIN cannot change their own role.' }, { status: 403 });
-      }
-    }
-
-    // Scenario 2: ADMIN trying to change another ADMIN's role.
-    if (auth.user.role === Role.ADMIN && currentUser.role === Role.ADMIN && auth.user.id !== userId) {
-      if (role && role !== currentUser.role) {
-        await logAuditEvent({
-          userId: auth.user.id,
-          action: 'USER_UPDATE_FAILURE',
-          details: { targetUserId: userId, requestedRole: role, currentRole: currentUser.role },
-          reason: 'ADMIN cannot change another ADMIN role.',
-        });
-        return NextResponse.json({ message: 'ADMIN cannot change another ADMIN role.' }, { status: 403 });
-      }
-    }
-
-    // Scenario 3: ADMIN trying to change a SUPER_ADMIN's role.
-    if (auth.user.role === Role.ADMIN && currentUser.role === Role.SUPER_ADMIN) {
-      if (role && role !== currentUser.role) {
-        await logAuditEvent({
-          userId: auth.user.id,
-          action: 'USER_UPDATE_FAILURE',
-          details: { targetUserId: userId, requestedRole: role, currentRole: currentUser.role },
-          reason: 'ADMIN cannot change SUPER_ADMIN role.',
-        });
-        return NextResponse.json({ message: 'ADMIN cannot change SUPER_ADMIN role.' }, { status: 403 });
-      }
-    }
-
-    // Scenario 4: SUPER_ADMIN can change any role except their own.
-    if (auth.user.role === Role.SUPER_ADMIN && auth.user.id === userId) {
-      if (role && role !== currentUser.role) {
-        await logAuditEvent({
-          userId: auth.user.id,
-          action: 'USER_UPDATE_FAILURE',
-          details: { targetUserId: userId, requestedRole: role, currentRole: currentUser.role },
-          reason: 'SUPER_ADMIN cannot change their own role.',
-        });
-        return NextResponse.json({ message: 'SUPER_ADMIN cannot change their own role.' }, { status: 403 });
-      }
+    const modifyGuard = canActorModifyTarget(
+      { id: auth.user.id, role: String(auth.user.role) },
+      { id: currentUser.id, role: currentUser.role },
+      {
+        role,
+        password: !!(password && password !== '') || mustChangePassword === true,
+        email: email !== undefined && email !== currentUser.email,
+      },
+    );
+    if (!modifyGuard.allowed) {
+      await logAuditEvent({
+        userId: auth.user.id,
+        action: 'USER_UPDATE_FAILURE',
+        details: { targetUserId: userId, requestedRole: role, currentRole: currentUser.role },
+        reason: modifyGuard.reason,
+      });
+      return NextResponse.json({ message: modifyGuard.reason }, { status: 403 });
     }
 
     // Replace 'any' with Record<string, unknown> for updateData

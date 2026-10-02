@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma';
 import { Role } from '@/types/opnsense';
 import { logApiAccess } from '@/lib/auditLog';
 import { authenticateAndTrackRequest } from '@/lib/auth-middleware';
+import { canActorModifyTarget } from '@/lib/server/user-role-guards';
 
 type SessionUserWithRole = {
   id: string;
@@ -185,6 +186,22 @@ export async function POST(request: Request) {
           reason: 'Invalid role specified',
         }, request);
         return NextResponse.json({ message: 'Invalid role specified' }, { status: 400 });
+    }
+
+    const createGuard = canActorModifyTarget(
+      { id: user.id, role: String(user.role) },
+      null,
+      { role },
+    );
+    if (!createGuard.allowed) {
+      await logApiAccess(auth, 'USER_CREATE_FAILURE', {
+        email,
+        name,
+        username,
+        role,
+        reason: createGuard.reason,
+      }, request);
+      return NextResponse.json({ message: createGuard.reason }, { status: 403 });
     }
 
     // Check if user already exists

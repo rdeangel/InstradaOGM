@@ -4,6 +4,7 @@ import { logAuditEvent } from '@/lib/auditLog';
 import { authenticateRequest, handleAuthResponse } from '@/lib/auth-middleware';
 import { logger } from '@/lib/logger';
 import { Role } from '@/types/opnsense';
+import { canActorModifyTarget } from '@/lib/server/user-role-guards';
 
 // POST /api/admin/users/[id]/disable-2fa - Disable 2FA for a specific user (SUPER_ADMIN only)
 export async function POST(
@@ -61,6 +62,7 @@ export async function POST(
         id: true,
         email: true,
         username: true,
+        role: true,
         is2FAEnabled: true
       },
     });
@@ -73,6 +75,21 @@ export async function POST(
         reason: 'Target user not found.',
       });
       return NextResponse.json({ message: 'User not found' }, { status: 404 });
+    }
+
+    const modifyGuard = canActorModifyTarget(
+      { id: auth.user.id, role: String(auth.user.role) },
+      { id: targetUser.id, role: targetUser.role },
+      { twoFactor: true },
+    );
+    if (!modifyGuard.allowed) {
+      await logAuditEvent({
+        userId: auth.user.id,
+        action: 'ADMIN_2FA_DISABLE_FAILURE',
+        details: { targetUserId },
+        reason: modifyGuard.reason,
+      });
+      return NextResponse.json({ message: modifyGuard.reason }, { status: 403 });
     }
 
     // If 2FA is already disabled, just return success

@@ -4,6 +4,7 @@ import * as bcrypt from 'bcryptjs';
 import * as dotenv from 'dotenv';
 import * as fs from 'fs';
 import * as path from 'path';
+import { resolveInitialAdminPassword, shouldCreateSeedAdmin } from '../src/lib/server/initial-admin';
 
 // Load environment variables manually since this script is run directly via tsx/node
 const envFiles = ['.env.production', '.env.development', '.env'];
@@ -22,30 +23,30 @@ async function main() {
   const adminName = 'Admin User';
   const adminUsername = 'admin';
   const adminEmail = 'admin@example.com'; // Unique email is required by schema
-  const adminPassword = 'admin';
+  const userCount = await prisma.user.count();
 
-  // Check if admin user already exists by username
-  const existingAdmin = await prisma.user.findUnique({
-    where: { username: adminUsername },
-  });
-
-  if (existingAdmin) {
-    console.log(`Admin user with username "${adminUsername}" already exists. Seeding skipped for admin user.`);
+  if (!shouldCreateSeedAdmin(userCount)) {
+    console.log(`User table is not empty (${userCount} user(s)). Seeding skipped for admin user.`);
   } else {
+    const { password: adminPassword, generated } = resolveInitialAdminPassword(process.env.INITIAL_ADMIN_PASSWORD);
     const hashedPassword = await bcrypt.hash(adminPassword, 10);
     await prisma.user.create({
       data: {
-        name: adminName, // Set name to "Admin User"
-        username: adminUsername, // Set username to "admin"
+        name: adminName,
+        username: adminUsername,
         email: adminEmail,
         password: hashedPassword,
-        role: 'SUPER_ADMIN', // Use string value for role
-        emailVerified: new Date(), // Mark as verified for simplicity in local auth
-        mustChangePassword: true, // Force password change on first login
-        passwordChangedAt: new Date(), // Set initial password change timestamp
+        role: 'SUPER_ADMIN',
+        emailVerified: new Date(),
+        mustChangePassword: true,
+        passwordChangedAt: new Date(),
       },
     });
-    console.log(`Admin user "${adminUsername}" created successfully with password "${adminPassword}".`);
+    if (generated) {
+      console.log(`Admin user "${adminUsername}" created. Generated password (shown once): ${adminPassword}`);
+    } else {
+      console.log(`Admin user "${adminUsername}" created using INITIAL_ADMIN_PASSWORD. Change it after first login.`);
+    }
   }
 
   // The regular user 'user@example.com' will no longer be seeded.

@@ -14,6 +14,7 @@ export default function ChangePasswordPage() {
   const [currentPassword, setCurrentPassword] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [totpCode, setTotpCode] = useState('');
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [isRedirecting, setIsRedirecting] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -32,11 +33,6 @@ export default function ChangePasswordPage() {
         router.push('/');
         return;
       }
-
-      // Debug: Check if cookie is present
-      const cookies = document.cookie.split(';').map(c => c.trim());
-      const passwordChangeCookie = cookies.find(c => c.startsWith('password_change_email='));
-      logger.debug('[CHANGE-PASSWORD-PAGE] Cookie check:', passwordChangeCookie);
 
       setIsLoading(false);
     };
@@ -89,7 +85,8 @@ export default function ChangePasswordPage() {
         },
         body: JSON.stringify({
           currentPassword: currentPassword,
-          newPassword: password
+          newPassword: password,
+          ...(totpCode ? { totpCode } : {}),
         }),
       });
 
@@ -164,6 +161,18 @@ export default function ChangePasswordPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="totp-code">Authenticator code (required if 2FA is enabled)</Label>
+              <Input
+                id="totp-code"
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                placeholder="123456"
+                value={totpCode}
+                onChange={(e) => setTotpCode(e.target.value)}
               />
             </div>
             <div className="space-y-2">
