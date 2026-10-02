@@ -55,8 +55,8 @@ model User {
   updatedAt     DateTime  @updatedAt // Added update timestamp
   lastActive    DateTime? // Added last active timestamp
   is2FAEnabled  Boolean   @default(false) // Flag indicating if 2FA is enabled
-  passwordResetToken String? // Added for password reset functionality
-  passwordResetExpires DateTime? // Added for password reset functionality
+  passwordResetTokenHash String? @unique // SHA-256 hex of the emailed reset token
+  passwordResetExpires   DateTime?
 
   // Password policy fields
   mustChangePassword Boolean   @default(false) // Force password change on next login

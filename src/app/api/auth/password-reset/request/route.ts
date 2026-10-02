@@ -47,15 +47,14 @@ export async function POST(request: Request) {
     }
 
     // User is local or has local account - proceed with password reset
-    // Generate a secure password reset token using bcrypt
-    const { plaintextToken, hashedToken } = await generatePasswordResetToken();
+    const { plaintextToken, tokenHash } = generatePasswordResetToken();
     const passwordResetExpires = generatePasswordResetExpiry(1); // Token valid for 1 hour
 
-    // Save the hashed token and expiry to the user
+    // Save the SHA-256 token hash and expiry to the user
     await prisma.user.update({
       where: { id: user.id },
       data: {
-        passwordResetToken: hashedToken, // Store the bcrypt-hashed token
+        passwordResetTokenHash: tokenHash,
         passwordResetExpires,
       },
     });

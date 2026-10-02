@@ -252,7 +252,7 @@ curl -X POST "{{SERVER_URL}}/api/auth/password-reset/request" \
 
 **Security Considerations**:
 - Always returns success response to prevent email enumeration attacks
-- Reset tokens expire after 1 hour
+- Reset tokens expire after 1 hour. Only a one-way hash of the token is stored.
 - Rate limiting applies to prevent spam
 - Tokens are securely generated and hashed in database
 
@@ -291,9 +291,11 @@ curl -X POST "{{SERVER_URL}}/api/auth/password-reset/confirm" \
 **Error Response**:
 ```json
 {
-  "error": "Invalid or expired password reset token"
+  "error": "This password reset link is invalid or has expired. Please request a new link."
 }
 ```
+
+The same message and `{ error }` shape (HTTP 400) is returned for unknown, expired, already-used, and malformed tokens. Response shapes are unchanged.
 
 #### Usage Case 3: Weak New Password
 
@@ -324,6 +326,8 @@ curl -X POST "{{SERVER_URL}}/api/auth/password-reset/confirm" \
 - Tokens are single-use and invalidated after use
 - Tokens expire after 1 hour
 - New passwords are hashed using bcrypt
+- Completing a reset signs out other active sessions
+- Upgrading from 1.2.x: reset links sent before the upgrade no longer work. Request a new link.
 - Audit logging for all password reset attempts
 
 ## Email Verification
