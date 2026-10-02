@@ -26,7 +26,7 @@ import * as ipaddr from 'ipaddr.js';
 import { prisma } from '@/lib/prisma';
 import type { NetworkGroup } from '@/types/opnsense';
 import type { ValidLocalNetwork } from '@/types/settings';
-import { isIpAllowedForSelfService, isOwnDeviceSelfService } from '@/lib/network-utils';
+import { firstInvalidIpAddress, isIpAllowedForSelfService, isOwnDeviceSelfService } from '@/lib/network-utils';
 import { fetchUnmanagedGroupFilterData, isHostInUnmanagedGroups } from '@/lib/unmanaged-group-utils';
 import { toJsonArrayOrUndefined } from '@/lib/utils';
 import { resolveUserAliasPermissions, resolveUserPermissions, type ResolvedUserPermissions } from '@/lib/user-permissions';
@@ -611,6 +611,14 @@ async function handleAssignOperation(
     moveFromExisting = true
   } = body;
 
+  const invalidAssignIp = firstInvalidIpAddress([ipAddress]);
+  if (invalidAssignIp) {
+    return NextResponse.json({
+      success: false,
+      message: 'Invalid IP address',
+    }, { status: 400 });
+  }
+
   // Resolve host alias identifier from various parameter combinations
   let resolvedHostAlias = await resolveHostAliasIdentifier(ipAddress, hostAliasName, hostAliasHostName);
 
@@ -1119,6 +1127,14 @@ async function handleUnassignOperation(
     groupFriendlyName
   } = body;
 
+  const invalidUnassignIp = firstInvalidIpAddress([ipAddress]);
+  if (invalidUnassignIp) {
+    return NextResponse.json({
+      success: false,
+      message: 'Invalid IP address',
+    }, { status: 400 });
+  }
+
   // Resolve host alias identifier from various parameter combinations
   const resolvedHostAlias = await resolveHostAliasIdentifier(ipAddress, hostAliasName, hostAliasHostName);
 
@@ -1495,6 +1511,14 @@ async function handleBatchOperation(
     return NextResponse.json({
       success: false,
       message: 'Must provide either hostAliases, groups, or batchOperations'
+    }, { status: 400 });
+  }
+
+  const invalidBatchIp = firstInvalidIpAddress((hostAliases ?? []).map((hostAlias) => hostAlias.ipAddress));
+  if (invalidBatchIp) {
+    return NextResponse.json({
+      success: false,
+      message: 'Invalid IP address',
     }, { status: 400 });
   }
 

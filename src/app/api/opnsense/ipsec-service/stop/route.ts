@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { authenticateAndTrackRequest } from '@/lib/auth-middleware';
 import { Role, OpnsenseApiResponse } from '@/types/opnsense';
 import { fetchFromOpnsense } from '@/lib/opnsense-api';
+import { assertOpnsenseId, isOpnsenseId } from '@/lib/opnsense-id';
 import { logger } from '@/lib/logger';
 
 export async function POST(req: Request) {
@@ -20,8 +21,14 @@ export async function POST(req: Request) {
       return new NextResponse(JSON.stringify({ error: 'VPN UUID is required' }), { status: 400 });
     }
 
-    logger.info(`Attempting to disconnect IPsec session for UUID: ${vpnUuid}`);
-    const opnsenseResponse: OpnsenseApiResponse = await fetchFromOpnsense(`/api/ipsec/sessions/disconnect/${vpnUuid}`, 'POST', {});
+    if (!isOpnsenseId(vpnUuid)) {
+      return new NextResponse(JSON.stringify({ error: 'Invalid VPN identifier' }), { status: 400 });
+    }
+
+    const vpnId = assertOpnsenseId(vpnUuid);
+
+    logger.info(`Attempting to disconnect IPsec session for UUID: ${vpnId}`);
+    const opnsenseResponse: OpnsenseApiResponse = await fetchFromOpnsense(`/api/ipsec/sessions/disconnect/${vpnId}`, 'POST', {});
 
     logger.debug(`OPNsense disconnectResponse for ${vpnUuid}:`, opnsenseResponse);
     if (opnsenseResponse.result !== 'ok') {

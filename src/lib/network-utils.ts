@@ -115,6 +115,29 @@ export function isValidIpAddress(ip: string): boolean {
 }
 
 /**
+ * Returns the first provided IP that fails {@link isValidIpAddress} after trim.
+ * Missing, null, and blank strings are skipped so other identifiers may be used.
+ */
+export function firstInvalidIpAddress(ips: Array<string | null | undefined>): string | null {
+  for (const ip of ips) {
+    if (typeof ip !== 'string') continue;
+    const trimmed = ip.trim();
+    if (trimmed === '') continue;
+    if (!isValidIpAddress(trimmed)) return trimmed;
+  }
+  return null;
+}
+
+export class InvalidIpAddressError extends Error {
+  readonly status = 400 as const;
+
+  constructor() {
+    super('Invalid IP address');
+    this.name = 'InvalidIpAddressError';
+  }
+}
+
+/**
  * Checks if a given string is a valid CIDR (Classless Inter-Domain Routing) block.
  * Supports both IPv4 and IPv6 CIDR formats.
  * @param cidr The string to validate.

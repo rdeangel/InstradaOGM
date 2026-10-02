@@ -3,6 +3,7 @@ import { logger } from '@/lib/logger';
 import { authenticateAndTrackRequest } from '@/lib/auth-middleware';
 import { Role } from '@/types/opnsense';
 import { fetchFromOpnsense } from '@/lib/opnsense-api';
+import { assertOpnsenseId, isOpnsenseId } from '@/lib/opnsense-id';
 
 export async function POST(req: Request) {
   return authenticateAndTrackRequest(req, async (auth) => {
@@ -17,8 +18,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'VPN UUID is required' }, { status: 400 });
     }
 
+    if (!isOpnsenseId(vpnUuid)) {
+      return NextResponse.json({ error: 'Invalid VPN identifier' }, { status: 400 });
+    }
+
     // Call OPNsense API to stop the VPN service
-    const opnsenseResponse = await fetchFromOpnsense(`/api/openvpn/service/stopService/${vpnUuid}`, 'POST', {});
+    const opnsenseResponse = await fetchFromOpnsense(`/api/openvpn/service/stopService/${assertOpnsenseId(vpnUuid)}`, 'POST', {});
 
     return NextResponse.json({ message: 'VPN stop initiated successfully', opnsenseResponse });
     } catch (error) {

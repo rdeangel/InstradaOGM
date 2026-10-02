@@ -539,6 +539,7 @@ curl -X PUT "{{SERVER_URL}}/api/opnsense/host-alias-management?uuid=45653f16-70b
 ```
 
 **Error Responses**:
+- `400 Bad Request`: Missing `uuid`, or the identifier is not a valid OPNsense id (`[A-Za-z0-9_-]{1,64}`).
 - `403 Forbidden`: Renaming rejected because the host is a member of one or more **unmanaged groups**.
 - `404 Not Found`: Host alias with provided UUID does not exist.
 
@@ -575,6 +576,9 @@ curl -X DELETE "{{SERVER_URL}}/api/opnsense/host-alias-management?uuid=45653f16-
   "reconfigureError": "..."
 }
 ```
+
+**Error Responses**:
+- `400 Bad Request`: Missing `uuid`, or the identifier is not a valid OPNsense id (`[A-Za-z0-9_-]{1,64}`).
 
 ### GET /api/opnsense/host-alias-management-admin
 

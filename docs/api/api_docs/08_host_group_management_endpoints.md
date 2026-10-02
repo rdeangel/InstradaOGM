@@ -67,7 +67,7 @@ When a permission check fails the operation is rejected with `403 Forbidden`. In
 
 **Self-service globally disabled:** When the **Remove Self-Service Page** global setting is enabled, the self-service page is hidden from everyone. The API enforces this too: **unauthenticated** requests to this endpoint are rejected with `403 Forbidden` (`"Forbidden: Self-service functionality is disabled"`), and the authenticated own-device self-service grant above is suppressed (a no-permission caller is denied as usual). Authenticated callers acting on devices/groups they genuinely have permission for are unaffected.
 
-The raw `batchOperations` payload (low-level operations that bypass host-alias/group resolution) is restricted to wildcard (`*`) callers — i.e. administrators. Non-wildcard callers receive `403 Forbidden`. The resolved `hostAliases` + `groups` batch form remains available to all callers, subject to the per-device/per-group checks above.
+The raw `batchOperations` payload (low-level operations that bypass host-alias/group resolution) is restricted to ADMIN/SUPER_ADMIN (by role) or callers holding a `*` group permission. Other callers receive `403 Forbidden`. The resolved `hostAliases` + `groups` batch form remains available to all callers, subject to the per-device/per-group checks above.
 
 **Example Responses:**
 
@@ -957,7 +957,7 @@ Original Hostname    → Sanitized Hostname
 
 ## Error Codes and Responses
 
-- `400 Bad Request`: Invalid parameters or operation
+- `400 Bad Request`: Invalid parameters or operation, including an invalid IP address (rejected before alias resolution or alias creation)
 - `401 Unauthorized`: Authentication required
 - `403 Forbidden`: IP access denied (for self-service operations)
 - `500 Internal Server Error`: Server-side error

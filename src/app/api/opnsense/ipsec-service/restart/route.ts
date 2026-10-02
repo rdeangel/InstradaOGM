@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { authenticateAndTrackRequest } from '@/lib/auth-middleware';
 import { Role, OpnsenseApiResponse } from '@/types/opnsense';
 import { fetchFromOpnsense } from '@/lib/opnsense-api';
+import { assertOpnsenseId, isOpnsenseId } from '@/lib/opnsense-id';
 import { logger } from '@/lib/logger';
 
 export async function POST(req: Request) {
@@ -20,11 +21,17 @@ export async function POST(req: Request) {
       return new NextResponse(JSON.stringify({ error: 'VPN UUID is required' }), { status: 400 });
     }
 
-    logger.info(`Attempting to restart IPsec session for UUID: ${vpnUuid} (disconnect then connect)`);
+    if (!isOpnsenseId(vpnUuid)) {
+      return new NextResponse(JSON.stringify({ error: 'Invalid VPN identifier' }), { status: 400 });
+    }
 
-    logger.debug(`Calling OPNsense disconnect API for UUID: ${vpnUuid}`);
+    const vpnId = assertOpnsenseId(vpnUuid);
+
+    logger.info(`Attempting to restart IPsec session for UUID: ${vpnId} (disconnect then connect)`);
+
+    logger.debug(`Calling OPNsense disconnect API for UUID: ${vpnId}`);
     // 1. Disconnect the IPsec session
-    const disconnectResponse: OpnsenseApiResponse = await fetchFromOpnsense(`/api/ipsec/sessions/disconnect/${vpnUuid}`, 'POST', {});
+    const disconnectResponse: OpnsenseApiResponse = await fetchFromOpnsense(`/api/ipsec/sessions/disconnect/${vpnId}`, 'POST', {});
     logger.debug(`OPNsense disconnectResponse for ${vpnUuid}:`, disconnectResponse);
     if (disconnectResponse.result !== 'ok') {
       logger.error(`OPNsense API reported failure for IPsec disconnect during restart: ${vpnUuid}`, disconnectResponse);
@@ -37,7 +44,7 @@ export async function POST(req: Request) {
 
     // 2. Connect the IPsec session again
     logger.debug(`Calling OPNsense connect API for UUID: ${vpnUuid}`);
-    const connectResponse: OpnsenseApiResponse = await fetchFromOpnsense(`/api/ipsec/sessions/connect/${vpnUuid}`, 'POST', {});
+    const connectResponse: OpnsenseApiResponse = await fetchFromOpnsense(`/api/ipsec/sessions/connect/${vpnId}`, 'POST', {});
     logger.debug(`OPNsense connectResponse for ${vpnUuid}:`, connectResponse);
     if (connectResponse.result !== 'ok') {
       logger.error(`OPNsense API reported failure for IPsec connect during restart: ${vpnUuid}`, connectResponse);

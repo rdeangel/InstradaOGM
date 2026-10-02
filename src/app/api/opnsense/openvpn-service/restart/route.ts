@@ -3,6 +3,7 @@ import { logger } from '@/lib/logger';
 import { authenticateAndTrackRequest } from '@/lib/auth-middleware';
 import { Role, OpnsenseApiResponse } from '@/types/opnsense';
 import { fetchFromOpnsense } from '@/lib/opnsense-api';
+import { assertOpnsenseId, isOpnsenseId } from '@/lib/opnsense-id';
 
 export async function POST(req: Request) {
   return authenticateAndTrackRequest(req, async (auth) => {
@@ -24,12 +25,18 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'VPN UUID is required' }, { status: 400 });
     }
 
+    if (!isOpnsenseId(vpnUuid)) {
+      return NextResponse.json({ error: 'Invalid VPN identifier' }, { status: 400 });
+    }
+
+    const vpnId = assertOpnsenseId(vpnUuid);
+
     let opnsenseResponse: OpnsenseApiResponse;
 
     if (vpnType === 'OpenVPN') {
-      opnsenseResponse = await fetchFromOpnsense(`/api/openvpn/service/restartService/${vpnUuid}`, 'POST', {});
+      opnsenseResponse = await fetchFromOpnsense(`/api/openvpn/service/restartService/${vpnId}`, 'POST', {});
     } else if (vpnType === 'WireGuard') {
-      opnsenseResponse = await fetchFromOpnsense(`/api/opnsense/wireguard/service/restartService/${vpnUuid}`, 'POST', {});
+      opnsenseResponse = await fetchFromOpnsense(`/api/opnsense/wireguard/service/restartService/${vpnId}`, 'POST', {});
     } else {
       return NextResponse.json({ error: 'Unsupported VPN type for restart.' }, { status: 400 });
     }

@@ -9,6 +9,8 @@ import { prisma } from '@/lib/prisma'; // Import Prisma client
 import { logger } from '@/lib/logger'; // Import logger
 import { VpnClientType } from '@prisma/client';
 import { handleSSLError } from './opnsense-ssl-config';
+import { assertOpnsenseId, assertSafeOpnsenseEndpoint } from '@/lib/opnsense-id';
+import { InvalidIpAddressError, isValidIpAddress } from '@/lib/network-utils';
 
 // Module-level flag to track SSL bypass warning display (resets on application restart)
 let sslWarningShown = false;
@@ -23,6 +25,10 @@ const API_SECRET = process.env.OPNSENSE_API_SECRET;
  * Tries to detect hostname first with automatic deduplication, falls back to default HOST_X.X.X.X format
  */
 export async function getBestHostAliasName(ipAddress: string): Promise<{ aliasName: string; detectedHostname: string | null }> {
+  if (!isValidIpAddress(ipAddress)) {
+    throw new InvalidIpAddressError();
+  }
+
   let aliasName = `HOST_${ipAddress.replace(/\./g, '_')}`; // Default name
   let detectedHostname: string | null = null;
 
@@ -172,6 +178,8 @@ function sanitizeHostAliasName(hostname: string): string {
 // as this module might be inadvertently imported client-side,
 // but this function should only be executed server-side.
 export async function fetchFromOpnsense<T = OpnsenseApiResponse>(endpoint: string, method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET', body?: unknown): Promise<T> {
+  assertSafeOpnsenseEndpoint(endpoint);
+
   if (!OPNSENSE_URL || !API_KEY || !API_SECRET) {
     throw new Error('OPNsense API credentials are not configured.');
   }
@@ -475,7 +483,7 @@ export async function setAliasItem(uuid: string, payload: OpnsenseSetAliasItemPa
     if (alias.description && typeof alias.description !== 'string') alias.description = String(alias.description);
 
     // Call the OPNsense API
-    const response = await fetchFromOpnsense<OpnsenseSetItemResponse>(`/api/firewall/alias/setItem/${uuid}`, 'POST', normalizedPayload);
+    const response = await fetchFromOpnsense<OpnsenseSetItemResponse>(`/api/firewall/alias/setItem/${assertOpnsenseId(uuid)}`, 'POST', normalizedPayload);
     logger.debug(`Raw response from OPNsense setAliasItem for UUID ${uuid}: Status - ${response.result}.`);
     return response;
   } catch (error) {
@@ -608,7 +616,7 @@ export async function deleteAliasItem(uuid: string): Promise<OpnsenseDeleteItemR
   // Let's stick to POST as per OPNsense documentation examples for `delItem`.
   // If DELETE method is preferred, ensure fetchFromOpnsense handles it correctly (it should send '{}' body).
   // Using POST based on typical OPNsense API patterns for delete actions.
-  return fetchFromOpnsense<OpnsenseDeleteItemResponse>(`/api/firewall/alias/delItem/${uuid}`, 'POST', {});
+  return fetchFromOpnsense<OpnsenseDeleteItemResponse>(`/api/firewall/alias/delItem/${assertOpnsenseId(uuid)}`, 'POST', {});
 }
 
 

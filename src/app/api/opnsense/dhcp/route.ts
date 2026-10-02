@@ -3,6 +3,7 @@ import { authenticateAndTrackRequest, authenticateRequest, handleAuthResponse, t
 import { logAuditEvent } from '@/lib/auditLog';
 import { logger } from '@/lib/logger';
 import { fetchFromOpnsense, get_arpTable, exportAliases, OpnsenseAliasDetailFromExport } from '@/lib/opnsense-api';
+import { assertOpnsenseId, isOpnsenseId } from '@/lib/opnsense-id';
 import { Role, OpnsenseDhcpReservation, OpnsenseKeaLease, NetworkGroup } from '@/types/opnsense';
 import { prisma } from '@/lib/prisma';
 import * as ipaddr from 'ipaddr.js';
@@ -1026,17 +1027,23 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: 'Reservation UUID is required for deletion.' }, { status: 400 });
     }
 
+    if (!isOpnsenseId(reservationUuid)) {
+      return NextResponse.json({ message: 'Invalid OPNsense identifier' }, { status: 400 });
+    }
+
+    const reservationId = assertOpnsenseId(reservationUuid);
+
     // Attempt to fetch all reservations to get full details before deletion
-    let reservationToDeleteDetails: OpnsenseDhcpReservation = { uuid: reservationUuid, subnet: '', ip_address: '', hw_address: '' };
+    let reservationToDeleteDetails: OpnsenseDhcpReservation = { uuid: reservationId, subnet: '', ip_address: '', hw_address: '' };
     try {
       const allReservationsResponse = await fetchFromOpnsense<OpnsenseReservationResponse>('/api/kea/dhcpv4/search_reservation', 'POST', {}); // Fetch all
       const allReservations = allReservationsResponse.rows || [];
-      const foundReservation = allReservations.find((res) => res.uuid === reservationUuid);
+      const foundReservation = allReservations.find((res) => res.uuid === reservationId);
       if (foundReservation) {
         reservationToDeleteDetails = foundReservation;
       }
     } catch (searchError) {
-      logger.warn(`Could not fetch full details for reservation ${reservationUuid} before deletion:`, searchError);
+      logger.warn(`Could not fetch full details for reservation ${reservationId} before deletion:`, searchError);
     }
 
     await logAuditEvent({
@@ -1047,7 +1054,7 @@ export async function POST(request: Request) {
       details: getReservationLogDetails(reservationToDeleteDetails),
     });
     try {
-      const response = await fetchFromOpnsense<OpnsenseDeleteReservationResponse>(`/api/kea/dhcpv4/del_reservation/${reservationUuid}`, 'POST', {});
+      const response = await fetchFromOpnsense<OpnsenseDeleteReservationResponse>(`/api/kea/dhcpv4/del_reservation/${reservationId}`, 'POST', {});
       if (response.result === 'deleted') {
         await logAuditEvent({
           action: 'DHCP_RESERVATION_DELETE_SUCCESS',
@@ -1115,10 +1122,17 @@ export async function POST(request: Request) {
       let allSuccess = true;
       const failedUuids: string[] = []; // Change to const
       for (const uuid of reservationUuids) {
-        const currentReservationDetails = allReservationsDetails.find((d) => d.uuid === uuid) || { uuid, subnet: '', ip_address: '', hw_address: '' };
+        if (!isOpnsenseId(uuid)) {
+          allSuccess = false;
+          failedUuids.push(uuid);
+          continue;
+        }
+
+        const reservationId = assertOpnsenseId(uuid);
+        const currentReservationDetails = allReservationsDetails.find((d) => d.uuid === reservationId) || { uuid: reservationId, subnet: '', ip_address: '', hw_address: '' };
 
         try {
-          const response = await fetchFromOpnsense<OpnsenseDeleteReservationResponse>(`/api/kea/dhcpv4/del_reservation/${uuid}`, 'POST', {});
+          const response = await fetchFromOpnsense<OpnsenseDeleteReservationResponse>(`/api/kea/dhcpv4/del_reservation/${reservationId}`, 'POST', {});
           if (response.result === 'deleted') {
             await logAuditEvent({
               action: 'DHCP_RESERVATION_DELETE_SUCCESS',

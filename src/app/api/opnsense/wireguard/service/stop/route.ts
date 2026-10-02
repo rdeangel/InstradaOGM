@@ -3,6 +3,7 @@ import { logger } from '@/lib/logger';
 import { authenticateAndTrackRequest } from '@/lib/auth-middleware';
 import { Role, OpnsenseWireguardClientResponse, OpnsenseWireguardClient } from '@/types/opnsense';
 import { fetchFromOpnsense } from '@/lib/opnsense-api';
+import { assertOpnsenseId, isOpnsenseId } from '@/lib/opnsense-id';
 
 interface ToggleClientResponse {
   result: string; // e.g., "toggled"
@@ -22,9 +23,15 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'WireGuard VPN UUID is required' }, { status: 400 });
     }
 
+    if (!isOpnsenseId(vpnUuid)) {
+      return NextResponse.json({ error: 'Invalid VPN identifier' }, { status: 400 });
+    }
+
+    const vpnId = assertOpnsenseId(vpnUuid);
+
     // 1. Get current status of the WireGuard client
     const searchResponse: OpnsenseWireguardClientResponse = await fetchFromOpnsense('/api/wireguard/client/searchClient', 'POST', {});
-    const client = searchResponse.rows.find((c: OpnsenseWireguardClient) => c.uuid === vpnUuid);
+    const client = searchResponse.rows.find((c: OpnsenseWireguardClient) => c.uuid === vpnId);
 
     if (!client) {
       return NextResponse.json({ error: `WireGuard client with UUID ${vpnUuid} not found.` }, { status: 404 });
@@ -35,7 +42,7 @@ export async function POST(req: Request) {
     // Only stop if the VPN is currently enabled
     if (client.enabled === '1') {
       logger.info(`WireGuard VPN ${vpnUuid} is enabled. Toggling to disable for stop...`);
-      opnsenseResponse = await fetchFromOpnsense<ToggleClientResponse>(`/api/wireguard/client/toggleClient/${vpnUuid}`, 'POST', {});
+      opnsenseResponse = await fetchFromOpnsense<ToggleClientResponse>(`/api/wireguard/client/toggleClient/${vpnId}`, 'POST', {});
       await fetchFromOpnsense('/api/wireguard/service/reconfigure', 'POST', {});
       logger.info(`WireGuard VPN ${vpnUuid} disabled.`);
     } else {

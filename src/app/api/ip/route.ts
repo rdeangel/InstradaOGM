@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isPrivateIP, lookupNetworkDetails } from '@/lib/server/network-utils';
+import { isValidIpAddress } from '@/lib/network-utils';
 import { logger } from '@/lib/logger';
 import { authenticateRequest, handleAuthResponse, trackUsageByAuthMethod } from '@/lib/auth-middleware';
 import { prisma } from '@/lib/prisma';
@@ -29,6 +30,10 @@ export async function GET(request: NextRequest) {
 
   if (!ipToLookup) {
     return NextResponse.json({ error: 'Could not determine IP address to lookup' }, { status: 500 });
+  }
+
+  if (!isValidIpAddress(ipToLookup)) {
+    return NextResponse.json({ error: 'Invalid IP address' }, { status: 400 });
   }
 
   // Authenticate the request

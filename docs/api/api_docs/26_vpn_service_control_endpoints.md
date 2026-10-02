@@ -5,6 +5,8 @@
 ## Overview
 This document covers the VPN service control API endpoints in InstradaOGM. These endpoints provide administrative functionality for managing and restarting VPN services including IPsec, OpenVPN, and WireGuard services for administrative users.
 
+VPN identifiers interpolated into OPNsense paths (`vpnUuid`) must match `[A-Za-z0-9_-]{1,64}`. Numeric OpenVPN `vpnid` values such as `1` are accepted. Identifiers that do not match return `400 Bad Request`.
+
 ---
 
 ## Authentication Requirements
@@ -112,6 +114,7 @@ curl -X POST "https://instrada-ogm.example.com/api/opnsense/ipsec-service/restar
 
 ### Security Considerations
 - Requires ADMIN or SUPER_ADMIN role
+- `vpnUuid` must match `[A-Za-z0-9_-]{1,64}` or the request returns `400`
 - Service restart will temporarily terminate VPN connections
 - All operations are logged for audit purposes
 - Rate limiting applies to prevent service disruption

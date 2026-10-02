@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getHostAliases, addAliasItem, reconfigureAliases, deleteAliasItem, setAliasItem, fetchFromOpnsense, exportAliases } from '@/lib/opnsense-api';
+import { assertOpnsenseId, isOpnsenseId } from '@/lib/opnsense-id';
 
 interface OpnsenseAliasDetail {
   uuid?: string;
@@ -185,6 +186,12 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ message: 'Valid UUID parameter is missing' }, { status: 400 });
   }
 
+  if (!isOpnsenseId(uuid)) {
+    return NextResponse.json({ message: 'Invalid OPNsense identifier' }, { status: 400 });
+  }
+
+  assertOpnsenseId(uuid);
+
   // Use mixed tracking since this might support both authenticated and unauthenticated access
   const auth = await authenticateRequest(request);
 
@@ -327,6 +334,12 @@ export async function PUT(request: Request) {
     if (!uuid || typeof uuid !== 'string') {
       return NextResponse.json({ message: 'Valid UUID parameter is missing' }, { status: 400 });
     }
+
+    if (!isOpnsenseId(uuid)) {
+      return NextResponse.json({ message: 'Invalid OPNsense identifier' }, { status: 400 });
+    }
+
+    uuid = assertOpnsenseId(uuid);
 
     const body = await request.json();
     const { name: newName } = body.alias; // Only expect the new name from the request body

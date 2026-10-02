@@ -3,6 +3,7 @@ import { authenticateRequest, trackUsageByAuthMethod } from '@/lib/auth-middlewa
 import { Role, OpnsenseVpnSession, OpnsenseApiResponse, OpnsenseWireguardClient, OpnsenseWireguardClientResponse } from '@/types/opnsense';
 import type { NetworkGroup } from '@/types/opnsense';
 import { fetchFromOpnsense, getIpsecConnections, exportAliases } from '@/lib/opnsense-api';
+import { assertOpnsenseId, isOpnsenseId } from '@/lib/opnsense-id';
 import { logger } from '@/lib/logger';
 import { isOpnsenseIpsecConnection } from '@/types/opnsense';
 import { VpnClientType } from '@prisma/client';
@@ -125,6 +126,12 @@ export async function POST(req: Request) {
       return new NextResponse(JSON.stringify({ error: 'VPN UUID is required' }), { status: 400 });
     }
 
+    if (!isOpnsenseId(vpnUuid)) {
+      return new NextResponse(JSON.stringify({ error: 'Invalid VPN identifier' }), { status: 400 });
+    }
+
+    const vpnId = assertOpnsenseId(vpnUuid);
+
     // Check if this is a self-service operation and if the host is in unmanaged groups
     if (!auth.user) {
       try {
@@ -197,7 +204,7 @@ export async function POST(req: Request) {
       }
 
       logger.info(`Attempting to restart OpenVPN service for UUID: ${vpnUuid} via safe-restart endpoint.`);
-      opnsenseResponse = await fetchFromOpnsense(`/api/openvpn/service/restartService/${vpnUuid}`, 'POST', {});
+      opnsenseResponse = await fetchFromOpnsense(`/api/openvpn/service/restartService/${vpnId}`, 'POST', {});
 
     } else if (vpnType === VpnClientType.WireGuard) {
       // Verify WireGuard status
@@ -225,12 +232,12 @@ export async function POST(req: Request) {
       logger.info(`Attempting to restart WireGuard service for UUID: ${vpnUuid} via safe-restart endpoint (toggle twice).`);
 
       // 1. Disable the client
-      await fetchFromOpnsense(`/api/opnsense/wireguard/client/toggleClient/${vpnUuid}`, 'POST', {});
+      await fetchFromOpnsense(`/api/opnsense/wireguard/client/toggleClient/${vpnId}`, 'POST', {});
       await fetchFromOpnsense('/api/opnsense/wireguard/service/reconfigure', 'POST', {});
       logger.info(`WireGuard VPN ${vpnUuid} temporarily disabled.`);
 
       // 2. Re-enable the client
-      opnsenseResponse = await fetchFromOpnsense(`/api/opnsense/wireguard/client/toggleClient/${vpnUuid}`, 'POST', {});
+      opnsenseResponse = await fetchFromOpnsense(`/api/opnsense/wireguard/client/toggleClient/${vpnId}`, 'POST', {});
       await fetchFromOpnsense('/api/opnsense/wireguard/service/reconfigure', 'POST', {});
       logger.info(`WireGuard VPN ${vpnUuid} re-enabled.`);
 
@@ -258,7 +265,7 @@ export async function POST(req: Request) {
       logger.info(`Attempting to restart IPsec service for UUID: ${vpnUuid} via safe-restart endpoint (connect).`);
 
       // Connect the IPsec session directly as the frontend ensures it's disconnected
-      opnsenseResponse = await fetchFromOpnsense(`/api/ipsec/sessions/connect/${vpnUuid}`, 'POST', {});
+      opnsenseResponse = await fetchFromOpnsense(`/api/ipsec/sessions/connect/${vpnId}`, 'POST', {});
       logger.info(`IPsec VPN ${vpnUuid} connected.`);
 
     } else {

@@ -15,7 +15,13 @@ const { prismaMock } = vi.hoisted(() => ({
 vi.mock('@/lib/prisma', () => ({ prisma: prismaMock }));
 vi.mock('@/lib/opnsense-api', () => ({ exportAliases: vi.fn() }));
 
-import { resolveUserAliasPermissions, resolveUserPermissions } from '@/lib/user-permissions';
+import {
+  resolveUserAliasPermissions,
+  resolveUserPermissions,
+  userHasDeviceAccess,
+  userHasDeviceIpAccess,
+  userHasDhcpAccess,
+} from '@/lib/user-permissions';
 
 type StubUser = {
   id: string;
@@ -126,5 +132,19 @@ describe('resolveUserPermissions (D2 inherited via resolveUserAliasPermissions)'
     expect(result.hasWildcard).toBe(true);
     expect(result.permittedGroupUuids.size).toBe(0);
     expect(prismaMock.groupFilterSetting.findMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('/devices helpers stay group-based (no ADMIN role wildcard)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('does not grant device-list access to an ADMIN without a * permission', async () => {
+    stubUser({ id: 'admin-no-star', role: 'ADMIN', groups: [{ id: 'g-admin' }], aliasPerms: [] });
+
+    await expect(userHasDeviceAccess('admin-no-star')).resolves.toBe(false);
+    await expect(userHasDeviceIpAccess('admin-no-star', '192.168.1.50')).resolves.toBe(false);
+    await expect(userHasDhcpAccess('admin-no-star', '192.168.1.50')).resolves.toBe(false);
   });
 });

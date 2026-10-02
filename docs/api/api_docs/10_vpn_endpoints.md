@@ -24,6 +24,8 @@ curl -X GET "${SERVER_URL}/api/vpn/status" \
 
 This section covers all VPN-related API endpoints for managing VPN connections, configurations, and status monitoring.
 
+VPN identifiers (`vpnUuid`) sent to restart/stop endpoints must match `[A-Za-z0-9_-]{1,64}` or the request is rejected with `400`. Numeric OpenVPN `vpnid` values such as `1` are accepted.
+
 ## Role-Based Access Control
 
 **Authentication Required:** Yes
@@ -435,8 +437,11 @@ curl -X POST "https://instrada-ogm.example.com/api/vpn/safe-restart" \
 ```
 
 **Required Fields**:
-- `vpnUuid`: VPN connection UUID
+- `vpnUuid`: VPN identifier. Must match `[A-Za-z0-9_-]{1,64}` (OpenVPN numeric `vpnid` values such as `1` are accepted). Other values return `400`.
 - `vpnType`: VPN type (`openvpn`, `wireguard`, `ipsec`)
+
+**Error Responses** (identifier):
+- `400 Bad Request`: `vpnUuid` is missing or is not a valid OPNsense identifier.
 
 **VPN Type Behaviors**:
 - **OpenVPN**: Calls restart service API (only if disconnected)

@@ -1,12 +1,22 @@
 import 'server-only';
-import { exec } from 'child_process';
-import { promisify } from 'util';
+import { execFile } from 'child_process';
 import { readFile } from 'fs/promises'; // Import promises API
 import { get_arpTable } from '@/lib/opnsense-api'; // Add this import
 import { logger } from '@/lib/logger';
 import { getDataPath } from '@/lib/server/data-paths';
+import { InvalidIpAddressError, isValidIpAddress } from '@/lib/network-utils';
 
-const execAsync = promisify(exec);
+function execFileAsync(file: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    execFile(file, args, { encoding: 'utf8' }, (error, stdout, stderr) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve({ stdout, stderr });
+    });
+  });
+}
 
 // Define a Map to store the OUI to vendor mapping
 const macVendorMap = new Map<string, string>();
@@ -75,6 +85,10 @@ export async function lookupNetworkDetails(ipAddress: string): Promise<{
   let hostname: string | null = null;
   let source: 'opnsense' | 'local' | null = null;
 
+  if (!isValidIpAddress(ipAddress)) {
+    throw new InvalidIpAddressError();
+  }
+
   // 1. Try OPNsense ARP table first
   try {
     const arpTable = await get_arpTable();
@@ -102,7 +116,7 @@ export async function lookupNetworkDetails(ipAddress: string): Promise<{
 
   // 2. Fallback to local system ARP lookup if OPNsense fails or no match
   try {
-    const { stdout, stderr } = await execAsync(`ip neigh show to ${ipAddress}`);
+    const { stdout, stderr } = await execFileAsync('ip', ['neigh', 'show', 'to', ipAddress]);
     if (stderr) {
       logger.error(`Error looking up MAC address for ${ipAddress} locally: ${stderr}`);
     } else {
