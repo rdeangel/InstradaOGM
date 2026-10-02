@@ -84,11 +84,13 @@ export async function middleware(req: NextRequest) {
 
   // Configure getToken to work with proxy setup
   // When behind a reverse proxy, we need to tell NextAuth about the secure cookie setting
-  const token = await getToken({
+  const rawToken = await getToken({
     req,
     secret,
     secureCookie: process.env.ALLOW_HTTP === 'true' ? false : actualProtocol === 'https',
   });
+  // A JWT stripped after a password change is still a cookie; treat it as signed out.
+  const token = rawToken?.sub && !rawToken.invalidated ? rawToken : null;
 
   const protectedPaths = ['/account', '/settings']; // Add other protected paths here
   const isProtected = protectedPaths.some(path => pathname.startsWith(path));

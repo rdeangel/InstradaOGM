@@ -274,7 +274,7 @@ export async function authenticateRequest(req: Request) {
 
   // Fallback to session auth
   const session = await getServerSession(authOptions);
-  if (session && session.user) {
+  if (session?.user?.id) {
     // Create a consistent session token for tracking
     const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
     const sessionToken = `session_${session.user.id}_${today}`;
