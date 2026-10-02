@@ -4,7 +4,7 @@ import { readFile } from 'fs/promises'; // Import promises API
 import { get_arpTable } from '@/lib/opnsense-api'; // Add this import
 import { logger } from '@/lib/logger';
 import { getDataPath } from '@/lib/server/data-paths';
-import { InvalidIpAddressError, isValidIpAddress } from '@/lib/network-utils';
+import { assertValidHostIpAddress } from '@/lib/network-utils';
 
 function execFileAsync(file: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
@@ -85,9 +85,7 @@ export async function lookupNetworkDetails(ipAddress: string): Promise<{
   let hostname: string | null = null;
   let source: 'opnsense' | 'local' | null = null;
 
-  if (!isValidIpAddress(ipAddress)) {
-    throw new InvalidIpAddressError();
-  }
+  ipAddress = assertValidHostIpAddress(ipAddress);
 
   // 1. Try OPNsense ARP table first
   try {

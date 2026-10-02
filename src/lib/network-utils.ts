@@ -100,34 +100,6 @@ export function sortIpAddresses(ipA: string | null, ipB: string | null): number 
   return compareByteArrays(parsedIpA.toByteArray(), parsedIpB.toByteArray());
 }
 
-/**
- * Checks if a given string is a valid IPv4 or IPv6 address.
- * @param ip The string to validate.
- * @returns True if the string is a valid IP address, false otherwise.
- */
-export function isValidIpAddress(ip: string): boolean {
-  try {
-    ipaddr.parse(ip);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Returns the first provided IP that fails {@link isValidIpAddress} after trim.
- * Missing, null, and blank strings are skipped so other identifiers may be used.
- */
-export function firstInvalidIpAddress(ips: Array<string | null | undefined>): string | null {
-  for (const ip of ips) {
-    if (typeof ip !== 'string') continue;
-    const trimmed = ip.trim();
-    if (trimmed === '') continue;
-    if (!isValidIpAddress(trimmed)) return trimmed;
-  }
-  return null;
-}
-
 export class InvalidIpAddressError extends Error {
   readonly status = 400 as const;
 
@@ -135,6 +107,67 @@ export class InvalidIpAddressError extends Error {
     super('Invalid IP address');
     this.name = 'InvalidIpAddressError';
   }
+}
+
+/**
+ * Checks if a given string is a host IP suitable for alias content and ARP lookup.
+ * Accepts dotted-quad IPv4 and normal IPv6 (including IPv4-mapped). Rejects CIDR,
+ * zone ids, and legacy IPv4 forms (`1`, `127.1`, hex, octal, integer).
+ */
+export function isValidIpAddress(ip: string): boolean {
+  if (typeof ip !== 'string' || ip.length === 0 || ip.includes('%')) {
+    return false;
+  }
+  try {
+    const parsed = ipaddr.parse(ip);
+    if (parsed.kind() === 'ipv4') {
+      return ipaddr.IPv4.isValidFourPartDecimal(ip);
+    }
+    return parsed.kind() === 'ipv6';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Trimmed host IP, or throws {@link InvalidIpAddressError} when the value is
+ * missing, non-string, blank, or not a valid host IP.
+ */
+export function assertValidHostIpAddress(ip: unknown): string {
+  if (typeof ip !== 'string') {
+    throw new InvalidIpAddressError();
+  }
+  const trimmed = ip.trim();
+  if (trimmed === '' || !isValidIpAddress(trimmed)) {
+    throw new InvalidIpAddressError();
+  }
+  return trimmed;
+}
+
+/**
+ * Trimmed IP when the field is a non-blank string; undefined when absent/blank.
+ * Does not validate — pair with {@link firstInvalidIpAddress} at the boundary.
+ */
+export function trimmedProvidedIpAddress(ip: unknown): string | undefined {
+  if (typeof ip !== 'string') return undefined;
+  const trimmed = ip.trim();
+  return trimmed === '' ? undefined : trimmed;
+}
+
+/**
+ * Returns the first provided IP that fails {@link isValidIpAddress} after trim.
+ * Missing, null, undefined, and blank strings are skipped so other identifiers
+ * may be used. A present non-string value is always invalid.
+ */
+export function firstInvalidIpAddress(ips: unknown[]): string | null {
+  for (const ip of ips) {
+    if (ip == null) continue;
+    if (typeof ip !== 'string') return String(ip);
+    const trimmed = ip.trim();
+    if (trimmed === '') continue;
+    if (!isValidIpAddress(trimmed)) return trimmed;
+  }
+  return null;
 }
 
 /**

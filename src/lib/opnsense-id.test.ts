@@ -57,6 +57,15 @@ describe('assertSafeOpnsenseEndpoint', () => {
     expect(assertSafeOpnsenseEndpoint('/api/kea/dhcpv4/search_reservation')).toBe(
       '/api/kea/dhcpv4/search_reservation'
     );
+    expect(
+      assertSafeOpnsenseEndpoint('/api/opnsense/wireguard/client/toggleClient/WGP-rda_s21')
+    ).toBe('/api/opnsense/wireguard/client/toggleClient/WGP-rda_s21');
+    expect(assertSafeOpnsenseEndpoint('/api/firewall/alias_util/findReferences')).toBe(
+      '/api/firewall/alias_util/findReferences'
+    );
+    expect(assertSafeOpnsenseEndpoint('/api/diagnostics/interface/get_arp')).toBe(
+      '/api/diagnostics/interface/get_arp'
+    );
   });
 
   it.each([
@@ -65,6 +74,10 @@ describe('assertSafeOpnsenseEndpoint', () => {
     '/api/ipsec/sessions/connect/foo#bar',
     '/api/wireguard/client/toggleClient/foo\\bar',
     '/api/kea/dhcpv4/del_reservation/abc?x=1',
+    '/api/x/.\t./export',
+    '/api/x/.\n./y',
+    '@evil.com/api',
+    '/api/@evil.com/x',
   ])('rejects %j without treating it as a safe path', (value) => {
     expect(() => assertSafeOpnsenseEndpoint(value)).toThrow(InvalidOpnsensePathError);
   });

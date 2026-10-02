@@ -957,7 +957,7 @@ Original Hostname    → Sanitized Hostname
 
 ## Error Codes and Responses
 
-- `400 Bad Request`: Invalid parameters or operation, including an invalid IP address (rejected before alias resolution or alias creation)
+- `400 Bad Request`: Invalid parameters or operation, including an invalid IP address. A present `ipAddress` that is not a string, or a string that is not a dotted-quad IPv4 / normal IPv6 address, is rejected before alias resolution or alias creation.
 - `401 Unauthorized`: Authentication required
 - `403 Forbidden`: IP access denied (for self-service operations)
 - `500 Internal Server Error`: Server-side error

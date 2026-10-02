@@ -26,7 +26,7 @@ import * as ipaddr from 'ipaddr.js';
 import { prisma } from '@/lib/prisma';
 import type { NetworkGroup } from '@/types/opnsense';
 import type { ValidLocalNetwork } from '@/types/settings';
-import { firstInvalidIpAddress, isIpAllowedForSelfService, isOwnDeviceSelfService } from '@/lib/network-utils';
+import { firstInvalidIpAddress, InvalidIpAddressError, isIpAllowedForSelfService, isOwnDeviceSelfService, trimmedProvidedIpAddress } from '@/lib/network-utils';
 import { fetchUnmanagedGroupFilterData, isHostInUnmanagedGroups } from '@/lib/unmanaged-group-utils';
 import { toJsonArrayOrUndefined } from '@/lib/utils';
 import { resolveUserAliasPermissions, resolveUserPermissions, type ResolvedUserPermissions } from '@/lib/user-permissions';
@@ -600,7 +600,7 @@ async function handleAssignOperation(
   opnsenseGroupDisplays: OpnsenseGroupDisplay[]
 ) {
   const {
-    ipAddress,
+    ipAddress: rawIpAddress,
     hostAliasName,
     hostAliasHostName,
     hostname, // New parameter for hostname-based host alias creation
@@ -611,13 +611,14 @@ async function handleAssignOperation(
     moveFromExisting = true
   } = body;
 
-  const invalidAssignIp = firstInvalidIpAddress([ipAddress]);
+  const invalidAssignIp = firstInvalidIpAddress([rawIpAddress]);
   if (invalidAssignIp) {
     return NextResponse.json({
       success: false,
       message: 'Invalid IP address',
     }, { status: 400 });
   }
+  const ipAddress = trimmedProvidedIpAddress(rawIpAddress);
 
   // Resolve host alias identifier from various parameter combinations
   let resolvedHostAlias = await resolveHostAliasIdentifier(ipAddress, hostAliasName, hostAliasHostName);
@@ -659,6 +660,12 @@ async function handleAssignOperation(
           throw new Error(`Failed to create host alias: ${createResult.result || 'Unknown error'}. Full response: ${JSON.stringify(createResult)}`);
         }
       } catch (error) {
+        if (error instanceof InvalidIpAddressError) {
+          return NextResponse.json({
+            success: false,
+            message: 'Invalid IP address',
+          }, { status: 400 });
+        }
         logger.error(`Failed to create host alias from hostname "${hostname}":`, error);
         return NextResponse.json({
           success: false,
@@ -698,6 +705,12 @@ async function handleAssignOperation(
           throw new Error(`Failed to create host alias: ${createResult.result || 'Unknown error'}`);
         }
       } catch (error) {
+        if (error instanceof InvalidIpAddressError) {
+          return NextResponse.json({
+            success: false,
+            message: 'Invalid IP address',
+          }, { status: 400 });
+        }
         logger.error(`Failed to create host alias from IP address "${ipAddress}":`, error);
         return NextResponse.json({
           success: false,
@@ -1119,7 +1132,7 @@ async function handleUnassignOperation(
   opnsenseGroupDisplays: OpnsenseGroupDisplay[]
 ) {
   const {
-    ipAddress,
+    ipAddress: rawIpAddress,
     hostAliasName,
     hostAliasHostName,
     groupId,
@@ -1127,13 +1140,14 @@ async function handleUnassignOperation(
     groupFriendlyName
   } = body;
 
-  const invalidUnassignIp = firstInvalidIpAddress([ipAddress]);
+  const invalidUnassignIp = firstInvalidIpAddress([rawIpAddress]);
   if (invalidUnassignIp) {
     return NextResponse.json({
       success: false,
       message: 'Invalid IP address',
     }, { status: 400 });
   }
+  const ipAddress = trimmedProvidedIpAddress(rawIpAddress);
 
   // Resolve host alias identifier from various parameter combinations
   const resolvedHostAlias = await resolveHostAliasIdentifier(ipAddress, hostAliasName, hostAliasHostName);
@@ -1520,6 +1534,11 @@ async function handleBatchOperation(
       success: false,
       message: 'Invalid IP address',
     }, { status: 400 });
+  }
+  if (hostAliases) {
+    for (const hostAlias of hostAliases) {
+      hostAlias.ipAddress = trimmedProvidedIpAddress(hostAlias.ipAddress);
+    }
   }
 
   // The raw `batchOperations` payload bypasses host-alias/group resolution and is not used by the UI.

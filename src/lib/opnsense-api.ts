@@ -10,7 +10,7 @@ import { logger } from '@/lib/logger'; // Import logger
 import { VpnClientType } from '@prisma/client';
 import { handleSSLError } from './opnsense-ssl-config';
 import { assertOpnsenseId, assertSafeOpnsenseEndpoint } from '@/lib/opnsense-id';
-import { InvalidIpAddressError, isValidIpAddress } from '@/lib/network-utils';
+import { assertValidHostIpAddress, InvalidIpAddressError } from '@/lib/network-utils';
 
 // Module-level flag to track SSL bypass warning display (resets on application restart)
 let sslWarningShown = false;
@@ -25,9 +25,7 @@ const API_SECRET = process.env.OPNSENSE_API_SECRET;
  * Tries to detect hostname first with automatic deduplication, falls back to default HOST_X.X.X.X format
  */
 export async function getBestHostAliasName(ipAddress: string): Promise<{ aliasName: string; detectedHostname: string | null }> {
-  if (!isValidIpAddress(ipAddress)) {
-    throw new InvalidIpAddressError();
-  }
+  ipAddress = assertValidHostIpAddress(ipAddress);
 
   let aliasName = `HOST_${ipAddress.replace(/\./g, '_')}`; // Default name
   let detectedHostname: string | null = null;
@@ -106,7 +104,10 @@ export async function createHostAliasFromHostname(
   // Sanitize hostname for OPNsense alias compatibility
   const sanitizedBaseName = sanitizeHostAliasName(hostname);
 
-  let resolvedIpAddress = ipAddress;
+  let resolvedIpAddress: string | undefined;
+  if (ipAddress != null && ipAddress !== '') {
+    resolvedIpAddress = assertValidHostIpAddress(ipAddress);
+  }
 
   // If no IP address provided, try to find it in OPNsense ARP table
   if (!resolvedIpAddress) {
@@ -122,12 +123,13 @@ export async function createHostAliasFromHostname(
       );
 
       if (matchingEntry) {
-        resolvedIpAddress = matchingEntry.ip;
+        resolvedIpAddress = assertValidHostIpAddress(matchingEntry.ip);
         logger.debug(`Found hostname "${hostname}" in OPNsense ARP table with IP "${resolvedIpAddress}"`);
       } else {
         throw new Error(`Hostname "${hostname}" not found in OPNsense ARP table`);
       }
     } catch (error) {
+      if (error instanceof InvalidIpAddressError) throw error;
       logger.warn(`Failed to find IP address for hostname "${hostname}" in OPNsense ARP table:`, error);
       throw new Error(`Could not find IP address for hostname "${hostname}" in OPNsense ARP table. Please provide an IP address or ensure the device is active on the network.`);
     }

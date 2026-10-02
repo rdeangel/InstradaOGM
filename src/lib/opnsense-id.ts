@@ -34,19 +34,19 @@ export function assertOpnsenseId(s: string): string {
   return s;
 }
 
+/** Allow-list for OPNsense HTTP paths used by current call sites (`/api/...`). */
+const SAFE_OPNSENSE_ENDPOINT = /^\/api\/[A-Za-z0-9/_-]+$/;
+
 /**
- * Defence in depth for OPNsense HTTP paths. Rejects traversal and encoding
- * tricks before any fetch. Query strings (`?`) are rejected because no current
- * call site uses them; add an explicit allow if a future caller needs one.
+ * Defence in depth for OPNsense HTTP paths. Allow-lists `/api/` plus
+ * alphanumerics, `_`, `-`, and `/`. Control characters (tab/CR/LF) and
+ * host-swap prefixes (`@`) are rejected before any fetch.
  */
 export function assertSafeOpnsenseEndpoint(endpoint: string): string {
-  if (
-    endpoint.includes('..') ||
-    endpoint.includes('#') ||
-    endpoint.includes('%') ||
-    endpoint.includes('\\') ||
-    endpoint.includes('?')
-  ) {
+  if (typeof endpoint !== 'string' || /[\u0000-\u001F\u007F]/.test(endpoint)) {
+    throw new InvalidOpnsensePathError();
+  }
+  if (!SAFE_OPNSENSE_ENDPOINT.test(endpoint)) {
     throw new InvalidOpnsensePathError();
   }
   return endpoint;
