@@ -60,6 +60,13 @@ export async function resolveUserLocalGroupIds(userId: string): Promise<string[]
  * Resolves the host-alias UUIDs a user is permitted to manage. Cheap: no OPNsense call.
  * A null userId (unauthenticated/self-service) is treated as wildcard — those flows are
  * gated by IP-based self-service checks instead of group permissions.
+ *
+ * ADMIN and SUPER_ADMIN are treated as wildcard **by role** (decision D2 / audit step 3a).
+ * That restores v1.2.3 for the 652c778 paths that call this helper (host-group-management,
+ * filtered-host-aliases, ip-group-membership). `/devices` list helpers
+ * (`userHasDeviceAccess`, `getUserPermittedDevices`, `userHasDeviceIpAccess`,
+ * `userHasDhcpAccess`) are intentionally **not** role-wildcarded — they stay
+ * group/`*`-based, same as v1.2.3.
  */
 export async function resolveUserAliasPermissions(userId: string | null): Promise<{
   hasWildcard: boolean;
@@ -68,6 +75,20 @@ export async function resolveUserAliasPermissions(userId: string | null): Promis
 }> {
   if (!userId) {
     return { hasWildcard: true, permittedAliasUuids: new Set(), localGroupIds: [] };
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { role: true },
+  });
+
+  if (user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN') {
+    // Role wildcard does not require a `*` permission row. Still resolve group
+    // membership so localGroupIds stays accurate for callers that pass it through
+    // (resolveUserPermissions). Current callers short-circuit on hasWildcard and
+    // do not use the IDs for authorization.
+    const localGroupIds = await resolveUserLocalGroupIds(userId);
+    return { hasWildcard: true, permittedAliasUuids: new Set(), localGroupIds };
   }
 
   const localGroupIds = await resolveUserLocalGroupIds(userId);

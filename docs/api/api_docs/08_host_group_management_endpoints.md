@@ -55,10 +55,10 @@ The API uses intelligent parameter resolution with the following priority order:
 
 **Per-Device / Per-Group Permission Enforcement (Authenticated Requests):**
 
-Authenticated requests are enforced against the caller's group permissions, not just their role. The check is purely permission-table driven (ADMIN/SUPER_ADMIN see everything only because their groups carry the `*` wildcard):
-- The caller may only assign/unassign a host alias they have a `GroupHostAliasPermission` for (or the `*` wildcard).
-- The caller may only target a network group visible to them under their group filter settings (resolved through the same pipeline as `/api/user/devices`).
-- A `*` wildcard permission bypasses both checks.
+ADMIN/SUPER_ADMIN are treated as wildcard **by role** (D2); USER is permission-table driven:
+- A USER may only assign/unassign a host alias they have a `GroupHostAliasPermission` for (or the `*` wildcard).
+- A USER may only target a network group visible to them under their group filter settings (resolved through the same pipeline as `/api/user/devices`).
+- A role wildcard (ADMIN/SUPER_ADMIN) or a `*` group permission bypasses both checks.
 - Unauthenticated/self-service requests are governed by IP-based self-service checks instead of group permissions.
 
 **Own-device self-service grant (authenticated requests):** If an authenticated caller would otherwise be denied for a host alias but is physically operating on **their own device** — the client IP equals the host alias' IP, that IP is within the self-service `allowedNetworks`, and self-service is not globally disabled — the operation is allowed regardless of group permissions. This mirrors the access an unauthenticated visitor would have at the same machine (logging in must never remove self-service access). Such operations are still subject to the unmanaged-groups restriction, exactly like unauthenticated self-service. Genuine permission holders and `*` wildcard callers are unaffected by this path.

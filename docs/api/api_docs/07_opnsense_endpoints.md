@@ -1407,8 +1407,8 @@ curl -X GET "{{SERVER_URL}}/api/opnsense/network-groups" \
 **Role Access:**
 - **Unauthenticated**: ✅ Can query specific IP addresses (with restrictions) - Only allowed for own IP address
 - **USER**: ✅ Can access filtered host aliases - Only sees aliases they have permission for
-- **ADMIN**: ✅ Can access filtered host aliases - Can see all aliases with administrative permissions
-- **SUPER_ADMIN**: ✅ Can access filtered host aliases - Can see all aliases with full system permissions
+- **ADMIN**: ✅ Can access filtered host aliases - Sees all aliases **by role** (D2 wildcard; no `*` group row required)
+- **SUPER_ADMIN**: ✅ Can access filtered host aliases - Sees all aliases **by role** (D2 wildcard; no `*` group row required)
 
 **Example Responses:**
 
@@ -1556,10 +1556,10 @@ curl -X GET "{{SERVER_URL}}/api/opnsense/filtered-host-aliases?ipAddress=192.168
 **Role Access:**
 - **Unauthenticated**: ✅ Can check own IP membership only (when self-service enabled) - Only allowed for own IP address / ❌ 403 Forbidden (when self-service disabled)
 - **USER**: ✅ Can check their own IP, plus any device they have a `GroupHostAliasPermission` for (or `*` wildcard). Querying a non-own IP they are not permitted for returns ❌ 403 Forbidden. ❌ 403 Forbidden when self-service is disabled.
-- **ADMIN**: ✅ Can check any IP membership (admin groups carry the `*` wildcard) - Can check any IP address / ❌ 403 Forbidden (when self-service disabled)
-- **SUPER_ADMIN**: ✅ Can check any IP membership (admin groups carry the `*` wildcard) - Can check any IP address / ❌ 403 Forbidden (when self-service disabled)
+- **ADMIN**: ✅ Can check any IP membership **by role** (D2 wildcard; no `*` group row required) / ❌ 403 Forbidden (when self-service disabled)
+- **SUPER_ADMIN**: ✅ Can check any IP membership **by role** (D2 wildcard; no `*` group row required) / ❌ 403 Forbidden (when self-service disabled)
 
-> Note: Per-device permission enforcement for authenticated callers is permission-table driven (not role-based). A caller querying a non-own IP must hold permission for a host alias at that IP, or the `*` wildcard. This mirrors the device scope enforced by `/api/opnsense/host-group-management` and `/api/user/devices`.
+> Note: Per-device permission enforcement for authenticated **USER** callers is permission-table driven. ADMIN/SUPER_ADMIN are treated as wildcard by role (D2). A USER querying a non-own IP must hold permission for a host alias at that IP, or the `*` wildcard. `/devices` list helpers stay group-based and are not role-wildcarded.
 
 **Example Responses:**
 
