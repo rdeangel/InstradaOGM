@@ -55,7 +55,7 @@ The API uses intelligent parameter resolution with the following priority order:
 
 **Per-Device / Per-Group Permission Enforcement (Authenticated Requests):**
 
-ADMIN/SUPER_ADMIN are treated as wildcard **by role** (D2); USER is permission-table driven:
+ADMIN/SUPER_ADMIN are treated as wildcard **by role**; USER is permission-table driven:
 - A USER may only assign/unassign a host alias they have a `GroupHostAliasPermission` for (or the `*` wildcard).
 - A USER may only target a network group visible to them under their group filter settings (resolved through the same pipeline as `/api/user/devices`).
 - A role wildcard (ADMIN/SUPER_ADMIN) or a `*` group permission bypasses both checks.
