@@ -26,10 +26,11 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { formatDistanceToNow } from 'date-fns';
-import { Edit, Trash2, Search, Info, Copy } from 'lucide-react';
+import { format, formatDistanceToNow } from 'date-fns';
+import { Edit, Trash2, Search, Info, Timer, Copy } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { ScheduleInfoModal } from './ScheduleInfoModal';
+import { RunInDelayModal } from './RunInDelayModal';
 
 export interface ScheduleListItem {
   id: string;
@@ -97,6 +98,7 @@ export function ScheduleListTable({ schedules, onRefresh, onEnabledFilterChange 
   const [enabledFilter, setEnabledFilter] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<ScheduleListItem | null>(null);
   const [infoTarget, setInfoTarget] = useState<ScheduleListItem | null>(null);
+  const [runInTarget, setRunInTarget] = useState<ScheduleListItem | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
@@ -172,6 +174,43 @@ export function ScheduleListTable({ schedules, onRefresh, onEnabledFilterChange 
     } finally {
       setDuplicatingId(null);
     }
+  }
+
+  async function handleRunIn(schedule: ScheduleListItem, delayMinutes: number) {
+    const res = await fetch(`/api/admin/schedules/${schedule.id}/run-in`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ delayMinutes }),
+    });
+    if (!res.ok) {
+      let message = 'Failed to reschedule.';
+      try {
+        const data = await res.json();
+        if (typeof data?.message === 'string') message = data.message;
+      } catch {
+        // ignore parse errors
+      }
+      toast({ variant: 'destructive', title: 'Error', description: message });
+      throw new Error(message);
+    }
+
+    let localRunAt: string | null = null;
+    try {
+      const data = await res.json() as { executeAt?: string | null };
+      if (data.executeAt) {
+        localRunAt = format(new Date(data.executeAt), 'PPP p');
+      }
+    } catch {
+      // ignore parse errors; fall back to delay-only toast
+    }
+
+    toast({
+      title: 'Rescheduled',
+      description: localRunAt
+        ? `"${schedule.name}" will run in ${delayMinutes} minute${delayMinutes === 1 ? '' : 's'} (${localRunAt} local).`
+        : `"${schedule.name}" will run in ${delayMinutes} minute${delayMinutes === 1 ? '' : 's'}.`,
+    });
+    onRefresh();
   }
 
   const emptyMessage = schedules.length === 0
@@ -279,6 +318,17 @@ export function ScheduleListTable({ schedules, onRefresh, onEnabledFilterChange 
 
                   {/* Action buttons */}
                   <div className="flex flex-wrap items-center gap-2 pt-1">
+                    {schedule.scheduleType === 'ONCE' && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1"
+                        onClick={() => setRunInTarget(schedule)}
+                      >
+                        <Timer className="h-4 w-4 mr-2" />
+                        Run in…
+                      </Button>
+                    )}
                     <Button
                       variant="outline"
                       size="sm"
@@ -386,6 +436,17 @@ export function ScheduleListTable({ schedules, onRefresh, onEnabledFilterChange 
                       </td>
                       <td className="p-3">
                         <div className="flex items-center justify-end gap-1">
+                          {schedule.scheduleType === 'ONCE' && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => setRunInTarget(schedule)}
+                              title="Run in…"
+                            >
+                              <Timer className="h-4 w-4" />
+                            </Button>
+                          )}
                           <Button
                             variant="ghost"
                             size="icon"
@@ -428,6 +489,16 @@ export function ScheduleListTable({ schedules, onRefresh, onEnabledFilterChange 
 
       {/* Schedule info modal */}
       <ScheduleInfoModal schedule={infoTarget} onClose={() => setInfoTarget(null)} />
+
+      <RunInDelayModal
+        open={!!runInTarget}
+        onOpenChange={open => !open && setRunInTarget(null)}
+        scheduleName={runInTarget?.name}
+        onConfirm={async ({ delayMinutes }) => {
+          if (!runInTarget) return;
+          await handleRunIn(runInTarget, delayMinutes);
+        }}
+      />
 
       {/* Delete confirmation dialog */}
       <AlertDialog open={!!deleteTarget} onOpenChange={open => !open && setDeleteTarget(null)}>

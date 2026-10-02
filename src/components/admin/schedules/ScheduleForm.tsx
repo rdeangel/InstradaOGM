@@ -29,7 +29,8 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { Switch } from '@/components/ui/switch';
-import { Loader2, AlertTriangle, Info, ArrowUp, ArrowDown, Trash2, Plus, Play, Search, ChevronsUpDown, Check, Wand2, Waypoints } from 'lucide-react';
+import { Loader2, AlertTriangle, Info, ArrowUp, ArrowDown, Trash2, Plus, Play, Search, ChevronsUpDown, Check, Wand2, Waypoints, Timer } from 'lucide-react';
+import { RunInDelayModal } from './RunInDelayModal';
 import {
   Sheet,
   SheetContent,
@@ -220,6 +221,7 @@ export function ScheduleForm({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [previewOpen, setPreviewOpen] = useState(false);
   const [cronBuilderOpen, setCronBuilderOpen] = useState(false);
+  const [runInOpen, setRunInOpen] = useState(false);
   const [hostAliasOptions, setHostAliasOptions] = useState<{ value: string; label: string; isDisabled: boolean }[]>([]);
   const [hostAliasOptionsLoading, setHostAliasOptionsLoading] = useState(true);
   const [aliasPopoverOpen, setAliasPopoverOpen] = useState(false);
@@ -590,11 +592,21 @@ export function ScheduleForm({
         {values.scheduleType === 'ONCE' && (
           <div className="space-y-1">
             <Label>Execution Time</Label>
-            <div className="max-w-xs">
-              <DateTimePicker
-                date={values.executeAt}
-                setDate={d => set('executeAt', d)}
-              />
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="max-w-xs flex-1 min-w-[12rem]">
+                <DateTimePicker
+                  date={values.executeAt}
+                  setDate={d => set('executeAt', d)}
+                />
+              </div>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setRunInOpen(true)}
+              >
+                <Timer className="h-4 w-4 mr-2" />
+                Run in…
+              </Button>
             </div>
             {errors.executeAt && <p className="text-xs text-destructive">{errors.executeAt}</p>}
           </div>
@@ -1003,6 +1015,14 @@ export function ScheduleForm({
         onOpenChange={setCronBuilderOpen}
         initialValue={values.cronExpression}
         onSave={(expr) => set('cronExpression', expr)}
+      />
+      <RunInDelayModal
+        open={runInOpen}
+        onOpenChange={setRunInOpen}
+        scheduleName={values.name || undefined}
+        onConfirm={({ executeAt }) => {
+          set('executeAt', executeAt);
+        }}
       />
     </TooltipProvider>
   );
