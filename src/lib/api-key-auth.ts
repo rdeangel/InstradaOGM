@@ -1,11 +1,14 @@
 /* eslint-disable security/detect-object-injection */
 // This file uses bracket notation with typed keys from objects. All uses are safe.
 import { NextRequest } from 'next/server';
+import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import { prisma } from '@/lib/prisma';
 import { logAuditEvent } from '@/lib/auditLog';
 import { logger } from '@/lib/logger';
 import { getClientIp } from '@/lib/network-utils';
+import { parsePresentedApiKey } from '@/lib/api-key-format';
+import { legacyMemo, takeLegacyApiKeyScan } from '@/lib/api-key-legacy-limit';
 
 export interface ApiKeyUser {
   id: string;
@@ -20,6 +23,37 @@ export interface ApiKeyValidationResult {
   apiKeyId?: string;
   apiKeyName?: string; // Add API key name to the result
   error?: string;
+}
+
+const API_KEY_USER_INCLUDE = {
+  user: {
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+    },
+  },
+} as const;
+
+type ApiKeyWithUser = {
+  id: string;
+  name: string;
+  keyHash: string;
+  keyPrefix: string | null;
+  userId: string;
+  enabled: boolean;
+  expiresAt: Date | null;
+  user: {
+    id: string;
+    name: string | null;
+    email: string | null;
+    role: string;
+  };
+};
+
+function presentedKeyMemoId(apiKey: string): string {
+  return crypto.createHash('sha256').update(apiKey).digest('hex');
 }
 
 /**
@@ -57,119 +91,15 @@ export async function validateApiKey(req: NextRequest): Promise<ApiKeyValidation
     };
   }
 
-  try {
-    // Find all API keys for the user (we'll need to check each one)
-    const apiKeys = await prisma.apiKey.findMany({
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            role: true,
-          }
-        }
-      }
-    });
+  const parsed = parsePresentedApiKey(apiKey);
+  if (!parsed) {
+    return {
+      isValid: false,
+      error: 'Invalid API key format'
+    };
+  }
 
-    // Check each API key using constant-time approach to prevent timing attacks
-    // We'll check all keys to prevent timing differences, but only process the first valid one
-    let validKeyRecord: typeof apiKeys[0] | null = null;
-    const validationPromises: Promise<boolean>[] = [];
-
-    // Start all bcrypt comparisons simultaneously to reduce timing differences
-    for (const keyRecord of apiKeys) {
-      validationPromises.push(bcrypt.compare(apiKey, keyRecord.keyHash));
-    }
-
-    // Wait for all comparisons to complete
-    const validationResults = await Promise.all(validationPromises);
-
-    // Find the first valid key (if any) - this ensures constant time execution
-    for (let i = 0; i < validationResults.length; i++) {
-      if (validationResults[i] && !validKeyRecord) {
-        validKeyRecord = apiKeys[i];
-        // Continue the loop to ensure constant time execution
-      }
-    }
-
-    if (validKeyRecord) {
-      // Check if the key is disabled
-      if (!validKeyRecord.enabled) {
-        await logAuditEvent({
-          userId: validKeyRecord.userId,
-          action: 'API_KEY_VALIDATION_FAILURE',
-          method: 'API_KEY',
-          apiKeyId: validKeyRecord.id,
-          apiKeyName: validKeyRecord.name,
-          apiEndpoint,
-          ipAddress,
-          userAgent,
-          reason: 'API key is disabled',
-          details: {
-            apiKeyId: validKeyRecord.id,
-            apiKeyName: validKeyRecord.name,
-            enabled: validKeyRecord.enabled,
-            apiEndpoint,
-          },
-        });
-
-        return {
-          isValid: false,
-          error: 'API key is disabled'
-        };
-      }
-
-      // Check if the key has expired
-      if (validKeyRecord.expiresAt && new Date() > validKeyRecord.expiresAt) {
-        await logAuditEvent({
-          userId: validKeyRecord.userId,
-          action: 'API_KEY_VALIDATION_FAILURE',
-          method: 'API_KEY',
-          apiKeyId: validKeyRecord.id,
-          apiKeyName: validKeyRecord.name,
-          apiEndpoint,
-          ipAddress,
-          userAgent,
-          reason: 'API key has expired',
-          details: {
-            apiKeyId: validKeyRecord.id,
-            apiKeyName: validKeyRecord.name,
-            expiresAt: validKeyRecord.expiresAt,
-            apiEndpoint,
-          },
-        });
-
-        return {
-          isValid: false,
-          error: 'API key has expired'
-        };
-      }
-
-      // Update last used timestamp
-      await prisma.apiKey.update({
-        where: { id: validKeyRecord.id },
-        data: { lastUsed: new Date() }
-      });
-
-      // Note: Successful API key validation is no longer logged to reduce audit log noise
-      // Only failures are logged for security monitoring
-      // Detailed API usage is tracked separately via ApiKeyUsageEvent table
-
-      return {
-        isValid: true,
-        user: {
-          id: validKeyRecord.user.id,
-          name: validKeyRecord.user.name,
-          email: validKeyRecord.user.email,
-          role: validKeyRecord.user.role,
-        },
-        apiKeyId: validKeyRecord.id,
-        apiKeyName: validKeyRecord.name,
-      };
-    }
-
-    // If we get here, no valid key was found
+  const invalidKey = async (): Promise<ApiKeyValidationResult> => {
     await logAuditEvent({
       userId: null,
       action: 'API_KEY_VALIDATION_FAILURE',
@@ -188,7 +118,130 @@ export async function validateApiKey(req: NextRequest): Promise<ApiKeyValidation
       isValid: false,
       error: 'Invalid API key'
     };
+  };
 
+  const finish = async (row: ApiKeyWithUser): Promise<ApiKeyValidationResult> => {
+    if (!row.enabled) {
+      await logAuditEvent({
+        userId: row.userId,
+        action: 'API_KEY_VALIDATION_FAILURE',
+        method: 'API_KEY',
+        apiKeyId: row.id,
+        apiKeyName: row.name,
+        apiEndpoint,
+        ipAddress,
+        userAgent,
+        reason: 'API key is disabled',
+        details: {
+          apiKeyId: row.id,
+          apiKeyName: row.name,
+          enabled: row.enabled,
+          apiEndpoint,
+        },
+      });
+
+      return {
+        isValid: false,
+        error: 'API key is disabled'
+      };
+    }
+
+    if (row.expiresAt && new Date() > row.expiresAt) {
+      await logAuditEvent({
+        userId: row.userId,
+        action: 'API_KEY_VALIDATION_FAILURE',
+        method: 'API_KEY',
+        apiKeyId: row.id,
+        apiKeyName: row.name,
+        apiEndpoint,
+        ipAddress,
+        userAgent,
+        reason: 'API key has expired',
+        details: {
+          apiKeyId: row.id,
+          apiKeyName: row.name,
+          expiresAt: row.expiresAt,
+          apiEndpoint,
+        },
+      });
+
+      return {
+        isValid: false,
+        error: 'API key has expired'
+      };
+    }
+
+    await prisma.apiKey.update({
+      where: { id: row.id },
+      data: { lastUsed: new Date() }
+    });
+
+    return {
+      isValid: true,
+      user: {
+        id: row.user.id,
+        name: row.user.name,
+        email: row.user.email,
+        role: row.user.role,
+      },
+      apiKeyId: row.id,
+      apiKeyName: row.name,
+    };
+  };
+
+  try {
+    if (parsed.kind === 'prefixed') {
+      const row = await prisma.apiKey.findUnique({
+        where: { keyPrefix: parsed.prefix },
+        include: API_KEY_USER_INCLUDE,
+      });
+      if (!row || !(await bcrypt.compare(apiKey, row.keyHash))) {
+        return invalidKey();
+      }
+      return finish(row);
+    }
+
+    const memoKey = presentedKeyMemoId(apiKey);
+    const memoId = legacyMemo.get(memoKey);
+    if (memoId) {
+      const row = await prisma.apiKey.findUnique({
+        where: { id: memoId },
+        include: API_KEY_USER_INCLUDE,
+      });
+      if (row && row.keyPrefix === null && (await bcrypt.compare(apiKey, row.keyHash))) {
+        return finish(row);
+      }
+      legacyMemo.delete(memoKey);
+    }
+
+    if (!takeLegacyApiKeyScan(ipAddress)) {
+      return {
+        isValid: false,
+        error: 'Legacy API key lookup limited'
+      };
+    }
+
+    const now = new Date();
+    const rows = await prisma.apiKey.findMany({
+      where: {
+        keyPrefix: null,
+        enabled: true,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+      },
+      include: API_KEY_USER_INCLUDE,
+    });
+    const results = await Promise.all(rows.map((r) => bcrypt.compare(apiKey, r.keyHash)));
+    let match: (typeof rows)[0] | null = null;
+    for (let i = 0; i < results.length; i++) {
+      if (results[i] && !match) {
+        match = rows[i];
+      }
+    }
+    if (match) {
+      legacyMemo.set(memoKey, match.id);
+      return finish(match);
+    }
+    return invalidKey();
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     logger.error('API key validation error:', error);
@@ -245,4 +298,4 @@ export async function optionalApiKey(req: NextRequest): Promise<ApiKeyValidation
   }
 
   return await validateApiKey(req);
-} 
+}

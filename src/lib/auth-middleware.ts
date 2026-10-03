@@ -32,7 +32,8 @@ interface AuthResponse {
 // Helper function to handle authentication and rate limiting errors
 export function handleAuthResponse(auth: AuthResponse) {
   if (!auth.user) {
-    return NextResponse.json({ message: auth.authError || 'Unauthorized' }, { status: 401 });
+    const status = auth.authError === 'Legacy API key lookup limited' ? 429 : 401;
+    return NextResponse.json({ message: auth.authError || 'Unauthorized' }, { status });
   }
 
   // Check for rate limiting errors
@@ -194,7 +195,7 @@ export async function authenticateRequest(req: Request) {
   }
 
   if (apiKey) {
-    logger.debug(`API key authentication attempt: ${apiKey.substring(0, 8)}...`);
+    logger.debug('API key authentication attempt');
     const apiKeyResult = await validateApiKey(req as NextRequest); // NextRequest compatible
     if (apiKeyResult.isValid && apiKeyResult.user && apiKeyResult.apiKeyId) {
       logger.debug(`API key valid for user: ${apiKeyResult.user.email}`);
