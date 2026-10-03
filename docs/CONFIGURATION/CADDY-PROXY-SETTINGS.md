@@ -95,6 +95,21 @@ your_domain.com {
 | **`X-Forwarded-Proto`** | Indicates whether client used http or https | Allows InstradaOGM to generate correct URLs (http vs https) for links and redirects |
 | **`X-Forwarded-Host`** | Passes the original host header for URL generation | **CRITICAL**: Enables InstradaOGM to generate correct absolute URLs for email verification, password resets, and API endpoints |
 
+### Trusted proxies
+
+`header_up X-Forwarded-For {remote_host}` is the correct edge setting (the connecting client, not a client-supplied header).
+
+The app only believes those headers from addresses in `TRUSTED_PROXY_CIDRS`. Unset uses an automatic list: loopback when you run outside Docker; inside Docker, the container's own network except the gateway.
+
+| Where Caddy runs | Default | Set this before starting the app |
+|---|---|---|
+| Container on the **same Docker network** as the app | Works | none |
+| On the **Docker host**, proxying to `:3000` | Every visitor looks like the host gateway | `TRUSTED_PROXY_CIDRS=<gateway-ip-the-app-sees>/32` (often the Docker bridge gateway). The container log prints the exact value when headers are ignored |
+| On **another machine** | Every visitor looks like that proxy | `TRUSTED_PROXY_CIDRS=<proxy-ip>/32` |
+| `network_mode: host` for the app container | Automatic detection would trust the host LAN | Set `TRUSTED_PROXY_CIDRS` explicitly, or `none` |
+
+If headers are being ignored, the application log prints the exact `TRUSTED_PROXY_CIDRS` value to use.
+
 ## No-Cache Configuration
 
 **Critical endpoints must not be cached:**

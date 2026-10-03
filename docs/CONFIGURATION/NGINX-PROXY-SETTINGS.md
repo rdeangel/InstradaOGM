@@ -69,14 +69,20 @@ InstradaOGM sees NAT IP even with proxy headers - self-service fails.
 
 ### 🚨 **SECURITY CRITICAL: Prevent Header Spoofing**
 
-**For direct client connections (most common):**
+At the edge (clients connect to this nginx), replace forwarded-for with the connecting address. Do not append client-supplied values.
+
 ```nginx
-# SECURE: Use real connecting IP, ignore client-provided headers
-proxy_set_header Host $host;                    # Preserves original domain name requested by client
-proxy_set_header X-Real-IP $remote_addr;        # Passes actual client IP address (prevents IP spoofing)
-proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;  # Tracks proxy chain for request routing
-proxy_set_header X-Forwarded-Proto $scheme;    # Indicates original protocol (http/https) used by client
-proxy_set_header X-Forwarded-Host $host;       # Enables correct URL generation in application
+location / {
+    proxy_pass http://instrada-ogm:3000;          # or 127.0.0.1:3000
+    proxy_set_header Host              $host;
+    proxy_set_header X-Real-IP         $remote_addr;
+    proxy_set_header X-Forwarded-For   $remote_addr;   # replace, don't append, at the edge
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Host  $host;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+}
 ```
 
 ### Header Explanations:
@@ -85,18 +91,25 @@ proxy_set_header X-Forwarded-Host $host;       # Enables correct URL generation 
 |--------|--------------|-----------------------------------|
 | **`Host $host`** | Forwards the original hostname from client request | Ensures InstradaOGM responds to the correct domain name when hosting multiple sites |
 | **`X-Real-IP $remote_addr`** | Passes the actual client IP address from NGINX's connection | **SECURITY**: Prevents IP spoofing attacks; enables accurate self-service access control based on real client IP |
-| **`X-Forwarded-For $proxy_add_x_forwarded_for`** | Creates a chain of IPs showing all proxies the request passed through | Helps with debugging and tracking request path through multiple proxy layers |
+| **`X-Forwarded-For $remote_addr`** | Sets the client IP to the address nginx actually connected from | **SECURITY**: At the edge, replace the header. Appending client-supplied values lets a visitor pick an IP |
 | **`X-Forwarded-Proto $scheme`** | Indicates whether client used http or https | Allows InstradaOGM to generate correct URLs (http vs https) for links and redirects |
 | **`X-Forwarded-Host $host`** | Passes the original host header for URL generation | **CRITICAL**: Enables InstradaOGM to generate correct absolute URLs for email verification, password resets, and API endpoints |
+| **`Upgrade` / `Connection`** | Forwards WebSocket upgrade | Needed for live UI connections through the proxy |
 
-**For trusted upstream proxies only:**
-```nginx
-# ONLY use if receiving from trusted proxy that validates headers
-proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-proxy_set_header X-Real-IP $remote_addr;
-proxy_set_header Host $host;
-proxy_set_header X-Forwarded-Proto $scheme;
-```
+**Behind another trusted proxy only** (that proxy already replaced the client IP): you may append instead of replace. Most deployments are the edge snippet above.
+
+### Trusted proxies
+
+The app only believes `X-Forwarded-For` / `X-Real-IP` from addresses in `TRUSTED_PROXY_CIDRS`. Unset uses an automatic list: loopback when you run outside Docker; inside Docker, the container's own network except the gateway.
+
+| Where nginx runs | Default | Set this before starting the app |
+|---|---|---|
+| Container on the **same Docker network** as the app | Works | none |
+| On the **Docker host**, proxying to `:3000` | Every visitor looks like the host gateway | `TRUSTED_PROXY_CIDRS=<gateway-ip-the-app-sees>/32` (often the Docker bridge gateway, e.g. `172.18.0.1/32`). The container log prints the exact value when headers are ignored |
+| On **another machine** (including Nginx Proxy Manager in a separate stack) | Every visitor looks like that proxy | `TRUSTED_PROXY_CIDRS=<proxy-ip>/32` |
+| `network_mode: host` for the app container | Automatic detection would trust the host LAN | Set `TRUSTED_PROXY_CIDRS` explicitly, or `none` |
+
+If headers are being ignored, the application log prints the exact `TRUSTED_PROXY_CIDRS` value to use.
 
 ### **⚠️ Security Warning: Header Spoofing Attack**
 
