@@ -106,8 +106,10 @@ export async function POST(request: Request) {
         email: email,
         password: hashedPassword,
         role: initialRole,
-        // emailVerified will be null initially (or set to current date if verification not required)
-        emailVerified: requireEmailVerification ? null : new Date(),
+        // Self-asserted emails are never trusted: leave emailVerified null so the
+        // OIDC auto-link guard refuses SSO linking until the address is proven.
+        emailVerified: null,
+        emailSelfChangedAt: new Date(),
       },
     });
 

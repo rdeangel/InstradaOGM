@@ -4,6 +4,7 @@ import { logAuditEvent } from '@/lib/auditLog';
 import { authenticateAndTrackRequest } from '@/lib/auth-middleware';
 import { logger } from '@/lib/logger';
 import { generateBackupCodes, storeBackupCodes, getBackupCodesWithMigration } from '@/lib/backup-codes';
+import { getSessionIssuedAt, sessionAuthDenied, verifySensitiveReauth } from '@/lib/server/sensitive-reauth';
 
 // Note: generateBackupCodes is now imported from @/lib/backup-codes
 
@@ -98,13 +99,28 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const sessionDenied = sessionAuthDenied(auth.method);
+    if (sessionDenied) {
+      await logAuditEvent({
+        userId,
+        action: 'BACKUP_CODES_REGENERATE_FAILURE',
+        reason: sessionDenied.message,
+      });
+      return NextResponse.json({ error: sessionDenied.message }, { status: sessionDenied.status });
+    }
+
     try {
+      // Confirm the request with re-authentication before regenerating codes
+      const body = await req.json().catch(() => ({}));
+
       const user = await prisma.user.findUnique({
         where: { id: userId },
-        select: { 
-          id: true, 
+        select: {
+          id: true,
+          password: true,
           is2FAEnabled: true,
-          email: true
+          totpSecret: true,
+          backupCodes: true
         },
       });
 
@@ -124,6 +140,17 @@ export async function POST(req: Request) {
           reason: '2FA not enabled.',
         });
         return NextResponse.json({ error: '2FA is not enabled' }, { status: 400 });
+      }
+
+      const sessionIat = await getSessionIssuedAt(req);
+      const reauth = await verifySensitiveReauth(user, body, sessionIat);
+      if (!reauth.ok) {
+        await logAuditEvent({
+          userId,
+          action: 'BACKUP_CODES_REGENERATE_FAILURE',
+          reason: reauth.message,
+        });
+        return NextResponse.json({ error: reauth.message, message: reauth.message }, { status: reauth.status });
       }
 
       // Generate new backup codes

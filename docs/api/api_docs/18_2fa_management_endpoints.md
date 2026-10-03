@@ -109,9 +109,9 @@ curl -X GET "{{SERVER_URL}}/api/auth/2fa/backup-codes" \
 
 ## POST /api/auth/2fa/backup-codes
 
-**Description**: Regenerate backup codes for the authenticated user. Replaces all existing backup codes with a new set of 10 secure backup codes. Invalidates all previously generated backup codes.
+**Description**: Regenerate backup codes for the authenticated user. Replaces all existing backup codes with a new set of 10 secure backup codes. Invalidates all previously generated backup codes. Requires an interactive session plus the account's current password (accounts without a password confirm with an authenticator or backup code); API keys are rejected.
 
-**Authentication**: Required (session or API key)
+**Authentication**: Required (session only; API keys are rejected)
 
 **HTTP Methods Supported**: POST
 
@@ -122,8 +122,10 @@ curl -X GET "{{SERVER_URL}}/api/auth/2fa/backup-codes" \
 **Example Request**:
 ```bash
 curl -X POST "{{SERVER_URL}}/api/auth/2fa/backup-codes" \
-  -H "Authorization: Bearer {{API_KEY}}" \
-  -H "Content-Type: application/json"
+  -H "Content-Type: application/json" \
+  -d '{
+    "currentPassword": "current-password"
+  }'
 ```
 
 **Success Response (200)**:

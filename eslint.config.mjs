@@ -32,6 +32,9 @@ const eslintConfig = [
       // Data directories
       "data/**",
 
+      // Git worktrees (CI branches checked out locally)
+      ".worktrees/**",
+
       // Documentation and scripts (not part of main app)
       "docs/**",
       "internal/**",

@@ -123,11 +123,16 @@ describe('PUT /api/account/update-profile re-auth', () => {
     verifySensitiveReauth.mockResolvedValue({
       ok: false,
       status: 400,
-      message: 'Current password or authenticator code is required',
+      message: 'Current password is required',
     });
 
     const response = await PUT(jsonRequest({ password: 'newpassword12' }));
     expect(response.status).toBe(400);
+    expect(verifySensitiveReauth).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'user-1' }),
+      { password: 'newpassword12' },
+      expect.any(Number),
+    );
     expect(prismaMock.user.update).not.toHaveBeenCalled();
   });
 

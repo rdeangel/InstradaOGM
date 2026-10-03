@@ -67,10 +67,27 @@ describe('POST /api/auth/2fa/disable re-auth', () => {
     verifySensitiveReauth.mockResolvedValue({
       ok: false,
       status: 400,
-      message: 'Current password or authenticator code is required',
+      message: 'Current password is required',
     });
 
     const response = await POST(jsonRequest({}));
+    expect(response.status).toBe(400);
+    expect(prismaMock.user.update).not.toHaveBeenCalled();
+    expect(verifySensitiveReauth).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'user-1' }),
+      {},
+      expect.any(Number),
+    );
+  });
+
+  it('rejects a TOTP code without the password for a password account', async () => {
+    verifySensitiveReauth.mockResolvedValue({
+      ok: false,
+      status: 400,
+      message: 'Current password is required',
+    });
+
+    const response = await POST(jsonRequest({ totpCode: '123456' }));
     expect(response.status).toBe(400);
     expect(prismaMock.user.update).not.toHaveBeenCalled();
   });

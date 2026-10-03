@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { prismaMock, verifyPasswordChangeToken, verifySensitiveReauth } = vi.hoisted(() => ({
+const { prismaMock, verifyPasswordChangeToken, verifySecondFactor } = vi.hoisted(() => ({
   prismaMock: {
     user: { findUnique: vi.fn(), update: vi.fn() },
   },
   verifyPasswordChangeToken: vi.fn(),
-  verifySensitiveReauth: vi.fn(),
+  verifySecondFactor: vi.fn(),
 }));
 
 vi.mock('@/lib/logger', () => ({
@@ -20,7 +20,7 @@ vi.mock('@/lib/server/password-change-token', () => ({
   verifyPasswordChangeToken,
 }));
 vi.mock('@/lib/server/sensitive-reauth', () => ({
-  verifySensitiveReauth,
+  verifySecondFactor,
 }));
 vi.mock('bcryptjs', () => ({
   default: {
@@ -99,10 +99,10 @@ describe('POST /api/auth/change-password-required token', () => {
       totpSecret: 'secret',
       backupCodes: null,
     });
-    verifySensitiveReauth.mockResolvedValue({
+    verifySecondFactor.mockResolvedValue({
       ok: false,
       status: 400,
-      message: 'Current password or authenticator code is required',
+      message: 'Authenticator code is required',
     });
 
     const response = await POST(requestWithCookie({
@@ -111,7 +111,7 @@ describe('POST /api/auth/change-password-required token', () => {
     }) as never);
 
     expect(response.status).toBe(400);
-    expect(verifySensitiveReauth).toHaveBeenCalled();
+    expect(verifySecondFactor).toHaveBeenCalled();
     expect(prismaMock.user.update).not.toHaveBeenCalled();
   });
 
@@ -134,7 +134,7 @@ describe('POST /api/auth/change-password-required token', () => {
     }) as never);
 
     expect(response.status).toBe(400);
-    expect(verifySensitiveReauth).not.toHaveBeenCalled();
+    expect(verifySecondFactor).not.toHaveBeenCalled();
     expect(prismaMock.user.update).not.toHaveBeenCalled();
   });
 
@@ -166,7 +166,7 @@ describe('POST /api/auth/change-password-required token', () => {
       totpSecret: 'secret',
       backupCodes: null,
     });
-    verifySensitiveReauth.mockResolvedValue({
+    verifySecondFactor.mockResolvedValue({
       ok: false,
       status: 400,
       message: 'Invalid authenticator or backup code',

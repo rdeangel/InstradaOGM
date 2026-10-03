@@ -9,7 +9,7 @@ import {
   passwordChangeCookieOptions,
   verifyPasswordChangeToken,
 } from '@/lib/server/password-change-token';
-import { verifySensitiveReauth } from '@/lib/server/sensitive-reauth';
+import { verifySecondFactor } from '@/lib/server/sensitive-reauth';
 import {
   assertCredentialAllowed,
   clearCredentialFailures,
@@ -130,7 +130,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (user.is2FAEnabled) {
-      const totp = await verifySensitiveReauth(user, { totpCode, code, backupCode, isBackupCode }, null);
+      const totp = await verifySecondFactor(user, { totpCode, code, backupCode, isBackupCode });
       if (!totp.ok) {
         noteCredentialFailure(claims.email, ip, 'password-check');
         await logAuditEvent({
@@ -139,11 +139,7 @@ export async function POST(request: NextRequest) {
           details: { email: claims.email },
           userId: user.id,
         });
-        return NextResponse.json({
-          message: totp.message === 'Current password or authenticator code is required'
-            ? 'Authenticator code is required'
-            : totp.message,
-        }, { status: totp.status });
+        return NextResponse.json({ message: totp.message }, { status: totp.status });
       }
     }
 

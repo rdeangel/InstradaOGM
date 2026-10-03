@@ -219,10 +219,15 @@ export async function GET(request: Request) {
       // Determine if the user is authenticated and has an ADMIN or SUPER_ADMIN role
       const isAdminOrSuperAdmin = auth.user && (auth.user.role === Role.ADMIN || auth.user.role === Role.SUPER_ADMIN);
 
-      // For authenticated users, allow querying for any IP, as the frontend
-      // (e.g., /devices page) is responsible for ensuring the user has access to the device's IP.
-      // Admin/Super_Admin roles can query any IP.
-      // For USER role, the frontend will only query for devices the user is authorized to see.
+      // Any authenticated role may check reservation/conflict status for an IP so the
+      // add-reservation UX can warn about conflicts. ADMIN/SUPER_ADMIN get the full
+      // reservation. For USER role, the reserved MAC address and vendor are only
+      // revealed when the user has permission for the found reservation's IP
+      // (userHasDhcpAccess below); the conflict flags alone reveal neither.
+      const { getClientIp } = await import('@/lib/network-utils');
+      const rawClientIp = getClientIp(request);
+      const clientIp = rawClientIp?.startsWith('::ffff:') ? rawClientIp.substring(7) : (rawClientIp || 'N/A');
+
       try {
         let foundReservation: (OpnsenseDhcpReservation & { manufacturer?: string }) | null = null;
         let ipConflict = false;
@@ -303,14 +308,16 @@ export async function GET(request: Request) {
             });
           } else {
             // For USER role, only indicate if a reservation exists
-            // and include relevant details for conflicts
+            // and include relevant details for conflicts. The reserved
+            // MAC/vendor are hidden unless the user may manage the IP.
+            const hasDhcpAccess = await userHasDhcpAccess(auth.user.id, foundReservation.ip_address, clientIp);
             return NextResponse.json({
               success: true,
               message: 'DHCP reservation status found.',
               ipConflict: ipConflict,
               macConflict: macConflict,
-              dhcpReservedMac: foundReservation.hw_address || null, // Include reserved MAC
-              dhcpReservedVendor: foundReservation.manufacturer || null, // Include reserved Vendor
+              dhcpReservedMac: hasDhcpAccess ? (foundReservation.hw_address || null) : null, // Include reserved MAC
+              dhcpReservedVendor: hasDhcpAccess ? (foundReservation.manufacturer || null) : null, // Include reserved Vendor
             });
           }
         } else {
@@ -1038,15 +1045,46 @@ export async function POST(request: Request) {
 
     // Attempt to fetch all reservations to get full details before deletion
     let reservationToDeleteDetails: OpnsenseDhcpReservation = { uuid: reservationId, subnet: '', ip_address: '', hw_address: '' };
+    let lookupFailed = false;
+    let foundReservation: OpnsenseDhcpReservation | null = null;
     try {
       const allReservationsResponse = await fetchFromOpnsense<OpnsenseReservationResponse>('/api/kea/dhcpv4/search_reservation', 'POST', {}); // Fetch all
       const allReservations = allReservationsResponse.rows || [];
-      const foundReservation = allReservations.find((res) => res.uuid === reservationId);
+      foundReservation = allReservations.find((res) => res.uuid === reservationId) || null;
       if (foundReservation) {
         reservationToDeleteDetails = foundReservation;
       }
     } catch (searchError) {
+      lookupFailed = true;
       logger.warn(`Could not fetch full details for reservation ${reservationId} before deletion:`, searchError);
+    }
+
+    // USER may only delete reservations for IP addresses they could have created (fail closed)
+    if (auth.user.role === Role.USER) {
+      if (lookupFailed) {
+        return NextResponse.json(
+          { success: false, message: 'Could not verify reservation ownership. Try again.' },
+          { status: 503 }
+        );
+      }
+      if (!foundReservation) {
+        return NextResponse.json({ success: false, message: 'DHCP reservation not found.' }, { status: 404 });
+      }
+      const hasAccess = await userHasDhcpAccess(auth.user.id, foundReservation.ip_address, ipAddressReq);
+      if (!hasAccess) {
+        await logAuditEvent({
+          action: 'DHCP_RESERVATION_DELETE_FAILURE',
+          userId,
+          ipAddress: ipAddressReq,
+          userAgent,
+          reason: 'USER role DHCP reservation delete denied: No permission for this IP address',
+          details: getReservationLogDetails(reservationToDeleteDetails),
+        });
+        return NextResponse.json(
+          { success: false, message: 'You do not have permission to delete this DHCP reservation.' },
+          { status: 403 }
+        );
+      }
     }
 
     await logAuditEvent({
@@ -1097,6 +1135,13 @@ export async function POST(request: Request) {
     // Bulk delete operations always require authentication
     if (!auth.user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    if (auth.user.role !== Role.ADMIN && auth.user.role !== Role.SUPER_ADMIN) {
+      return NextResponse.json(
+        { success: false, message: 'Bulk deletion requires ADMIN or SUPER_ADMIN role.' },
+        { status: 403 }
+      );
     }
 
     const { reservationUuids } = requestBody;

@@ -633,93 +633,13 @@ curl -X GET "{{SERVER_URL}}/api/auth/2fa-status" \
 - `hasBackupCodes`: Whether backup codes exist
 - `backupCodesCount`: Number of backup codes remaining
 
-## 2FA Management
-
-### GET /api/auth/2fa
-
-**Description**: Get comprehensive 2FA information for the authenticated user, including status, setup information, and available recovery options.
-
-**Authentication**: Required (session or API key)
-
-**Role Access:**
-- **USER**: ✅ Can access 2FA information
-- **ADMIN**: ✅ Can access 2FA information
-- **SUPER_ADMIN**: ✅ Can access 2FA information
-
-#### Usage Case 1: 2FA Fully Configured
-
-**Scenario**: User with complete 2FA setup
-
-**Example Request**:
-```bash
-curl -X GET "{{SERVER_URL}}/api/auth/2fa" \
-  -H "Authorization: Bearer {{API_KEY}}" \
-  -H "Content-Type: application/json"
-```
-
-**Success Response**:
-```json
-{
-  "isEnabled": true,
-  "hasSecret": true,
-  "hasBackupCodes": true,
-  "backupCodesCount": 8,
-  "canSetupBackupCodes": true,
-  "lastUsed": "2024-01-01T12:00:00Z",
-  "setupDate": "2024-01-01T10:00:00Z"
-}
-```
-
-#### Usage Case 2: 2FA Not Configured
-
-**Scenario**: User without 2FA setup
-
-**Success Response**:
-```json
-{
-  "isEnabled": false,
-  "hasSecret": false,
-  "hasBackupCodes": false,
-  "backupCodesCount": 0,
-  "canSetupBackupCodes": false,
-  "lastUsed": null,
-  "setupDate": null
-}
-```
-
-#### Usage Case 3: 2FA Partially Configured
-
-**Scenario**: User with 2FA secret but no backup codes
-
-**Success Response**:
-```json
-{
-  "isEnabled": true,
-  "hasSecret": true,
-  "hasBackupCodes": false,
-  "backupCodesCount": 0,
-  "canSetupBackupCodes": true,
-  "lastUsed": "2024-01-01T12:00:00Z",
-  "setupDate": "2024-01-01T10:00:00Z"
-}
-```
-
-**Response Fields**:
-- `isEnabled`: Whether 2FA is enabled
-- `hasSecret`: Whether 2FA secret exists
-- `hasBackupCodes`: Whether backup codes exist
-- `backupCodesCount`: Number of backup codes remaining
-- `canSetupBackupCodes`: Whether user can setup backup codes
-- `lastUsed`: Last 2FA verification timestamp
-- `setupDate`: When 2FA was initially setup
-
 ## 2FA Setup and Management
 
 ### POST /api/auth/2fa/setup
 
-**Description**: Initialize 2FA setup by generating a TOTP secret and QR code for the authenticated user.
+**Description**: Initialize 2FA setup by generating a TOTP secret and QR code for the authenticated user. Refused with `400` when 2FA is already enabled; disable 2FA first.
 
-**Authentication**: Required (session or API key)
+**Authentication**: Required (session only; API keys are rejected)
 
 **Role Access:**
 - **USER**: ✅ Can setup 2FA
@@ -751,9 +671,9 @@ curl -X POST "{{SERVER_URL}}/api/auth/2fa/setup" \
 
 ### POST /api/auth/2fa/verify
 
-**Description**: Verify TOTP code and complete 2FA setup. Returns backup codes on successful initial setup.
+**Description**: Verify TOTP code and complete 2FA setup. Returns backup codes on successful initial setup. Requires an interactive session plus the account's current password (accounts without a password confirm with the code only). Refused with `400` when 2FA is already enabled.
 
-**Authentication**: Required (session or API key)
+**Authentication**: Required (session only; API keys are rejected)
 
 **Role Access:**
 - **USER**: ✅ Can verify 2FA setup
@@ -767,10 +687,10 @@ curl -X POST "{{SERVER_URL}}/api/auth/2fa/setup" \
 **Example Request**:
 ```bash
 curl -X POST "{{SERVER_URL}}/api/auth/2fa/verify" \
-  -H "Authorization: Bearer {{API_KEY}}" \
   -H "Content-Type: application/json" \
   -d '{
-    "code": "123456"
+    "code": "123456",
+    "currentPassword": "current-password"
   }'
 ```
 
@@ -791,29 +711,6 @@ curl -X POST "{{SERVER_URL}}/api/auth/2fa/verify" \
     "G3H4I5J6",
     "K7L8M9N0"
   ]
-}
-```
-
-#### Usage Case 2: Backup Code Verification
-
-**Scenario**: User verifies using a backup code instead of TOTP
-
-**Example Request**:
-```bash
-curl -X POST "{{SERVER_URL}}/api/auth/2fa/verify" \
-  -H "Authorization: Bearer {{API_KEY}}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "code": "A1B2C3D4",
-    "isBackupCode": true
-  }'
-```
-
-**Success Response**:
-```json
-{
-  "success": true,
-  "message": "2FA verification successful"
 }
 ```
 
@@ -873,9 +770,9 @@ curl -X GET "{{SERVER_URL}}/api/auth/2fa/backup-codes" \
 
 ### POST /api/auth/2fa/backup-codes
 
-**Description**: Regenerate backup codes for the authenticated user. Replaces all existing backup codes.
+**Description**: Regenerate backup codes for the authenticated user. Replaces all existing backup codes. Requires an interactive session plus the account's current password (accounts without a password confirm with an authenticator or backup code).
 
-**Authentication**: Required (session or API key)
+**Authentication**: Required (session only; API keys are rejected)
 
 **Role Access:**
 - **USER**: ✅ Can regenerate backup codes
@@ -889,8 +786,10 @@ curl -X GET "{{SERVER_URL}}/api/auth/2fa/backup-codes" \
 **Example Request**:
 ```bash
 curl -X POST "{{SERVER_URL}}/api/auth/2fa/backup-codes" \
-  -H "Authorization: Bearer {{API_KEY}}" \
-  -H "Content-Type: application/json"
+  -H "Content-Type: application/json" \
+  -d '{
+    "currentPassword": "current-password"
+  }'
 ```
 
 **Success Response**:
@@ -920,7 +819,7 @@ curl -X POST "{{SERVER_URL}}/api/auth/2fa/backup-codes" \
 
 ### POST /api/auth/2fa/disable
 
-**Description**: Disable 2FA for the authenticated user. Requires an interactive session plus the current password or a TOTP/backup code. API keys are rejected. After a successful disable, `passwordChangedAt` is updated so existing JWT cookies become unauthenticated on the next session refresh, stored database sessions are deleted, and all of the user's API keys are disabled. The caller must sign in again.
+**Description**: Disable 2FA for the authenticated user. Requires an interactive session plus the account's current password (accounts without a password confirm with an authenticator or backup code). API keys are rejected. After a successful disable, `passwordChangedAt` is updated so existing JWT cookies become unauthenticated on the next session refresh, stored database sessions are deleted, and all of the user's API keys are disabled. The caller must sign in again.
 
 **Authentication**: Required (session only)
 
@@ -933,14 +832,14 @@ Administrators recover a lost authenticator with `POST /api/admin/users/{id}/dis
 
 #### Usage Case 1: Successful 2FA Disable
 
-**Scenario**: User disables 2FA with valid TOTP code
+**Scenario**: User disables 2FA with their current password
 
 **Example Request**:
 ```bash
 curl -X POST "{{SERVER_URL}}/api/auth/2fa/disable" \
   -H "Content-Type: application/json" \
   -d '{
-    "totpCode": "123456"
+    "currentPassword": "current-password"
   }'
 ```
 

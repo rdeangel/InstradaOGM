@@ -86,4 +86,31 @@ describe('POST /api/auth/register first-user role', () => {
       data: expect.objectContaining({ role: 'PENDING' }),
     }));
   });
+
+  it('never treats a self-registered email as verified', async () => {
+    process.env.AUTH_REQUIRE_VERIFIED_EMAIL_LOCAL = 'false';
+    prismaMock.user.count.mockResolvedValue(1);
+    await POST(jsonRequest({
+      email: 'unverified@example.com',
+      password: 'password12',
+      name: 'Unverified',
+      username: 'unverified',
+    }));
+    expect(prismaMock.user.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ emailVerified: null, role: 'USER' }),
+    }));
+  });
+
+  it('sets emailSelfChangedAt at registration so SSO auto-link stays blocked', async () => {
+    prismaMock.user.count.mockResolvedValue(1);
+    await POST(jsonRequest({
+      email: 'autolink@example.com',
+      password: 'password12',
+      name: 'Autolink',
+      username: 'autolink',
+    }));
+    expect(prismaMock.user.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ emailSelfChangedAt: expect.any(Date) }),
+    }));
+  });
 });

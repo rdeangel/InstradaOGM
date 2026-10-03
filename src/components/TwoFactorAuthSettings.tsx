@@ -23,6 +23,7 @@ interface SetupData {
 interface VerifyResponse {
   success: boolean;
   message: string;
+  error?: string;
   backupCodes?: string[];
 }
 
@@ -33,14 +34,16 @@ export default function TwoFactorAuthSettings() {
   const [error, setError] = useState<string | null>(null);
   const [setupData, setSetupData] = useState<SetupData | null>(null);
   const [verificationCode, setVerificationCode] = useState('');
+  const [enablePassword, setEnablePassword] = useState('');
   const [backupCodes, setBackupCodes] = useState<string[] | null>(null);
   const [showBackupCodes, setShowBackupCodes] = useState(false); // To display codes after successful setup
   const [backupCodesStatus, setBackupCodesStatus] = useState<{ hasBackupCodes: boolean; backupCodesCount: number; isLowOnCodes: boolean } | null>(null);
   const [isRegeneratingCodes, setIsRegeneratingCodes] = useState(false);
   const [copySuccess, setCopySuccess] = useState('');
   const [disablePassword, setDisablePassword] = useState('');
-  const [disableCode, setDisableCode] = useState('');
   const [showDisableConfirm, setShowDisableConfirm] = useState(false);
+  const [regenPassword, setRegenPassword] = useState('');
+  const [showRegenConfirm, setShowRegenConfirm] = useState(false);
 
   // Fetch backup codes status
   const fetchBackupCodesStatus = useCallback(async () => {
@@ -134,23 +137,24 @@ export default function TwoFactorAuthSettings() {
   };
 
   const handleVerifyClick = async () => {
-    if (!setupData || !verificationCode) return;
+    if (!setupData || !verificationCode || !enablePassword) return;
     setIsLoading(true);
     setError(null);
     try {
       const response = await fetch('/api/auth/2fa/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: verificationCode }),
+        body: JSON.stringify({ code: verificationCode, currentPassword: enablePassword }),
       });
       const data: VerifyResponse = await response.json();
       if (!response.ok || !data.success) {
-        throw new Error(data.message || 'Failed to verify code.');
+        throw new Error(data.error || data.message || 'Failed to verify code.');
       }
       // Success! 2FA is enabled.
       setStatus({ is2FAEnabled: true });
       setSetupData(null); // Clear setup data
       setVerificationCode('');
+      setEnablePassword('');
       setBackupCodes(data.backupCodes || []);
       setShowBackupCodes(true); // Show backup codes section
       // Optionally display success message: setError('2FA enabled successfully! Save your backup codes.')
@@ -168,8 +172,8 @@ export default function TwoFactorAuthSettings() {
       setError(null);
       return;
     }
-    if (!disablePassword && !disableCode) {
-      setError('Enter your current password or an authenticator/backup code to disable 2FA.');
+    if (!disablePassword) {
+      setError('Enter your current password to disable 2FA.');
       return;
     }
     setIsLoading(true);
@@ -180,10 +184,7 @@ export default function TwoFactorAuthSettings() {
       const response = await fetch('/api/auth/2fa/disable', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...(disablePassword ? { currentPassword: disablePassword } : {}),
-          ...(disableCode ? { totpCode: disableCode } : {}),
-        }),
+        body: JSON.stringify({ currentPassword: disablePassword }),
       });
       const data = await response.json();
       if (!response.ok || !data.success) {
@@ -192,7 +193,6 @@ export default function TwoFactorAuthSettings() {
       setStatus({ is2FAEnabled: false });
       setShowDisableConfirm(false);
       setDisablePassword('');
-      setDisableCode('');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to disable 2FA.');
     } finally {
@@ -215,16 +215,31 @@ export default function TwoFactorAuthSettings() {
   };
 
   const handleRegenerateBackupCodes = async () => {
+    if (!showRegenConfirm) {
+      setShowRegenConfirm(true);
+      setError(null);
+      return;
+    }
+    if (!regenPassword) {
+      setError('Enter your current password to regenerate backup codes.');
+      return;
+    }
     setIsRegeneratingCodes(true);
     setError(null);
     try {
-      const response = await fetch('/api/auth/2fa/backup-codes', { method: 'POST' });
+      const response = await fetch('/api/auth/2fa/backup-codes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPassword: regenPassword }),
+      });
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to regenerate backup codes.');
+        throw new Error(data.error || data.message || 'Failed to regenerate backup codes.');
       }
       setBackupCodes(data.backupCodes || []);
       setShowBackupCodes(true);
+      setShowRegenConfirm(false);
+      setRegenPassword('');
       // Clear any previous errors since regeneration was successful
       setError(null);
     } catch (err: unknown) {
@@ -328,16 +343,45 @@ export default function TwoFactorAuthSettings() {
                           ⚠️ You&apos;re running low on backup codes. Consider regenerating them.
                         </p>
                       )}
-                      <div className="flex space-x-2">
+                      <div className="flex flex-wrap items-start space-x-2">
                         <Button
                           onClick={handleRegenerateBackupCodes}
                           disabled={isRegeneratingCodes}
                           variant="outline"
                           size="sm"
                         >
-                          {isRegeneratingCodes ? 'Regenerating...' : 'Regenerate Codes'}
+                          {isRegeneratingCodes ? 'Regenerating...' : showRegenConfirm ? 'Confirm regenerate' : 'Regenerate Codes'}
                         </Button>
+                        {showRegenConfirm && (
+                          <Button
+                            onClick={() => {
+                              setShowRegenConfirm(false);
+                              setRegenPassword('');
+                              setError(null);
+                            }}
+                            disabled={isRegeneratingCodes}
+                            variant="outline"
+                            size="sm"
+                          >
+                            Cancel
+                          </Button>
+                        )}
                       </div>
+                      {showRegenConfirm && (
+                        <div>
+                          <label htmlFor="regenPassword" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                            Current password
+                          </label>
+                          <input
+                            id="regenPassword"
+                            type="password"
+                            autoComplete="current-password"
+                            value={regenPassword}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRegenPassword(e.target.value)}
+                            className="block w-full h-10 max-w-xs p-2 mt-1 bg-white border border-gray-300 rounded-md shadow-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                          />
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <p className="text-sm text-gray-500 dark:text-gray-400">Loading backup codes status...</p>
@@ -349,7 +393,7 @@ export default function TwoFactorAuthSettings() {
                 {showDisableConfirm && (
                   <div className="space-y-3 p-4 border border-red-200 rounded-lg dark:border-red-800">
                     <p className="text-sm text-gray-600 dark:text-gray-400">
-                      Confirm by entering your current password or an authenticator / backup code.
+                      Confirm by entering your current password.
                     </p>
                     <div>
                       <label htmlFor="disablePassword" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -362,20 +406,6 @@ export default function TwoFactorAuthSettings() {
                         value={disablePassword}
                         onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDisablePassword(e.target.value)}
                         className="block w-full h-10 max-w-xs p-2 mt-1 bg-white border border-gray-300 rounded-md shadow-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-                      />
-                    </div>
-                    <div>
-                      <label htmlFor="disableCode" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                        Authenticator or backup code
-                      </label>
-                      <input
-                        id="disableCode"
-                        type="text"
-                        autoComplete="one-time-code"
-                        value={disableCode}
-                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDisableCode(e.target.value)}
-                        className="block w-full h-10 max-w-xs p-2 mt-1 bg-white border border-gray-300 rounded-md shadow-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-                        placeholder="123456"
                       />
                     </div>
                   </div>
@@ -394,7 +424,6 @@ export default function TwoFactorAuthSettings() {
                       onClick={() => {
                         setShowDisableConfirm(false);
                         setDisablePassword('');
-                        setDisableCode('');
                         setError(null);
                       }}
                       disabled={isLoading}
@@ -446,11 +475,25 @@ export default function TwoFactorAuthSettings() {
                     required
                   />
                 </div>
+                <div>
+                  <label htmlFor="enablePassword" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Current password
+                  </label>
+                  <input
+                    id="enablePassword"
+                    type="password"
+                    autoComplete="current-password"
+                    value={enablePassword}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEnablePassword(e.target.value)}
+                    className="block w-full h-10 max-w-xs p-2 mt-1 bg-white border border-gray-300 rounded-md shadow-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white focus:border-indigo-500 focus:ring-indigo-500"
+                    required
+                  />
+                </div>
                 {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
                 <div className="flex space-x-3">
                   <Button
                     onClick={handleVerifyClick}
-                    disabled={isLoading || verificationCode.length !== 6}
+                    disabled={isLoading || verificationCode.length !== 6 || !enablePassword}
                     variant="default" // Use the default variant for verification
                   >
                     {isLoading ? 'Verifying...' : 'Verify & Enable'}

@@ -4,6 +4,19 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Custom tag name (optional, defaults to branch name)'
+        required: false
+        type: string
+  push:
+    branches:
+      - 'security/**'
+      - 'feature/**'
+      - 'feat/**'
+      - 'bugfix/**'
+      - 'fix/**'
+      - 'preview/**'
 
 env:
   REGISTRY: docker.io
@@ -34,18 +47,67 @@ jobs:
         env:
           GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
 
+      - name: Determine Docker tags and registries
+        id: tags
+        run: |
+          VERSION="${{ steps.package-version.outputs.VERSION }}"
+          OWNER="${{ steps.repo-owner.outputs.OWNER }}"
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          
+          # Clean branch name for tag (e.g. security/v2.0.1 -> security-v2.0.1)
+          RAW_REF="${{ github.event.inputs.tag_name || github.ref_name }}"
+          SLUG_REF=$(echo "${RAW_REF}" | tr '/' '-' | tr -cd '[:alnum:]-_.')
+          
+          POSTGRES_TAGS=""
+          SQLITE_TAGS=""
+          
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            # Official Release: publish to both GHCR and Docker Hub
+            POSTGRES_TAGS="ghcr.io/${OWNER}/instrada-ogm-postgres:${VERSION}
+          ghcr.io/${OWNER}/instrada-ogm-postgres:latest"
+            SQLITE_TAGS="ghcr.io/${OWNER}/instrada-ogm-sqlite:${VERSION}
+          ghcr.io/${OWNER}/instrada-ogm-sqlite:latest"
+            
+            if [[ -n "${{ secrets.DOCKER_USERNAME }}" ]]; then
+              POSTGRES_TAGS="${POSTGRES_TAGS}
+          ${{ secrets.DOCKER_USERNAME }}/instrada-ogm-postgres:${VERSION}
+          ${{ secrets.DOCKER_USERNAME }}/instrada-ogm-postgres:latest"
+              SQLITE_TAGS="${SQLITE_TAGS}
+          ${{ secrets.DOCKER_USERNAME }}/instrada-ogm-sqlite:${VERSION}
+          ${{ secrets.DOCKER_USERNAME }}/instrada-ogm-sqlite:latest"
+            fi
+          else
+            # Branch / test build: Push ONLY to GHCR, NO Docker Hub
+            POSTGRES_TAGS="ghcr.io/${OWNER}/instrada-ogm-postgres:${SLUG_REF}
+          ghcr.io/${OWNER}/instrada-ogm-postgres:${SLUG_REF}-${SHORT_SHA}"
+            SQLITE_TAGS="ghcr.io/${OWNER}/instrada-ogm-sqlite:${SLUG_REF}
+          ghcr.io/${OWNER}/instrada-ogm-sqlite:${SLUG_REF}-${SHORT_SHA}"
+          fi
+          
+          {
+            echo "postgres<<EOF"
+            echo "${POSTGRES_TAGS}"
+            echo "EOF"
+            echo "sqlite<<EOF"
+            echo "${SQLITE_TAGS}"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
+      # Only log into Docker Hub for official published releases
       - name: Log into Docker Hub
+        if: github.event_name == 'release' && secrets.DOCKER_USERNAME != ''
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
+      # Always log into GitHub Container Registry (ghcr.io)
       - name: Log into GitHub Container Registry
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
@@ -61,11 +123,7 @@ jobs:
           file: Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: |
-            ${{ secrets.DOCKER_USERNAME }}/instrada-ogm-postgres:${{ steps.package-version.outputs.VERSION }}
-            ${{ secrets.DOCKER_USERNAME }}/instrada-ogm-postgres:latest
-            ghcr.io/${{ steps.repo-owner.outputs.OWNER }}/instrada-ogm-postgres:${{ steps.package-version.outputs.VERSION }}
-            ghcr.io/${{ steps.repo-owner.outputs.OWNER }}/instrada-ogm-postgres:latest
+          tags: ${{ steps.tags.outputs.postgres }}
           build-args: |
             PRISMA_SCHEMA_FILE=schema.postgres.prisma
             PRISMA_MIGRATIONS_DIR=migrations-postgres
@@ -83,11 +141,7 @@ jobs:
           file: Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: |
-            ${{ secrets.DOCKER_USERNAME }}/instrada-ogm-sqlite:${{ steps.package-version.outputs.VERSION }}
-            ${{ secrets.DOCKER_USERNAME }}/instrada-ogm-sqlite:latest
-            ghcr.io/${{ steps.repo-owner.outputs.OWNER }}/instrada-ogm-sqlite:${{ steps.package-version.outputs.VERSION }}
-            ghcr.io/${{ steps.repo-owner.outputs.OWNER }}/instrada-ogm-sqlite:latest
+          tags: ${{ steps.tags.outputs.sqlite }}
           build-args: |
             PRISMA_SCHEMA_FILE=schema.sqlite.prisma
             PRISMA_MIGRATIONS_DIR=migrations-sqlite

@@ -384,10 +384,18 @@ export function useIpGroupActions({
 
     setIsUnassigningDetected(true);
     try {
-      const response = await fetch(`/api/opnsense/aliases/${groupId}`, {
-        method: 'DELETE',
+      // Use the host-group-management API for unassign from a single group
+      logger.debug(`Calling host-group-management API to unassign IP ${ip} from group ${groupId}`);
+
+      const response = await fetch('/api/opnsense/host-group-management', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ipAddress: ip }),
+        body: JSON.stringify({
+          operation: 'unassign',
+          ipAddress: ip,
+          hostAliasName: hostAlias,
+          groupId,
+        }),
       });
       const result: { success: boolean; message: string; updatedGroup?: NetworkGroup | null } = await response.json();
 

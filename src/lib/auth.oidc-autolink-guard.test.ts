@@ -83,6 +83,20 @@ describe('OIDC signIn auto-link guards', () => {
     expect(prismaMock.user.update).not.toHaveBeenCalled();
   });
 
+  it('refuses auto-link for a self-registered account (N4: registration sets emailSelfChangedAt)', async () => {
+    // register/route.ts creates users with emailVerified: null and emailSelfChangedAt set,
+    // so this guard is what blocks SSO linking until the address is proven.
+    prismaMock.user.findUnique.mockResolvedValue({
+      ...untouchedUser,
+      emailSelfChangedAt: new Date(),
+      emailVerified: null,
+    });
+
+    const result = await signIn(oidcArgs({ email: 'self-registered@corp.test', name: 'SR' }));
+    expect(result).toBe('/auth/error?error=OidcLinkRequired');
+    expect(prismaMock.account.create).not.toHaveBeenCalled();
+  });
+
   it('auto-links once the self-changed email is verified', async () => {
     prismaMock.user.findUnique.mockResolvedValue({
       ...untouchedUser,

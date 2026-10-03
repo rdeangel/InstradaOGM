@@ -1024,13 +1024,13 @@ curl -X PUT "{{SERVER_URL}}/api/account/update-profile" \
 
 ### POST /api/account/set-password
 
-**Description**: Set a new password for the authenticated user. Requires an interactive session plus the current password or a TOTP/backup code. If the account has no password yet, a sign-in in the last 10 minutes is accepted instead of the current password (the JWT `authTime` claim, set only at login — not the refreshed `iat` on `GET /api/auth/session`). API keys are rejected. After a successful change, `passwordChangedAt` is updated so existing JWT cookies become unauthenticated on the next session refresh, stored database sessions are deleted, and all of the user's API keys are disabled. The caller must sign in again.
+**Description**: Set a new password for the authenticated user. Requires an interactive session plus the current password (accounts with a password must confirm with it; authenticator codes are not accepted here). If the account has no password yet, a sign-in in the last 10 minutes is accepted instead of the current password (the JWT `authTime` claim, set only at login — not the refreshed `iat` on `GET /api/auth/session`). API keys are rejected. After a successful change, `passwordChangedAt` is updated so existing JWT cookies become unauthenticated on the next session refresh, stored database sessions are deleted, and all of the user's API keys are disabled. The caller must sign in again.
 
 **Authentication**: Required (session only)
 
 **Restrictions**:
 - Interactive session only (no API key)
-- Current password or authenticator code required when a password is already set
+- Current password required when a password is already set
 
 **Role Access:**
 - **USER**: ✅ Can set own password
@@ -1184,7 +1184,7 @@ curl -X POST "{{SERVER_URL}}/api/account/2fa/verify" \
 
 ### POST /api/account/2fa/disable
 
-This path does not exist. Disable 2FA at `POST /api/auth/2fa/disable` (session plus current password or authenticator code). See the authentication endpoints document.
+This path does not exist. Disable 2FA at `POST /api/auth/2fa/disable` (session plus current password; accounts without a password confirm with an authenticator or backup code). See the authentication endpoints document.
 
 ## Error Responses
 

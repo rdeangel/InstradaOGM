@@ -5,13 +5,26 @@ import type { OpnsenseSetAliasItemPayload } from '@/lib/opnsense-api';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/logger';
 import { authenticateAndTrackRequest } from '@/lib/auth-middleware';
+import { isOpnsenseId } from '@/lib/opnsense-id';
+import { assertValidHostIpAddress, InvalidIpAddressError } from '@/lib/network-utils';
 import * as ipaddr from 'ipaddr.js';
 import type { NetworkGroup, OpnsenseAliasDetailFromExport } from '@/types/opnsense';
- 
+import { Role } from '@/types/opnsense';
+
 interface RouteContext {
   params: Promise<{
     uuid: string;
   }>;
+}
+
+// Only ADMIN and SUPER_ADMIN may manage aliases / group memberships here.
+async function forbidden(auth: { user: { id: string } | null }, action: string, aliasUuid: string): Promise<NextResponse> {
+  await logAuditEvent({
+    userId: auth.user?.id ?? null,
+    action,
+    details: { aliasUuid, reason: 'Insufficient role' },
+  });
+  return NextResponse.json({ success: false, message: 'Forbidden' }, { status: 403 });
 }
 
 // Helper function to check if an IP is contained in an alias's content
@@ -132,8 +145,16 @@ export async function GET(request: Request, context: RouteContext) {
 
   const { uuid } = await context.params;
 
+    if (auth.user.role !== Role.ADMIN && auth.user.role !== Role.SUPER_ADMIN) {
+      return forbidden(auth, 'OPNSENSE_ALIAS_READ_FAILURE', uuid);
+    }
+
   if (!uuid || typeof uuid !== 'string') {
     return NextResponse.json({ success: false, message: 'Valid UUID parameter is missing' }, { status: 400 });
+  }
+
+  if (!isOpnsenseId(uuid)) {
+    return NextResponse.json({ success: false, message: 'Invalid OPNsense identifier' }, { status: 400 });
   }
 
   try {
@@ -187,8 +208,16 @@ export async function GET(request: Request, context: RouteContext) {
 
   const { uuid } = await context.params;
 
+    if (auth.user.role !== Role.ADMIN && auth.user.role !== Role.SUPER_ADMIN) {
+      return forbidden(auth, 'OPNSENSE_ALIAS_UPDATE_FAILURE', uuid);
+    }
+
    if (!uuid || typeof uuid !== 'string') {
      return NextResponse.json({ success: false, message: 'Valid UUID parameter is missing' }, { status: 400 });
+   }
+
+   if (!isOpnsenseId(uuid)) {
+     return NextResponse.json({ success: false, message: 'Invalid OPNsense identifier' }, { status: 400 });
    }
 
    try {
@@ -330,8 +359,16 @@ export async function DELETE(request: Request, context: RouteContext) {
  
   const { uuid } = await context.params;
  
+    if (auth.user.role !== Role.ADMIN && auth.user.role !== Role.SUPER_ADMIN) {
+      return forbidden(auth, 'OPNSENSE_ALIAS_DELETE_FAILURE', uuid);
+    }
+
   if (!uuid || typeof uuid !== 'string') {
     return NextResponse.json({ success: false, message: 'Valid UUID parameter is missing' }, { status: 400 });
+  }
+
+  if (!isOpnsenseId(uuid)) {
+    return NextResponse.json({ success: false, message: 'Invalid OPNsense identifier' }, { status: 400 });
   }
 
   try {
@@ -340,7 +377,21 @@ export async function DELETE(request: Request, context: RouteContext) {
     
     if (body && body.ipAddress) {
       // This is a request to remove an IP from a network group
-      const { ipAddress, hostAliasName } = body;
+      const { hostAliasName } = body;
+
+      let ipAddress: string;
+      try {
+        ipAddress = assertValidHostIpAddress(body.ipAddress);
+      } catch (error) {
+        if (error instanceof InvalidIpAddressError) {
+          return NextResponse.json({ success: false, message: 'Invalid IP address' }, { status: 400 });
+        }
+        throw error;
+      }
+
+      if (hostAliasName != null && typeof hostAliasName !== 'string') {
+        return NextResponse.json({ success: false, message: 'Invalid host alias name' }, { status: 400 });
+      }
 
       logger.debug(`DELETE handler: Removing IP ${ipAddress} from group ${uuid}, hostAliasName: ${hostAliasName}`);
 
@@ -478,16 +529,34 @@ export async function POST(request: Request, context: RouteContext) {
 
   const { uuid: groupId } = await context.params;
 
+    if (auth.user.role !== Role.ADMIN && auth.user.role !== Role.SUPER_ADMIN) {
+      return forbidden(auth, 'OPNSENSE_GROUP_IP_ADD_FAILURE', groupId);
+    }
+
   if (!groupId || typeof groupId !== 'string') {
     return NextResponse.json({ success: false, message: 'Valid group UUID parameter is missing' }, { status: 400 });
   }
 
+  if (!isOpnsenseId(groupId)) {
+    return NextResponse.json({ success: false, message: 'Invalid OPNsense identifier' }, { status: 400 });
+  }
+
   try {
     const body = await request.json();
-    const { ipAddress, description, hostAliasName, moveFromExistingGroup = true } = body;
+    const { description, hostAliasName, moveFromExistingGroup = true } = body;
 
-    if (!ipAddress) {
-      return NextResponse.json({ success: false, message: 'IP address is required' }, { status: 400 });
+    let ipAddress: string;
+    try {
+      ipAddress = assertValidHostIpAddress(body.ipAddress);
+    } catch (error) {
+      if (error instanceof InvalidIpAddressError) {
+        return NextResponse.json({ success: false, message: 'Invalid IP address' }, { status: 400 });
+      }
+      throw error;
+    }
+
+    if (hostAliasName != null && typeof hostAliasName !== 'string') {
+      return NextResponse.json({ success: false, message: 'Invalid host alias name' }, { status: 400 });
     }
 
     await logAuditEvent({

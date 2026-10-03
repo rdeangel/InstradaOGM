@@ -74,28 +74,43 @@ async function verifyTotpOrBackup(user: ReauthUser, code: string, isBackupCode: 
   return authenticator.verify({ token: code, secret: plaintextSecret });
 }
 
+function codePresent(input: ReauthInput): boolean {
+  return (
+    asNonEmptyString(input.totpCode) !== undefined ||
+    asNonEmptyString(input.code) !== undefined ||
+    asNonEmptyString(input.backupCode) !== undefined ||
+    input.isBackupCode === true ||
+    input.isBackupCode === 'true'
+  );
+}
+
+export async function verifySecondFactor(user: ReauthUser, input: ReauthInput): Promise<ReauthResult> {
+  const totpCode = asNonEmptyString(input.totpCode) ?? asNonEmptyString(input.code);
+  const backupCode = asNonEmptyString(input.backupCode);
+  const code = backupCode ?? totpCode;
+
+  if (!code) {
+    return { ok: false, status: 400, message: 'Authenticator code is required' };
+  }
+
+  const isBackupCode = input.isBackupCode === true || input.isBackupCode === 'true';
+  const valid = await verifyTotpOrBackup(user, code, isBackupCode || !!backupCode);
+  if (!valid) {
+    return { ok: false, status: 400, message: 'Invalid authenticator or backup code' };
+  }
+  return { ok: true };
+}
+
 export async function verifySensitiveReauth(
   user: ReauthUser,
   input: ReauthInput,
   sessionAuthTime: number | null,
 ): Promise<ReauthResult> {
-  const currentPassword = asNonEmptyString(input.currentPassword);
-  const totpCode = asNonEmptyString(input.totpCode) ?? asNonEmptyString(input.code);
-  const backupCode = asNonEmptyString(input.backupCode);
-  const isBackupCode = input.isBackupCode === true || input.isBackupCode === 'true';
-  const code = backupCode ?? totpCode;
-
-  if (code) {
-    const valid = await verifyTotpOrBackup(user, code, isBackupCode || !!backupCode);
-    if (!valid) {
-      return { ok: false, status: 400, message: 'Invalid authenticator or backup code' };
-    }
-    return { ok: true };
-  }
-
-  if (currentPassword) {
-    if (!user.password) {
-      return { ok: false, status: 400, message: 'No password is set on this account' };
+  // Accounts with a password must confirm with that password; codes are ignored.
+  if (user.password) {
+    const currentPassword = asNonEmptyString(input.currentPassword);
+    if (!currentPassword) {
+      return { ok: false, status: 400, message: 'Current password is required' };
     }
     const valid = await bcrypt.compare(currentPassword, user.password);
     if (!valid) {
@@ -104,17 +119,16 @@ export async function verifySensitiveReauth(
     return { ok: true };
   }
 
-  if (!user.password && isRecentLogin(sessionAuthTime)) {
+  // Passwordless (OIDC-only) accounts confirm with an authenticator or backup code...
+  if (codePresent(input)) {
+    return verifySecondFactor(user, input);
+  }
+  // ...or a recent login.
+  if (isRecentLogin(sessionAuthTime)) {
     return { ok: true };
   }
 
-  return {
-    ok: false,
-    status: 400,
-    message: user.password
-      ? 'Current password or authenticator code is required'
-      : 'A recent login or authenticator code is required',
-  };
+  return { ok: false, status: 400, message: 'A recent login or authenticator code is required' };
 }
 
 export async function revokeOtherCredentials(userId: string): Promise<void> {

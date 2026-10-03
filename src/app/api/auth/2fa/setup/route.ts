@@ -6,6 +6,7 @@ import { authenticator } from 'otplib';
 import qrcode from 'qrcode';
 import { logAuditEvent } from '@/lib/auditLog'; // Import logAuditEvent
 import { storeTotpSecret } from '@/lib/totp-encryption';
+import { sessionAuthDenied } from '@/lib/server/sensitive-reauth';
 import { getClientIp } from '@/lib/network-utils';
 
 export async function POST(req: Request) {
@@ -25,6 +26,18 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  const sessionDenied = sessionAuthDenied(auth.method);
+  if (sessionDenied) {
+    await logAuditEvent({
+      userId,
+      action: '2FA_SETUP_FAILURE',
+      ipAddress: ipAddressReq,
+      userAgent,
+      reason: sessionDenied.message,
+    });
+    return NextResponse.json({ error: sessionDenied.message }, { status: sessionDenied.status });
+  }
+
   const userEmail = auth.user?.email; // Assuming email is available in session
 
   if (!userEmail) {
@@ -36,6 +49,22 @@ export async function POST(req: Request) {
       reason: 'User email not found in session.',
     });
     return NextResponse.json({ error: 'User email not found in session' }, { status: 400 });
+  }
+
+  const existingUser = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { is2FAEnabled: true },
+  });
+
+  if (existingUser?.is2FAEnabled) {
+    await logAuditEvent({
+      userId,
+      action: '2FA_SETUP_FAILURE',
+      ipAddress: ipAddressReq,
+      userAgent,
+      reason: '2FA is already enabled.',
+    });
+    return NextResponse.json({ error: '2FA is already enabled. Disable it first.' }, { status: 400 });
   }
 
   await logAuditEvent({

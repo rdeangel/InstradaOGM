@@ -61,7 +61,7 @@ model User {
   // Password policy fields
   mustChangePassword Boolean   @default(false) // Force password change on next login
   passwordChangedAt  DateTime? // Track when password was last changed
-  emailSelfChangedAt DateTime? // Set when the user changes their own email via update-profile; blocks OIDC auto-link until verified
+  emailSelfChangedAt DateTime? // Set when the user changes their own email via update-profile and at self-registration; blocks OIDC auto-link until verified
 
   // 2FA Fields (Placeholders, actual implementation might differ)
   totpSecret    String?   // Encrypted TOTP secret. Consider storing this securely.
