@@ -134,17 +134,17 @@ export async function POST(req: Request) {
     // VPNs still cannot be stopped or restarted (checked below). The gate only tightens
     // access (disabled / empty networks / outside networks → 403).
     if (!auth.user) {
+      const gate = await isAnonSelfServiceAllowed(req);
+      if (!gate.allowed) {
+        logger.warn(`Self-service VPN restart denied for IP ${gate.clientIp}: ${gate.message}`);
+        return new NextResponse(JSON.stringify({
+          error: gate.message
+        }), { status: 403 });
+      }
+
+      const clientIp = gate.clientIp || '0.0.0.0';
+
       try {
-        const gate = await isAnonSelfServiceAllowed(req);
-        if (!gate.allowed) {
-          logger.warn(`Self-service VPN restart denied for IP ${gate.clientIp}: ${gate.message}`);
-          return new NextResponse(JSON.stringify({
-            error: gate.message
-          }), { status: 403 });
-        }
-
-        const clientIp = gate.clientIp || '0.0.0.0';
-
         // Get current group memberships for the VPN
         const currentGroups = await getIpGroupMembershipForVpn(vpnUuid, clientIp);
 
