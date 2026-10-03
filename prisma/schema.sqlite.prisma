@@ -279,6 +279,7 @@ model ApiKey {
   id          String   @id @default(cuid())
   name        String   // User-provided name for the key
   keyHash     String   // Hashed API key
+  keyPrefix   String?  @unique // Public lookup id. Null = key issued before prefixes (legacy scan).
   userId      String   // Foreign key to User
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt   DateTime @default(now())
