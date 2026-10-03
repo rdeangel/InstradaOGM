@@ -19,6 +19,12 @@ import {
   isJwtInvalidatedByPasswordChange,
   stripInvalidatedJwt,
 } from './server/jwt-auth-time';
+import {
+  assertCredentialAllowed,
+  clearCredentialFailures,
+  clientIpFromHeaderRecord,
+  noteCredentialFailure,
+} from './auth-throttle';
 
 // Extended interfaces for better type safety
 interface ExtendedProfile extends Profile {
@@ -328,7 +334,7 @@ if (process.env.AUTH_ALLOW_LOCAL_LOGIN === 'true') {
         totpCode: { label: "Authenticator Code", type: "text" }, // For 2FA
         isBackupCode: { label: "Is Backup Code", type: "text" } // Flag to indicate backup code usage
       },
-      async authorize(credentials): Promise<User | null> {
+      async authorize(credentials, req): Promise<User | null> {
         const auditData: { method: string; email: string | null | undefined; identifierUsed?: string; userId?: string } = { method: 'CREDENTIALS', email: credentials?.email }; // Keep email in audit data for now, will update if username is used, added userId
         await logAuditEvent({ action: 'USER_LOGIN_ATTEMPT', event: 'LOGIN_ATTEMPT', ...auditData });
 
@@ -339,6 +345,12 @@ if (process.env.AUTH_ALLOW_LOCAL_LOGIN === 'true') {
         }
 
         const identifier = credentials.email; // This can be either email or username
+        const clientIp = clientIpFromHeaderRecord(req?.headers);
+
+        const throttle = assertCredentialAllowed(identifier, clientIp);
+        if (throttle.limited) {
+          throw new Error('TOO_MANY_ATTEMPTS');
+        }
 
         // Try finding user by email OR username
         const user = await prisma.user.findFirst({
@@ -353,6 +365,7 @@ if (process.env.AUTH_ALLOW_LOCAL_LOGIN === 'true') {
         if (!user) {
           logger.error("[Authorize] User not found with identifier:", identifier);
           await logAuditEvent({ action: 'USER_LOGIN_FAILURE', event: 'LOGIN_FAILURE', ...auditData, reason: 'User not found' });
+          noteCredentialFailure(identifier, clientIp, 'authorize');
           throw new Error('CredentialsSignin'); // Explicitly throw for consistency
         }
 
@@ -364,6 +377,7 @@ if (process.env.AUTH_ALLOW_LOCAL_LOGIN === 'true') {
         if (!user.password) {
           logger.error("[Authorize] User found but has no password set (potentially OIDC only):", user.email);
           await logAuditEvent({ action: 'USER_LOGIN_FAILURE', event: 'LOGIN_FAILURE', ...auditData, userId: user.id, reason: 'Password not set' });
+          noteCredentialFailure(identifier, clientIp, 'authorize');
           throw new Error('CredentialsSignin'); // Explicitly throw for consistency
         }
 
@@ -372,6 +386,7 @@ if (process.env.AUTH_ALLOW_LOCAL_LOGIN === 'true') {
         if (!isValidPassword) {
           logger.error("[Authorize] Invalid password for:", user.email);
           await logAuditEvent({ action: 'USER_LOGIN_FAILURE', event: 'LOGIN_FAILURE', ...auditData, userId: user.id, reason: 'Invalid password' });
+          noteCredentialFailure(identifier, clientIp, 'authorize');
           throw new Error('CredentialsSignin'); // Explicitly throw for consistency
         }
 
@@ -385,6 +400,7 @@ if (process.env.AUTH_ALLOW_LOCAL_LOGIN === 'true') {
           const reason = user.role === Role.PENDING ? 'Account pending verification' : 'Email not verified';
           logger.warn(`[Authorize] Login blocked for ${user.email}: ${reason}`);
           await logAuditEvent({ action: 'USER_LOGIN_FAILURE', event: 'LOGIN_FAILURE', ...auditData, userId: user.id, reason: reason });
+          clearCredentialFailures(identifier);
           // Throw the same error for both cases to prompt user to check email
           throw new Error('EMAIL_NOT_VERIFIED');
         }
@@ -393,6 +409,7 @@ if (process.env.AUTH_ALLOW_LOCAL_LOGIN === 'true') {
         if (user.role === Role.SUSPENDED) {
           logger.error("[Authorize] Account suspended for:", user.email);
           await logAuditEvent({ action: 'USER_LOGIN_FAILURE', event: 'LOGIN_FAILURE', ...auditData, userId: user.id, reason: 'Account suspended' });
+          clearCredentialFailures(identifier);
           throw new Error('ACCOUNT_SUSPENDED'); // Use specific error for suspension
         }
         // --- End Status & Verification Check ---
@@ -402,6 +419,7 @@ if (process.env.AUTH_ALLOW_LOCAL_LOGIN === 'true') {
         if (user.mustChangePassword) {
           logger.warn(`[Authorize] Password change required for user: ${user.email}`);
           await logAuditEvent({ action: 'USER_LOGIN_FAILURE', event: 'LOGIN_FAILURE', ...auditData, userId: user.id, reason: 'Password change required' });
+          clearCredentialFailures(identifier);
           // Return null to deny login - the client will need to check the user's status
           return null;
         }
@@ -412,6 +430,7 @@ if (process.env.AUTH_ALLOW_LOCAL_LOGIN === 'true') {
           if (!credentials.totpCode) {
             logger.debug(`[Authorize] 2FA required but not provided for user: ${user.email}`);
             await logAuditEvent({ action: 'USER_LOGIN_FAILURE', event: 'LOGIN_FAILURE', ...auditData, userId: user.id, reason: '2FA code required but not provided' });
+            clearCredentialFailures(identifier);
             throw new Error('2FA_REQUIRED'); // Signal frontend
           }
 
@@ -431,6 +450,7 @@ if (process.env.AUTH_ALLOW_LOCAL_LOGIN === 'true') {
             if (!user.backupCodes) {
               logger.error("[Authorize] Backup code provided but no backup codes available for:", user.email);
               await logAuditEvent({ action: 'USER_LOGIN_FAILURE', event: 'LOGIN_FAILURE', ...auditData, userId: user.id, reason: 'No backup codes available' });
+              noteCredentialFailure(identifier, clientIp, 'authorize');
               throw new Error('INVALID_2FA_CODE'); // Signal frontend
             }
 
@@ -452,6 +472,7 @@ if (process.env.AUTH_ALLOW_LOCAL_LOGIN === 'true') {
             } catch (error) {
               logger.error("[Authorize] Error processing backup codes for:", user.email, error);
               await logAuditEvent({ action: 'USER_LOGIN_FAILURE', event: 'LOGIN_FAILURE', ...auditData, userId: user.id, reason: 'Backup code processing error' });
+              noteCredentialFailure(identifier, clientIp, 'authorize');
               throw new Error('INVALID_2FA_CODE'); // Signal frontend
             }
           } else {
@@ -479,6 +500,7 @@ if (process.env.AUTH_ALLOW_LOCAL_LOGIN === 'true') {
             } catch (error) {
               logger.error("[Authorize] Error verifying TOTP for:", user.email, error);
               await logAuditEvent({ action: 'USER_LOGIN_FAILURE', event: 'LOGIN_FAILURE', ...auditData, userId: user.id, reason: 'TOTP verification error' });
+              noteCredentialFailure(identifier, clientIp, 'authorize');
               throw new Error('INVALID_2FA_CODE'); // Signal frontend
             }
           }
@@ -486,6 +508,7 @@ if (process.env.AUTH_ALLOW_LOCAL_LOGIN === 'true') {
           if (!isValid) {
             logger.error("[Authorize] Invalid 2FA code for:", user.email);
             await logAuditEvent({ action: 'USER_LOGIN_FAILURE', event: 'LOGIN_FAILURE', ...auditData, userId: user.id, reason: 'Invalid 2FA code' });
+            noteCredentialFailure(identifier, clientIp, 'authorize');
             throw new Error('INVALID_2FA_CODE'); // Signal frontend
           }
 
@@ -495,6 +518,7 @@ if (process.env.AUTH_ALLOW_LOCAL_LOGIN === 'true') {
 
         logger.debug(`[Authorize] Authorization successful for user: ${user.email}`);
         // Audit log for success happens in the 'signIn' event
+        clearCredentialFailures(identifier);
 
         logger.debug(`[Authorize] Preparing user object for session for user: ${user.email}`);
         // Return user object without sensitive fields, ensuring it matches the NextAuth User type
