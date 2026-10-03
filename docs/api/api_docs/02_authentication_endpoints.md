@@ -169,7 +169,7 @@ curl -X POST "{{SERVER_URL}}/api/auth/register" \
 - `email`: User's email address
 - `name`: User's display name
 - `username`: User's username
-- `role`: User's role (`PENDING` if verification required, `USER` if not, `SUPER_ADMIN` only when this is the first user in an empty table)
+- `role`: User's role (`PENDING` if verification required, otherwise `USER`). New registrations are never made super-admin automatically.
 - `emailVerified`: Timestamp when email was verified (null if pending, current date if verification disabled)
 - `createdAt`: Account creation timestamp
 - `requiresVerification`: Boolean indicating if email verification is required
@@ -179,7 +179,7 @@ curl -X POST "{{SERVER_URL}}/api/auth/register" \
 - Passwords are hashed using bcrypt with 10 salt rounds
 - Rate limiting applies to prevent abuse
 - Email verification behavior controlled by `AUTH_REQUIRE_VERIFIED_EMAIL_LOCAL` environment variable
-- The first registrant receives `SUPER_ADMIN` only when the user table is empty. If seed already created the initial admin, later registrations receive `PENDING` (if verification is required) or `USER`.
+- New local and SSO accounts are never made super-admin automatically. If the user table is empty, re-run `npm run prisma:seed` (or restart the container) to create the seeded `admin` account.
 - Email verification for local accounts is controlled by `AUTH_REQUIRE_VERIFIED_EMAIL_LOCAL` (default: false). Leave this off unless every local user verifies email; admin-created local users start with an unverified email and would be locked out of login if the flag is enabled.
 - Username must be unique across all users
 - Audit logging for all registration attempts

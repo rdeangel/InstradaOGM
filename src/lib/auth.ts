@@ -775,80 +775,38 @@ export const authOptions: AuthOptions = {
             return true;
           } else {
             // 4. No existing user found by account link or email. This is a truly new user.
-            logger.debug(`OIDC Signin: No user found for email ${profile.email}. This is a new user.`);
-            const userCount = await prisma.user.count();
-            const isFirstUser = userCount === 0;
-
-            if (isFirstUser) {
-              logger.debug(`OIDC Signin: Creating first user ${profile.email} as SUPER_ADMIN.`);
-              if (!profile) {
-                logger.error("OIDC Signin: Profile is undefined when attempting to create first user.");
-                await logAuditEvent({ action: 'USER_SIGNIN_FAILURE', event: 'SIGNIN_FAILURE', ...auditData, reason: 'OIDC profile missing during first user creation' });
-                return '/auth/error?error=OidcProfileMissing';
-              }
-              const newUserData = prepareUserData(profile as ExtendedProfile);
-              const newAccountData = prepareAccountData(account as ExtendedAccount, profile as ExtendedProfile, externalGroups);
-
-              const newUser = await prisma.user.create({
-                data: {
-                  ...newUserData,
-                  email: newUserData.email || profile.email,
-                  role: Role.SUPER_ADMIN,
-                  accounts: {
-                    create: {
-                      ...newAccountData,
-                    },
-                  },
-                },
-              });
-
-              // Update auditData with the actual user ID and email before logging
-              auditData.userId = newUser.id;
-              auditData.email = newUser.email;
-
-              // Now log the USER_SIGNIN_ATTEMPT since we have confirmed the user exists
-              await logAuditEvent({ action: 'USER_SIGNIN_ATTEMPT', event: 'SIGNIN_ATTEMPT', ...auditData });
-
-              await logAuditEvent({ action: 'USER_CREATED', event: 'USER_CREATED', userId: newUser.id, email: newUser.email, provider: account.provider, method: 'OIDC', role: Role.SUPER_ADMIN });
-              await logAuditEvent({ action: 'USER_ACCOUNT_LINKED', event: 'ACCOUNT_LINKED', userId: newUser.id, provider: account.provider, method: 'OIDC' });
-              user.id = newUser.id;
-              return true;
-            } else {
-              // Not the first user, create with default USER role.
-              logger.debug(`OIDC Signin: No user found for email ${profile.email}. Not the first user. Provisioning new user with default role USER.`);
-              if (!profile) {
-                logger.error("OIDC Signin: Profile is undefined when allowing adapter to provision user.");
-                await logAuditEvent({ action: 'USER_SIGNIN_FAILURE', event: 'SIGNIN_FAILURE', ...auditData, reason: 'OIDC profile missing for adapter provisioning' });
-                return '/auth/error?error=OidcProfileMissing';
-              }
-              const newUserData = prepareUserData(profile as ExtendedProfile);
-              const newAccountData = prepareAccountData(account as ExtendedAccount, profile as ExtendedProfile, externalGroups);
-
-              const newUser = await prisma.user.create({
-                data: {
-                  ...newUserData,
-                  email: newUserData.email || profile.email,
-                  role: Role.USER, // Default role for new SSO users
-                  accounts: {
-                    create: {
-                      ...newAccountData,
-                    },
-                  },
-                },
-              });
-
-              // Update auditData with the actual user ID and email before logging
-              auditData.userId = newUser.id;
-              auditData.email = newUser.email;
-
-              // Now log the USER_SIGNIN_ATTEMPT since we have confirmed the user exists
-              await logAuditEvent({ action: 'USER_SIGNIN_ATTEMPT', event: 'SIGNIN_ATTEMPT', ...auditData });
-
-              await logAuditEvent({ action: 'USER_CREATED', event: 'USER_CREATED', userId: newUser.id, email: newUser.email, provider: account.provider, method: 'OIDC', role: Role.USER });
-              await logAuditEvent({ action: 'USER_ACCOUNT_LINKED', event: 'ACCOUNT_LINKED', userId: newUser.id, provider: account.provider, method: 'OIDC' });
-              user.id = newUser.id;
-              return true;
+            // Only prisma/seed.ts creates SUPER_ADMIN; SSO never auto-promotes.
+            logger.debug(`OIDC Signin: No user found for email ${profile.email}. Provisioning new user with default role USER.`);
+            if (!profile) {
+              logger.error("OIDC Signin: Profile is undefined when allowing adapter to provision user.");
+              await logAuditEvent({ action: 'USER_SIGNIN_FAILURE', event: 'SIGNIN_FAILURE', ...auditData, reason: 'OIDC profile missing for adapter provisioning' });
+              return '/auth/error?error=OidcProfileMissing';
             }
+            const newUserData = prepareUserData(profile as ExtendedProfile);
+            const newAccountData = prepareAccountData(account as ExtendedAccount, profile as ExtendedProfile, externalGroups);
+
+            const newUser = await prisma.user.create({
+              data: {
+                ...newUserData,
+                email: newUserData.email || profile.email,
+                role: Role.USER,
+                accounts: {
+                  create: {
+                    ...newAccountData,
+                  },
+                },
+              },
+            });
+
+            auditData.userId = newUser.id;
+            auditData.email = newUser.email;
+
+            await logAuditEvent({ action: 'USER_SIGNIN_ATTEMPT', event: 'SIGNIN_ATTEMPT', ...auditData });
+
+            await logAuditEvent({ action: 'USER_CREATED', event: 'USER_CREATED', userId: newUser.id, email: newUser.email, provider: account.provider, method: 'OIDC', role: Role.USER });
+            await logAuditEvent({ action: 'USER_ACCOUNT_LINKED', event: 'ACCOUNT_LINKED', userId: newUser.id, provider: account.provider, method: 'OIDC' });
+            user.id = newUser.id;
+            return true;
           }
 
         } catch (error) {

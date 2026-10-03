@@ -58,7 +58,7 @@ describe('POST /api/auth/register first-user role', () => {
     }));
   });
 
-  it('grants SUPER_ADMIN only when the user table is empty', async () => {
+  it('never grants SUPER_ADMIN when the user table is empty', async () => {
     prismaMock.user.count.mockResolvedValue(0);
     const response = await POST(jsonRequest({
       email: 'first@example.com',
@@ -68,7 +68,22 @@ describe('POST /api/auth/register first-user role', () => {
     }));
     expect(response.status).toBe(201);
     expect(prismaMock.user.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ role: 'SUPER_ADMIN' }),
+      data: expect.objectContaining({ role: 'USER' }),
+    }));
+  });
+
+  it('assigns PENDING when email verification is required, even on an empty table', async () => {
+    process.env.AUTH_REQUIRE_VERIFIED_EMAIL_LOCAL = 'true';
+    prismaMock.user.count.mockResolvedValue(0);
+    const response = await POST(jsonRequest({
+      email: 'first@example.com',
+      password: 'password12',
+      name: 'First',
+      username: 'first',
+    }));
+    expect(response.status).toBe(201);
+    expect(prismaMock.user.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ role: 'PENDING' }),
     }));
   });
 });
