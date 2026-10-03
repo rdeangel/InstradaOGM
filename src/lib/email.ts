@@ -38,7 +38,7 @@ const transporter = nodemailer.createTransport({
  * PNG format is used instead of SVG for maximum email client compatibility.
  * @returns Attachment object for Nodemailer with CID reference
  */
-function getLogoAttachment() {
+export function getLogoAttachment() {
   const logoPath = path.join(process.cwd(), 'public', 'images', 'InstradaOGM-logo.png');
 
   return {
