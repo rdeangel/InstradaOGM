@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- API keys now look like `<id>_<secret>` and are checked much faster. Keys created before this version still work, but their first use after each restart is rate-limited per address (HTTP 429 `Legacy API key lookup limited` if exceeded). The account page marks them as legacy. Create a new key, update your scripts, then delete the old one. Limits are kept in memory per app process.
+
 ### Fixed
 - OPNsense HTTPS no longer turns off certificate checks for the whole process. A self-signed firewall needs `OPNSENSE_CA_CERT` (a PEM or a file path). `SKIP_SSL_VERIFICATION=true` still skips checks for OPNsense only, and only when you set it.
 

@@ -7,7 +7,7 @@
 Replace the following variables in the examples below:
 
 - `{{SERVER_URL}}` - Your server URL (e.g., `https://instrada-ogm.example.com`)
-- `{{API_KEY}}` - Your API key for authentication
+- `{{API_KEY}}` - Your API key for authentication. New keys look like `<id>_<secret>` (12-character id, underscore, 56-character secret). Send the whole string as `Authorization: Bearer`. Keys created before this format still work; their first use after each app restart is rate-limited per address. Exceeding that limit returns HTTP 429 with `Legacy API key lookup limited`. Create a new key, update your scripts, then delete the old one. Limits are kept in memory per app process.
 
 **Example:**
 ```bash
