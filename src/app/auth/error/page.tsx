@@ -70,6 +70,11 @@ export default async function AuthErrorPage({ searchParams }: { searchParams: Pr
       title = "OIDC Email Missing";
       description = "Your OIDC provider did not provide an email address. Please contact your administrator.";
       break;
+    case "OidcAdminLinkRequired":
+    case "OidcLinkRequired":
+      title = "Account Link Required";
+      description = "Your single sign-on account matches an existing local account that cannot be linked automatically. Sign in with your username and password instead, or contact your administrator.";
+      break;
     case "SigninCallbackError":
       title = "Login Error";
       description = "An internal server error occurred during login. Please try again or contact your administrator.";

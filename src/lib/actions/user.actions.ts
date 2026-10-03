@@ -255,7 +255,7 @@ export async function updateUser(id: string, data: UserFormData): Promise<{ succ
   }
 }
 
-export async function updateCurrentUserProfile(data: { name?: string; username?: string; email?: string; password?: string }): Promise<{ success: boolean; user?: User; errors?: { path: string[], message: string }[] }> {
+export async function updateCurrentUserProfile(data: { name?: string; username?: string; email?: string; password?: string; currentPassword?: string; code?: string }): Promise<{ success: boolean; user?: User; errors?: { path: string[], message: string }[] }> {
   try {
     // Smart fallback: Use INTERNAL_APP_URL if set, otherwise fall back to NEXTAUTH_URL, then default
     const baseUrl = process.env.INTERNAL_APP_URL || process.env.NEXTAUTH_URL || 'http://localhost:3000';

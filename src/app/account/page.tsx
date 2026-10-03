@@ -50,6 +50,7 @@ const ProfileFormSchema = z.object({
   email: z.string().email("Invalid email address").optional().or(z.literal('')),
   password: z.string().min(getPasswordMinLength(), `Password must be at least ${getPasswordMinLength()} characters`).optional().or(z.literal('')),
   confirmPassword: z.string().optional().or(z.literal('')),
+  currentPassword: z.string().optional().or(z.literal('')),
 }).refine((data) => {
   // Only validate password confirmation if password is provided
   if (data.password && data.password !== '') {
@@ -86,6 +87,7 @@ export default function AccountPage() {
       email: '',
       password: '',
       confirmPassword: '',
+      currentPassword: '',
     },
     mode: 'onChange', // Validate on change
   });
@@ -99,6 +101,7 @@ export default function AccountPage() {
         email: session.user.email || '',
         password: '',
         confirmPassword: '',
+        currentPassword: '',
       });
     }
   }, [session, form]);
@@ -158,7 +161,7 @@ export default function AccountPage() {
     // Handle form submission
     async function onSubmit(values: ProfileFormValues) {
       // Filter out empty values and unchanged values so we only send fields that were changed
-      const dataToUpdate: { name?: string; username?: string; email?: string; password?: string } = {};
+      const dataToUpdate: { name?: string; username?: string; email?: string; password?: string; currentPassword?: string } = {};
       if (values.name && values.name !== session?.user?.name) {
         dataToUpdate.name = values.name;
       }
@@ -182,13 +185,20 @@ export default function AccountPage() {
         return;
       }
 
+      if (dataToUpdate.email || dataToUpdate.password || dataToUpdate.username) {
+        if (!values.currentPassword) {
+          form.setError('currentPassword', { message: 'Enter your current password to change your email or password' });
+          return;
+        }
+        dataToUpdate.currentPassword = values.currentPassword;
+      }
 
       const result = await updateCurrentUserProfile(dataToUpdate);
 
       if (result.success) {
         // Manually update the session to reflect the new email if it changed
-        // If email or name was updated, show the modal and trigger logout
-        if (dataToUpdate.email || dataToUpdate.name) {
+        // If email, name, or password was updated, show the modal and trigger logout
+        if (dataToUpdate.email || dataToUpdate.name || dataToUpdate.password) {
           setShowEmailUpdateModal(true); // Show the modal
         } else {
           // If only password or username were updated, refresh the session with the updated user data and show success toast
@@ -202,6 +212,7 @@ export default function AccountPage() {
             email: session?.user?.email || '', // Use the email from the updated session
             password: '', // Clear the password field
             confirmPassword: '', // Clear the confirm password field
+            currentPassword: '',
           });
         }
       } else {
@@ -404,6 +415,31 @@ export default function AccountPage() {
                                         value={field.value ?? ''} // Ensure value is never undefined
                                         type="password"
                                         placeholder={isOidc ? 'Managed by SSO provider' : 'Confirm your new password'}
+                                        disabled={isOidc} // Disable for OIDC users
+                                        className={isOidc ? 'text-gray-500 dark:text-gray-500 italic' : ''}
+                                      />
+                                    </FormControl>
+                                    <FormMessage />
+                                    {isOidc && <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Managed by SSO provider</p>} {/* Indicate SSO for OIDC */}
+                                  </FormItem>
+                                )}
+                              />
+
+                              {/* Current Password Field (Always rendered, disabled for OIDC users) */}
+                              {/* ponytail: no authenticator-code input — every user who can submit this form is local with a password. API callers can send code/totpCode. Add a UI code field if passwordless local accounts ever reach this form. */}
+                              <FormField
+                                control={form.control}
+                                name="currentPassword"
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <FormLabel className={isOidc ? 'text-gray-500 dark:text-gray-500' : ''}>Current Password</FormLabel>
+                                    <FormControl>
+                                      <Input
+                                        {...field}
+                                        value={field.value ?? ''} // Ensure value is never undefined
+                                        type="password"
+                                        autoComplete="current-password"
+                                        placeholder={isOidc ? 'Managed by SSO provider' : 'Required to change email or password'}
                                         disabled={isOidc} // Disable for OIDC users
                                         className={isOidc ? 'text-gray-500 dark:text-gray-500 italic' : ''}
                                       />

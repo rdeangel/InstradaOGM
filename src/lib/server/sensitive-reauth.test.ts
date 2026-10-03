@@ -1,8 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getToken, bcryptCompare } = vi.hoisted(() => ({
+const { getToken, bcryptCompare, prismaMock } = vi.hoisted(() => ({
   getToken: vi.fn(),
   bcryptCompare: vi.fn(),
+  prismaMock: {
+    user: { update: vi.fn() },
+    session: { deleteMany: vi.fn() },
+    apiKey: { updateMany: vi.fn() },
+  },
 }));
 
 vi.mock('next-auth/jwt', () => ({ getToken }));
@@ -10,7 +15,7 @@ vi.mock('bcryptjs', () => ({
   default: { compare: (...args: unknown[]) => bcryptCompare(...args) },
 }));
 vi.mock('@/lib/prisma', () => ({
-  prisma: { user: { update: vi.fn() } },
+  prisma: prismaMock,
 }));
 vi.mock('@/lib/totp-encryption', () => ({
   getTotpSecretWithMigration: vi.fn(),
@@ -22,6 +27,7 @@ vi.mock('@/lib/backup-codes', () => ({
 import {
   getSessionIssuedAt,
   isRecentLogin,
+  revokeOtherCredentials,
   sessionAuthDenied,
   verifySensitiveReauth,
 } from './sensitive-reauth';
@@ -143,6 +149,21 @@ describe('verifySensitiveReauth', () => {
       ok: false,
       status: 400,
       message: 'No password is set on this account',
+    });
+  });
+});
+
+describe('revokeOtherCredentials', () => {
+  it('deletes sessions and disables API keys', async () => {
+    prismaMock.session.deleteMany.mockResolvedValue({ count: 1 });
+    prismaMock.apiKey.updateMany.mockResolvedValue({ count: 1 });
+
+    await revokeOtherCredentials('u1');
+
+    expect(prismaMock.session.deleteMany).toHaveBeenCalledWith({ where: { userId: 'u1' } });
+    expect(prismaMock.apiKey.updateMany).toHaveBeenCalledWith({
+      where: { userId: 'u1' },
+      data: { enabled: false },
     });
   });
 });

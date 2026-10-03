@@ -751,6 +751,22 @@ export const authOptions: AuthOptions = {
               return '/auth/error?error=ACCOUNT_PENDING';
             }
 
+            // Local-side guards only; D1 (no email_verified requirement) unchanged.
+            const selfChangedUnverified = existingUserByEmail.emailSelfChangedAt !== null && existingUserByEmail.emailVerified === null;
+            if (selfChangedUnverified || existingUserByEmail.is2FAEnabled) {
+              logger.warn(`OIDC Signin: Refusing to auto-link ${account.provider} to account ${existingUserByEmail.id} (${existingUserByEmail.is2FAEnabled ? '2FA enabled' : 'self-changed unverified email'}).`);
+              await logAuditEvent({
+                action: 'USER_SIGNIN_FAILURE',
+                event: 'SIGNIN_FAILURE',
+                ...auditData,
+                userId: existingUserByEmail.id,
+                reason: existingUserByEmail.is2FAEnabled
+                  ? 'OIDC auto-link is not allowed for accounts with 2FA enabled'
+                  : 'OIDC auto-link is not allowed while a self-changed email is unverified',
+              });
+              return '/auth/error?error=OidcLinkRequired';
+            }
+
             // Update auditData with the actual user ID and email before logging
             auditData.userId = existingUserByEmail.id;
             auditData.email = existingUserByEmail.email;
