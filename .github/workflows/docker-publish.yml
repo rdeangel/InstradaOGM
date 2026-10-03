@@ -49,39 +49,42 @@ jobs:
 
       - name: Determine Docker tags and registries
         id: tags
+        env:
+          VERSION: ${{ steps.package-version.outputs.VERSION }}
+          OWNER: ${{ steps.repo-owner.outputs.OWNER }}
+          RAW_REF: ${{ github.event.inputs.tag_name || github.ref_name }}
+          EVENT_NAME: ${{ github.event_name }}
+          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
         run: |
-          VERSION="${{ steps.package-version.outputs.VERSION }}"
-          OWNER="${{ steps.repo-owner.outputs.OWNER }}"
           SHORT_SHA=$(git rev-parse --short HEAD)
           
           # Clean branch name for tag (e.g. security/v2.0.1 -> security-v2.0.1)
-          RAW_REF="${{ github.event.inputs.tag_name || github.ref_name }}"
           SLUG_REF=$(echo "${RAW_REF}" | tr '/' '-' | tr -cd '[:alnum:]-_.')
           
           POSTGRES_TAGS=""
           SQLITE_TAGS=""
           
-          if [[ "${{ github.event_name }}" == "release" ]]; then
+          if [[ "${EVENT_NAME}" == "release" ]]; then
             # Official Release: publish to both GHCR and Docker Hub
             POSTGRES_TAGS="ghcr.io/${OWNER}/instrada-ogm-postgres:${VERSION}
           ghcr.io/${OWNER}/instrada-ogm-postgres:latest"
             SQLITE_TAGS="ghcr.io/${OWNER}/instrada-ogm-sqlite:${VERSION}
           ghcr.io/${OWNER}/instrada-ogm-sqlite:latest"
             
-            if [[ -n "${{ secrets.DOCKER_USERNAME }}" ]]; then
+            if [[ -n "${DOCKER_USERNAME}" ]]; then
               POSTGRES_TAGS="${POSTGRES_TAGS}
-          ${{ secrets.DOCKER_USERNAME }}/instrada-ogm-postgres:${VERSION}
-          ${{ secrets.DOCKER_USERNAME }}/instrada-ogm-postgres:latest"
+          ${DOCKER_USERNAME}/instrada-ogm-postgres:${VERSION}
+          ${DOCKER_USERNAME}/instrada-ogm-postgres:latest"
               SQLITE_TAGS="${SQLITE_TAGS}
-          ${{ secrets.DOCKER_USERNAME }}/instrada-ogm-sqlite:${VERSION}
-          ${{ secrets.DOCKER_USERNAME }}/instrada-ogm-sqlite:latest"
+          ${DOCKER_USERNAME}/instrada-ogm-sqlite:${VERSION}
+          ${DOCKER_USERNAME}/instrada-ogm-sqlite:latest"
             fi
           else
-            # Branch / test build: Push ONLY to GHCR, NO Docker Hub
-            POSTGRES_TAGS="ghcr.io/${OWNER}/instrada-ogm-postgres:${SLUG_REF}
-          ghcr.io/${OWNER}/instrada-ogm-postgres:${SLUG_REF}-${SHORT_SHA}"
-            SQLITE_TAGS="ghcr.io/${OWNER}/instrada-ogm-sqlite:${SLUG_REF}
-          ghcr.io/${OWNER}/instrada-ogm-sqlite:${SLUG_REF}-${SHORT_SHA}"
+            # Branch / test build: Push ONLY to GHCR under -dev package name, NO Docker Hub
+            POSTGRES_TAGS="ghcr.io/${OWNER}/instrada-ogm-postgres-dev:${SLUG_REF}
+          ghcr.io/${OWNER}/instrada-ogm-postgres-dev:${SLUG_REF}-${SHORT_SHA}"
+            SQLITE_TAGS="ghcr.io/${OWNER}/instrada-ogm-sqlite-dev:${SLUG_REF}
+          ghcr.io/${OWNER}/instrada-ogm-sqlite-dev:${SLUG_REF}-${SHORT_SHA}"
           fi
           
           {
@@ -91,7 +94,7 @@ jobs:
             echo "sqlite<<EOF"
             echo "${SQLITE_TAGS}"
             echo "EOF"
-          } >> $GITHUB_OUTPUT
+          } >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0

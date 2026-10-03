@@ -131,8 +131,7 @@ curl -X PUT "{{SERVER_URL}}/api/user/profile" \
   -H "Authorization: Bearer {{API_KEY}}" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "John Smith",
-    "email": "john.smith@example.com"
+    "name": "John Smith"
   }'
 ```
 
@@ -149,8 +148,9 @@ curl -X PUT "{{SERVER_URL}}/api/user/profile" \
 ```
 
 **Request Fields**:
-- `name` (optional): User's display name
-- `email` (optional): User's email address
+- `name` (string, required): User's display name (max 100 characters)
+
+> **Note**: Email updates are not permitted via this endpoint. To update an email address, use `PUT /api/account/update-profile` which enforces sensitive re-authentication and verification reset.
 
 **Response Fields**:
 - `id`: Unique user identifier

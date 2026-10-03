@@ -744,7 +744,7 @@ download_backup() {
     # Download the file with timeout and better error handling
     local http_code
     log_info "Download URL: $SERVER_URL/api/settings/backup/versions/$filename"
-    log_info "Download command: curl -s -w '%{http_code}' -o \"$local_path\" -X GET \"$SERVER_URL/api/settings/backup/versions/$filename\" -H \"Authorization: Bearer $API_KEY\""
+    log_info "Download command: curl -s -w '%{http_code}' -o \"$local_path\" -X GET \"$SERVER_URL/api/settings/backup/versions/$filename\" -H \"Authorization: Bearer ***\""
     
     # Create directory if it doesn't exist
     local dir_path
@@ -831,7 +831,7 @@ delete_remote_backup() {
     
     if [ "$DRY_RUN" = true ]; then
         log_info "[DRY RUN] Would delete remote backup: $SERVER_URL/api/settings/backup/versions/$filename"
-        log_info "[DRY RUN] Command: curl -X DELETE \"$SERVER_URL/api/settings/backup/versions/$filename\" -H \"Authorization: Bearer $API_KEY\""
+        log_info "[DRY RUN] Command: curl -X DELETE \"$SERVER_URL/api/settings/backup/versions/$filename\" -H \"Authorization: Bearer ***\""
         return 0
     fi
     
@@ -841,7 +841,7 @@ delete_remote_backup() {
     local temp_response_file
 
     log_info "Delete URL: $delete_url"
-    log_info "Delete command: curl -s -w '%{http_code}' -X DELETE \"$delete_url\" -H \"Authorization: Bearer $API_KEY\""
+    log_info "Delete command: curl -s -w '%{http_code}' -X DELETE \"$delete_url\" -H \"Authorization: Bearer ***\""
 
     # Use a temporary file to capture response body separately from HTTP code
     temp_response_file=$(mktemp)

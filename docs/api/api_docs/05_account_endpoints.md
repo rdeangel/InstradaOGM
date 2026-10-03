@@ -754,7 +754,7 @@ curl -X GET "{{SERVER_URL}}/api/user/profile" \
 
 #### Usage Case 1: Successful Profile Update
 
-**Scenario**: User updates their profile information
+**Scenario**: User updates their profile name
 
 **Example Request**:
 ```bash
@@ -762,9 +762,7 @@ curl -X PUT "{{SERVER_URL}}/api/user/profile" \
   -H "Authorization: Bearer {{API_KEY}}" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "John Smith",
-    "username": "johnsmith",
-    "email": "johnsmith@example.com"
+    "name": "John Smith"
   }'
 ```
 
@@ -773,44 +771,14 @@ curl -X PUT "{{SERVER_URL}}/api/user/profile" \
 {
   "id": "user-uuid-1",
   "name": "John Smith",
-  "username": "johnsmith",
   "email": "johnsmith@example.com",
   "role": "USER",
-  "emailVerified": "2024-01-01T12:00:00Z",
   "createdAt": "2024-01-01T12:00:00Z",
-  "lastActive": "2024-01-01T13:00:00Z",
-  "is2FAEnabled": false
+  "updatedAt": "2024-01-01T14:00:00Z"
 }
 ```
 
-#### Usage Case 2: Password Change
-
-**Scenario**: User updates their password
-
-**Example Request**:
-```bash
-curl -X PUT "{{SERVER_URL}}/api/user/profile" \
-  -H "Authorization: Bearer {{API_KEY}}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "password": "newSecurePassword123"
-  }'
-```
-
-**Success Response**:
-```json
-{
-  "id": "user-uuid-1",
-  "name": "John Smith",
-  "username": "johnsmith",
-  "email": "johnsmith@example.com",
-  "role": "USER",
-  "emailVerified": "2024-01-01T12:00:00Z",
-  "createdAt": "2024-01-01T12:00:00Z",
-  "lastActive": "2024-01-01T13:00:00Z",
-  "is2FAEnabled": false
-}
-```
+> **Note**: Email updates are not permitted via this endpoint. To update an email address or username, use `PUT /api/account/update-profile` which requires sensitive re-authentication. To update passwords, use `POST /api/account/set-password` or `PUT /api/account/update-profile`.
 
 #### Usage Case 3: External Account Restriction
 
