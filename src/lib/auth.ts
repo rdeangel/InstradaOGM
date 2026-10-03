@@ -25,6 +25,7 @@ import {
   clientIpFromHeaderRecord,
   noteCredentialFailure,
 } from './auth-throttle';
+import { safeRedirect } from './auth-redirect';
 
 // Extended interfaces for better type safety
 interface ExtendedProfile extends Profile {
@@ -1063,34 +1064,6 @@ export const authOptions: AuthOptions = {
       return session;
     },
     async redirect({ url, baseUrl }) {
-      // Helper function to check if a URL is valid (matches NEXTAUTH_URL or is a local development URL)
-      const isValidUrl = (checkUrl: string): boolean => {
-        try {
-          const urlObj = new URL(checkUrl);
-          const baseUrlObj = new URL(baseUrl);
-
-          // Check if it matches the baseUrl (NEXTAUTH_URL)
-          if (urlObj.origin === baseUrlObj.origin) {
-            return true;
-          }
-
-          // Allow local development URLs (localhost, 127.0.0.1, and local IPs)
-          const hostname = urlObj.hostname;
-          if (hostname === 'localhost' || hostname === '127.0.0.1') {
-            return true;
-          }
-
-          // Allow private IP ranges (192.168.x.x, 10.x.x.x, 172.16-31.x.x)
-          if (/^(192\.168|10\.|172\.(1[6-9]|2[0-9]|3[01]))\./.test(hostname)) {
-            return true;
-          }
-
-          return false;
-        } catch {
-          return false;
-        }
-      };
-
       // Check if self-service is disabled and redirect accordingly
       try {
         const globalSettings = await prisma.globalSettings.findFirst({
@@ -1106,17 +1079,7 @@ export const authOptions: AuthOptions = {
         logger.error('Error checking global settings in redirect callback:', error);
       }
 
-      // Allows relative callback URLs
-      if (url.startsWith(baseUrl)) return url;
-      // Allows relative callback URLs for NextAuth.js internal redirects
-      if (url.startsWith('/')) return new URL(url, baseUrl).toString();
-
-      // Allow valid URLs (including local development URLs)
-      if (isValidUrl(url)) {
-        return url;
-      }
-
-      return baseUrl; // Fallback to base URL
+      return safeRedirect(url, baseUrl, process.env.AUTH_ALLOW_PRIVATE_REDIRECTS !== 'false');
     }
   },
   events: {
