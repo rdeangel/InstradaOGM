@@ -14,13 +14,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - Security updates to bundled libraries. Updated the web framework, sign-in library, and email library to versions that fix publicly reported security issues. Removed several unused libraries. No configuration changes are needed. Rebuild or pull the new image. If someone was halfway through signing in with an external provider during the upgrade, they may need to click "Sign in" again.
 - API keys now look like `<id>_<secret>` and are checked much faster. Keys created before this version still work, but their first use after each restart is rate-limited per address (HTTP 429 `Legacy API key lookup limited` if exceeded). The account page marks them as legacy. Create a new key, update your scripts, then delete the old one. Limits are kept in memory per app process.
+- Login redirects are origin-checked. A `callbackUrl` that points at another site, a protocol-relative URL (`//evil.com`), or a DNS name that looks like a private IP now lands on `NEXTAUTH_URL`. Redirects to localhost and private IPv4 addresses still work unless you set `AUTH_ALLOW_PRIVATE_REDIRECTS=false`. Redirects to a `10.x` LAN IP now work (they previously fell back to the base URL).
+- `/api/admin/provider-display-names` requires an ADMIN or SUPER_ADMIN session or API key (HTTP 401 anonymous, HTTP 403 other signed-in roles).
+- `/api/health` no longer includes a `version` field. When the database is down it returns HTTP 503 with `error: "database unavailable"` and does not include driver text.
+- Missing, weak, or example `NEXTAUTH_SECRET` and `BACKUP_ENCRYPTION_SECRET_KEY` values log a `SECURITY:` warning at startup and show an alert on the System Summary tab. Example env files use non-working `REPLACE_ME_…` placeholders. Generate real values with `openssl rand -base64 32` and `openssl rand -hex 32`.
 
 ### Fixed
-- Docker/prebuilt seed failed to create first admin (missing helper in standalone layout); entrypoint now fails closed on seed failure.
+- The first admin is created from `INITIAL_ADMIN_PASSWORD`, or a random password printed once in the logs. **The container now exits if database seeding fails** (for example a DB blip at startup, or two replicas seeding an empty DB at once); check the logs and restart. On the next start the seed is skipped because the admin already exists.
 - OPNsense HTTPS no longer turns off certificate checks for the whole process. A self-signed firewall needs `OPNSENSE_CA_CERT` (a PEM or a file path). `SKIP_SSL_VERIFICATION=true` still skips checks for OPNsense only, and only when you set it.
 
 ### Changed
 - Postgres in Docker Compose is no longer reachable on the host port; connect with `docker compose exec`. The Traefik stack no longer publishes the app on port 3000 or a dashboard on port 8080. Traefik is pinned to v3.7.13. The plain stack still publishes the app on port 3000.
+- New local and SSO accounts are never made super-admin automatically. Use the seeded `admin` account (`INITIAL_ADMIN_PASSWORD`, or the generated password printed once in the logs). If the user table is empty, re-run `npm run prisma:seed` or restart the container.
+- `scripts/backup_manager.sh` destination paths expand a leading `~` and `$HOME` only. Other `$VAR` in the destination is no longer expanded. Verbose and dry-run logs no longer print SMTP passwords or API bearer tokens.
+- GitHub Actions workflow steps are pinned to commit SHAs. The Docker runner installs `prisma`/`tsx`/`bcryptjs`/`dotenv` with `npm ci` from `docker/runtime/`.
 
 ## [1.2.3] - 2026-05-19
 
