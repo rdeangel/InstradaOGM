@@ -144,8 +144,6 @@ services:
       POSTGRES_USER: instrada-ogm-user
       POSTGRES_PASSWORD: instrada-ogm-password
       POSTGRES_DB: instrada-ogm
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
@@ -153,16 +151,39 @@ volumes:
   postgres_data:
 ```
 
+The Compose files in this repo do not publish Postgres on the host. The app reaches it as the `db` service on the compose network. For a one-off SQL session:
+
+```bash
+source .env
+docker compose --profile postgres exec db \
+  psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+```
+
+If a tool on **this machine** still needs a host port, create an untracked local `docker-compose.override.yml` (do not commit it):
+
+```yaml
+# docker-compose.override.yml — local machine only, do not commit
+services:
+  db:
+    ports:
+      - "127.0.0.1:5432:5432"
+```
+
 ### PostgreSQL Backup
 ```bash
+source .env
+
 # Backup entire database
-pg_dump -U instrada-ogm-user -h localhost instrada-ogm > backup.sql
+docker compose --profile postgres exec -T db \
+  pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" > backup.sql
 
 # Backup with compression
-pg_dump -U instrada-ogm-user -h localhost -Fc instrada-ogm > backup.dump
+docker compose --profile postgres exec -T db \
+  pg_dump -U "$POSTGRES_USER" -Fc "$POSTGRES_DB" > backup.dump
 
 # Restore from backup
-psql -U instrada-ogm-user -h localhost instrada-ogm < backup.sql
+docker compose --profile postgres exec -T db \
+  psql -U "$POSTGRES_USER" "$POSTGRES_DB" < backup.sql
 ```
 
 ## Environment Variables

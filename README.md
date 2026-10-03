@@ -481,7 +481,8 @@ cd .. && docker-compose -f docker-compose-traefik.yml --profile sqlite up -d
 #### 📚 **Complete Traefik Documentation**
 - **[🌐 Traefik Proxy Settings](docs/CONFIGURATION/TRAEFIK-PROXY-SETTINGS.md)** - Complete setup guide with 150+ DNS providers
 - **[🔧 Traefik Configuration](traefik/)** - Template-based configuration system
-- **[📊 Traefik Dashboard](http://localhost:8080/dashboard/)** - Monitor your reverse proxy (local access only)
+
+The Traefik proxy dashboard is not published.
 
 ### 🔧 **Alternative Reverse Proxies**
 

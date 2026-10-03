@@ -192,7 +192,7 @@ echo ""
 
 # Check ports
 echo "🔌 Checking ports..."
-for port in 80 443 8080; do
+for port in 80 443; do
     if netstat -tuln 2>/dev/null | grep -q ":$port "; then
         echo "  ⚠️  Port $port is already in use"
         ((WARNINGS++))

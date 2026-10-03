@@ -111,7 +111,7 @@ The app only believes `X-Forwarded-For` / `X-Real-IP` from addresses in `TRUSTED
 
 If headers are being ignored, the application log prints the exact `TRUSTED_PROXY_CIDRS` value to use.
 
-When you trust the Docker gateway, publish the app as `127.0.0.1:3000:3000` so only nginx on the host can reach it. Publishing `0.0.0.0:3000` also trusts host-local forwarders (docker-proxy and other processes on the host).
+When you trust the Docker gateway, you can edit the app publish locally to `127.0.0.1:3000:3000` so only nginx on the host can reach it. Publishing `0.0.0.0:3000` also trusts host-local forwarders (docker-proxy and other processes on the host). The `docker-compose.yml` shipped in the repo keeps `3000:3000` so LAN clients can still connect directly.
 
 ### **⚠️ Security Warning: Header Spoofing Attack**
 

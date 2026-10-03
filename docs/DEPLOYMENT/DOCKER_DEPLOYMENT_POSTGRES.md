@@ -326,7 +326,8 @@ docker compose -f docker-compose-traefik.yml --profile postgres logs -f db
 
 ### Step 8: Access the Application
 - **Application:** `https://your-instrada-ogm.com`
-- **Traefik Dashboard:** `http://192.168.1.100:8080/dashboard/` (access from server only, disable in production)
+
+The Traefik dashboard is not published. Existing Traefik checkouts must re-run `cd traefik && ./generate-config.sh` after pulling, or the previous dashboard settings stay in `traefik/runtime/traefik.yml`.
 
 ### Step 9: Initial Setup
 
@@ -384,6 +385,8 @@ docker compose --profile postgres down
 docker compose -f docker-compose-traefik.yml --profile postgres down
 ```
 
+`docker compose down` stops containers and keeps the database volume. Do **not** pass `-v` — that deletes the Postgres data.
+
 ### Update to Latest Version
 ```bash
 # HTTP deployment
@@ -420,6 +423,27 @@ docker compose --profile postgres exec db psql -U instrada-ogm-user -d instrada-
 
 # HTTPS deployment
 docker compose -f docker-compose-traefik.yml --profile postgres exec db psql -U instrada-ogm-user -d instrada-ogm
+```
+
+Postgres is not published on the host. The app talks to the `db` service on the compose network. Host tools (`psql`, pgAdmin, a cron `pg_dump` to `localhost:5432`) will not connect after you recreate the stack.
+
+If a tool on **this machine** still needs a host port, create an untracked local override (do not commit it):
+
+```yaml
+# docker-compose.override.yml — local machine only, do not commit
+services:
+  db:
+    ports:
+      - "127.0.0.1:5432:5432"
+```
+
+Compose merges that file automatically next to `docker-compose.yml`. Other hosts still cannot connect. From another machine, use an SSH tunnel to that loopback port.
+
+```bash
+# Dump from the host via the container (no host port required)
+source .env
+docker compose --profile postgres exec -T db \
+  pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" > backup.sql
 ```
 
 ---
@@ -568,8 +592,8 @@ docker compose --profile postgres up -d
 - [ ] Set `APP_DEBUG_LEVEL=ERROR` or `SILENT`
 - [ ] Set `NODE_ENV=production`
 - [ ] Configure regular database backups
-- [ ] Disable Traefik dashboard or secure it with authentication (port 8080)
-- [ ] Configure firewall rules to restrict database port (5432) access
+- [ ] Traefik dashboard is not published
+- [ ] Postgres is not published on the host; use `docker compose exec` for SQL on the server
 - [ ] Use production SSL certificates (not staging)
 
 ---

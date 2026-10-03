@@ -441,7 +441,9 @@ This checks:
 - ✅ DNS provider credentials are configured
 - ✅ acme.json has correct permissions (600)
 - ✅ Docker is running
-- ✅ Ports 80, 443, 8080 are available
+- ✅ Ports 80 and 443 are available
+
+Existing Traefik checkouts must re-run `cd traefik && ./generate-config.sh` after pulling, or the old dashboard settings stay in `traefik/runtime/traefik.yml`. The dashboard is not published.
 
 ### Step 6: Start Traefik
 

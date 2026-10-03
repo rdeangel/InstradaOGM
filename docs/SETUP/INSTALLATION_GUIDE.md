@@ -537,11 +537,13 @@ sqlite3 data/db/dev.db "SELECT * FROM _prisma_migrations;"
 # Load environment variables
 source .env
 
-# Test connection
-PGPASSWORD=${POSTGRES_PASSWORD} psql -h ${POSTGRES_HOST} -p 5432 -U ${POSTGRES_USER} -d ${POSTGRES_DB} -c "SELECT version();"
+# Test connection (Postgres is not published on the host)
+docker compose --profile postgres exec db \
+  psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT version();"
 
 # Show tables
-PGPASSWORD=${POSTGRES_PASSWORD} psql -h ${POSTGRES_HOST} -p 5432 -U ${POSTGRES_USER} -d ${POSTGRES_DB} -c "\dt"
+docker compose --profile postgres exec db \
+  psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "\dt"
 ```
 
 ---
@@ -618,9 +620,10 @@ docker ps | grep postgres
 # Check PostgreSQL logs
 docker logs instrada-ogm-postgres-db-1
 
-# Verify connection
+# Verify connection (Postgres is not published on the host)
 source .env
-PGPASSWORD=${POSTGRES_PASSWORD} psql -h ${POSTGRES_HOST} -p 5432 -U ${POSTGRES_USER} -d ${POSTGRES_DB} -c "SELECT 1;"
+docker compose --profile postgres exec db \
+  psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT 1;"
 ```
 
 ---

@@ -122,7 +122,7 @@ traefik/
 
 **Key Sections**:
 
-- **Entry Points** - Ports Traefik listens on (80, 443, 8080)
+- **Entry Points** - Ports Traefik listens on (80, 443)
 - **Providers** - Where Traefik gets routing rules (Docker, File)
 - **Certificate Resolvers** - How to get SSL certificates (Let's Encrypt + Cloudflare)
 - **Logging** - Where and what to log
@@ -552,10 +552,9 @@ docker compose -f docker-compose-traefik.yml restart traefik
 
 # View logs
 docker compose -f docker-compose-traefik.yml logs -f traefik
-
-# View dashboard
-open http://localhost:8080/dashboard/
 ```
+
+The proxy dashboard is not published. After pulling these changes, existing Traefik checkouts must re-run `cd traefik && ./generate-config.sh` so `traefik/runtime/traefik.yml` picks up the template (dashboard off, no port 8080 entry point).
 
 ## Section Navigation
 
