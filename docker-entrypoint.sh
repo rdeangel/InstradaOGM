@@ -151,8 +151,8 @@ run_seeding() {
     echo "Database seeding completed"
     return 0
   else
-    echo "Database seeding failed (this may be normal if data already exists)"
-    return 0  # Don't fail the startup if seeding fails
+    echo "Database seeding FAILED - refusing to start (no admin/GlobalSettings guarantee)"
+    return 1
   fi
 }
 
@@ -182,7 +182,9 @@ if ! generate_client; then
 fi
 
 # Run seeding
-run_seeding
+if ! run_seeding; then
+  exit 1
+fi
 
 echo "Database setup completed successfully"
 echo "Starting Next.js application..."
