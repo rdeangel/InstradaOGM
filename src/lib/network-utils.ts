@@ -1,4 +1,3 @@
-// Removed unused import IPCIDR
 /* eslint-disable security/detect-object-injection */
 // This file uses bracket notation with array indices from IP address parsing. All uses are safe.
 import * as ipaddr from 'ipaddr.js';
