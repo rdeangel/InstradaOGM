@@ -27,7 +27,7 @@
 #
 # ACCESS:
 #   Application: https://${DOMAIN}
-#   Dashboard:   http://localhost:8080/dashboard/
+#   The proxy dashboard is not published.
 #
 # NOTE: The DOMAIN variable must be set in BOTH:
 #   - .env (for docker-compose to use in Traefik labels)
@@ -40,7 +40,8 @@ services:
   # Traefik Reverse Proxy
   # ==========================================================================
   traefik:
-    image: traefik:latest
+    # Pinned Traefik v3.7.13 (manifest-list digest). Dashboard is not published.
+    image: traefik:v3.7.13@sha256:24841fe2de7304c149343d877d2923b4c8800a38ba015dea9174c23b20e344a0
     container_name: traefik
     restart: unless-stopped
     security_opt:
@@ -50,7 +51,6 @@ services:
     ports:
       - "80:80"
       - "443:443"
-      - "8080:8080" # Dashboard (optional, remove for production)
     command:
       - "--configFile=/traefik/traefik.yml"
     env_file:
@@ -83,8 +83,7 @@ services:
         - DATABASE_URL=file:/app/data/db/${SQLITE_DB_NAME:-instrada-ogm.db}
         - APP_DEBUG_LEVEL=${APP_DEBUG_LEVEL}
     restart: unless-stopped
-    ports:
-      - "3000:3000"
+    # App listens on 3000 on the compose network; Traefik uses the loadbalancer label. Not published on the host.
     networks:
       - instradaogm_app_network
     env_file:
@@ -148,8 +147,7 @@ services:
         - DATABASE_URL=postgresql://user:password@localhost:5432/instrada-ogm_build?schema=public
         - APP_DEBUG_LEVEL=${APP_DEBUG_LEVEL}
     restart: unless-stopped
-    ports:
-      - "3000:3000"
+    # App listens on 3000 on the compose network; Traefik uses the loadbalancer label. Not published on the host.
     networks:
       - instradaogm_app_network
     env_file:

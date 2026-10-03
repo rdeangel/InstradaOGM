@@ -15,9 +15,8 @@ global:
 # API & Dashboard Configuration
 # =============================================================================
 api:
-  # Enable the Traefik dashboard (accessible at http://localhost:8080/dashboard/)
-  dashboard: true
-  insecure: true
+  dashboard: false
+  insecure: false
   debug: false
 
 # =============================================================================
@@ -38,10 +37,6 @@ entryPoints:
       tls:
         certResolver: letsencrypt
         options: default
-
-  # Traefik dashboard (internal only)
-  traefik:
-    address: ":8080"
 
 # =============================================================================
 # Providers Configuration
