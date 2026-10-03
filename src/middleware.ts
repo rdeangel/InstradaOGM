@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { getToken } from 'next-auth/jwt';
+import { csrfAllowed } from '@/lib/csrf';
 import { logger } from '@/lib/logger';
 
 const secret = process.env.NEXTAUTH_SECRET;
@@ -76,6 +77,53 @@ export async function middleware(req: NextRequest) {
     }
 
     return NextResponse.redirect(httpsUrl, { status: 307 });
+  }
+
+  if (process.env.CSRF_PROTECTION !== 'false') {
+    const method = req.method;
+    const secFetchSite = req.headers.get('sec-fetch-site');
+    const origin = req.headers.get('origin');
+    const host = req.headers.get('host');
+    const forwardedHost = req.headers.get('x-forwarded-host');
+    const hasSessionCookie = req.cookies
+      .getAll()
+      .some((c) => c.name.includes('next-auth.session-token'));
+    const hasApiKeyHeader = Boolean(req.headers.get('authorization') || req.headers.get('x-api-key'));
+
+    if (
+      !csrfAllowed({
+        method,
+        pathname,
+        hasSessionCookie,
+        hasApiKeyHeader,
+        secFetchSite,
+        origin,
+        host,
+        forwardedHost,
+        nextauthUrl: process.env.NEXTAUTH_URL,
+      })
+    ) {
+      let originHost: string | null = null;
+      if (origin) {
+        try {
+          originHost = new URL(origin).host;
+        } catch {
+          originHost = 'invalid';
+        }
+      }
+      logger.warn('[CSRF] blocked', {
+        pathname,
+        method,
+        secFetchSite,
+        originHost,
+        host,
+        forwardedHost,
+      });
+      return NextResponse.json(
+        { success: false, message: 'Cross-site request blocked' },
+        { status: 403 }
+      );
+    }
   }
 
   // Configure getToken to work with proxy setup
