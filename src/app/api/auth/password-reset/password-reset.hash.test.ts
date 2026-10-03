@@ -32,6 +32,7 @@ vi.mock('bcryptjs', () => ({
 
 import { POST as requestReset } from '@/app/api/auth/password-reset/request/route';
 import { POST as confirmReset } from '@/app/api/auth/password-reset/confirm/route';
+import { resetAuthThrottleForTests } from '@/lib/auth-throttle';
 
 function jsonRequest(url: string, body: unknown): Request {
   return new Request(url, {
@@ -68,6 +69,7 @@ describe('password-reset-tokens helpers', () => {
 describe('POST /api/auth/password-reset/request', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetAuthThrottleForTests();
     process.env.NEXTAUTH_URL = 'http://localhost';
     prismaMock.user.findUnique.mockResolvedValue({
       id: 'user-a',

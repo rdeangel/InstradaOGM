@@ -4,6 +4,8 @@ import { logger } from '@/lib/logger';
 import { prisma } from '@/lib/prisma';
 import { sendPasswordResetEmail } from '@/lib/email'; // Assuming an email utility exists
 import { generatePasswordResetToken, generatePasswordResetExpiry } from '@/lib/password-reset-tokens';
+import { noteResetRequest } from '@/lib/auth-throttle';
+import { getClientIp } from '@/lib/network-utils';
 
 export async function POST(request: Request) {
   try {
@@ -13,6 +15,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Email is required' }, { status: 400 });
     }
 
+    // Always return the same generic message for security (prevents user enumeration)
+    const genericMessage = 'If an account with that email exists, a password reset link has been sent.';
+
+    const ip = getClientIp(request);
+    const decision = noteResetRequest(email, ip);
+    if (decision.limited) {
+      logger.warn('Password reset request throttled');
+      return NextResponse.json(
+        { message: genericMessage, retryAfterSeconds: decision.retryAfterSeconds },
+        { status: 429, headers: { 'Retry-After': String(decision.retryAfterSeconds) } },
+      );
+    }
+
     // Find user with their accounts to determine if they're SSO or local
     const user = await prisma.user.findUnique({
       where: { email },
@@ -20,9 +35,6 @@ export async function POST(request: Request) {
         accounts: true,
       },
     });
-
-    // Always return the same generic message for security (prevents user enumeration)
-    const genericMessage = 'If an account with that email exists, a password reset link has been sent.';
 
     if (!user) {
       // For security, don't reveal if the email doesn't exist
