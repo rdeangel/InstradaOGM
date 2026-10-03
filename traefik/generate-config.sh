@@ -131,7 +131,7 @@ fi
 
 # Set default values for optional variables
 LOG_LEVEL="${LOG_LEVEL:-INFO}"
-TRUSTED_IP_RANGE="${TRUSTED_IP_RANGE:-192.168.0.0/16}"
+TRUSTED_IP_RANGE="${TRUSTED_IP_RANGE:-127.0.0.1/32}"
 
 echo ""
 echo "📋 Configuration Summary"

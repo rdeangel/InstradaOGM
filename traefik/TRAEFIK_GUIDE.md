@@ -213,8 +213,8 @@ DOCKER_NETWORK=instradaogm_app_network
 # Container name
 CONTAINER_NAME=instrada-ogm
 
-# Trusted IP range for forwarded headers
-TRUSTED_IP_RANGE=192.168.0.0/16
+# Only list real proxies in front of Traefik (e.g. Cloudflare). Never your LAN.
+TRUSTED_IP_RANGE=127.0.0.1/32
 
 # Log level
 LOG_LEVEL=INFO
@@ -458,7 +458,7 @@ field not found, node: <field_name>
 
 1. **Check trusted IPs** in `runtime/.env.traefik`:
    ```bash
-   TRUSTED_IP_RANGE=192.168.0.0/16
+   TRUSTED_IP_RANGE=127.0.0.1/32
    ```
 
 2. **Verify headers** in application logs:
@@ -473,7 +473,7 @@ field not found, node: <field_name>
      websecure:
        forwardedHeaders:
          trustedIPs:
-           - "192.168.0.0/16"
+           - "127.0.0.1/32"
    ```
 
 ---

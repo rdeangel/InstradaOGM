@@ -737,7 +737,7 @@ entryPoints:
     address: ":443"
     forwardedHeaders:
       trustedIPs:
-        - "192.168.0.0/16"  # Your trusted network range
+        - "127.0.0.1/32"  # Only proxies in front of Traefik, never the LAN
 ```
 
 **Headers automatically added by Traefik:**
@@ -755,11 +755,11 @@ entryPoints:
 
 **Configure in `runtime/.env.traefik`:**
 ```bash
-# Only trust headers from your internal network
-TRUSTED_IP_RANGE=192.168.0.0/16
+# Only list real proxies in front of Traefik (e.g. Cloudflare). Never your LAN.
+TRUSTED_IP_RANGE=127.0.0.1/32
 ```
 
-This prevents external users from sending fake `X-Real-IP` headers to bypass access controls.
+`trustedIPs` must list only proxies in front of Traefik. Do not list your LAN. Traefik is the edge in the bundled compose file, so the default trusts no real upstream. This prevents clients from sending fake `X-Real-IP` / `X-Forwarded-For` headers to bypass access controls.
 
 ### Header Reference
 
