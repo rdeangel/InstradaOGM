@@ -5,7 +5,12 @@ function isRepeatedChar(value: string): boolean {
   return value.length > 0 && [...value].every((ch) => ch === value[0]);
 }
 
-export function placeholderSecretWarnings(env: NodeJS.ProcessEnv = process.env): string[] {
+type SecretEnv = {
+  NEXTAUTH_SECRET?: string;
+  BACKUP_ENCRYPTION_SECRET_KEY?: string;
+};
+
+export function placeholderSecretWarnings(env: SecretEnv = process.env): string[] {
   const warnings: string[] = [];
   const auth = env.NEXTAUTH_SECRET;
   if (!auth || auth.length < 32 || PLACEHOLDER_TEXT.test(auth) || auth === KNOWN_WEAK_HEX) {
