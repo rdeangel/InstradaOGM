@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { resolveInitialAdminPassword, shouldCreateSeedAdmin } from './initial-admin';
 
@@ -28,5 +30,16 @@ describe('resolveInitialAdminPassword', () => {
     const { password, generated } = resolveInitialAdminPassword(undefined, () => 'not-admin');
     expect(generated).toBe(true);
     expect(password).not.toBe('admin');
+  });
+});
+
+describe('prisma/seed.ts import guard', () => {
+  it('does not import via parent-directory specifiers', () => {
+    const seed = readFileSync(join(__dirname, 'seed.ts'), 'utf8');
+    const importSpecs = [...seed.matchAll(/from\s+['"]([^'"]+)['"]/g)].map((m) => m[1]);
+    expect(importSpecs.length).toBeGreaterThan(0);
+    for (const spec of importSpecs) {
+      expect(spec.startsWith('../')).toBe(false);
+    }
   });
 });

@@ -54,7 +54,7 @@ RUN npm install -g npm@11 && npm ci && rm -rf /root/.npm
 
 # Copy source code
 # Note: This will copy all prisma files (schema.*.prisma, migrations-*/, etc.) to the builder stage,
-# but only the correct schema.prisma, migrations/, and seed.ts will be copied to the final runtime image
+# but only the correct schema.prisma, migrations/, seed.ts, and initial-admin.ts will be copied to the final runtime image
 COPY . .
 
 # Build Next.js (standalone mode configured in next.config.ts)
@@ -135,6 +135,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/prisma/schema.prisma ./prisma/schema.prisma
 COPY --from=builder --chown=nextjs:nodejs /app/prisma/migrations ./prisma/migrations
 COPY --from=builder --chown=nextjs:nodejs /app/prisma/seed.ts ./prisma/seed.ts
+COPY --from=builder --chown=nextjs:nodejs /app/prisma/initial-admin.ts ./prisma/initial-admin.ts
 
 # Copy ONLY the generated Prisma client (.prisma folder) and @prisma/client
 # @prisma/client is needed for 'prisma generate' to work at runtime

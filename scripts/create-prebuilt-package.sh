@@ -98,6 +98,7 @@ mkdir -p "${PACKAGE_DIR}/prisma"
 cp prisma/schema.prisma "${PACKAGE_DIR}/prisma/schema.prisma"
 cp -r prisma/migrations "${PACKAGE_DIR}/prisma/migrations"
 cp prisma/seed.ts "${PACKAGE_DIR}/prisma/"
+cp prisma/initial-admin.ts "${PACKAGE_DIR}/prisma/"
 
 # Copy scripts
 echo -e "${YELLOW}Copying scripts...${NC}"

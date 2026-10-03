@@ -4,7 +4,7 @@ import * as bcrypt from 'bcryptjs';
 import * as dotenv from 'dotenv';
 import * as fs from 'fs';
 import * as path from 'path';
-import { resolveInitialAdminPassword, shouldCreateSeedAdmin } from '../src/lib/server/initial-admin';
+import { resolveInitialAdminPassword, shouldCreateSeedAdmin } from './initial-admin';
 
 // Load environment variables manually since this script is run directly via tsx/node
 const envFiles = ['.env.production', '.env.development', '.env'];
