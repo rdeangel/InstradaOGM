@@ -105,16 +105,49 @@ describe('OPNsense TLS', () => {
     const call = opnsenseHttpsRequest(`https://127.0.0.1:${slow.port}/api/firewall/alias/export`, { method: 'GET' });
     const foreign = new Promise((resolve, reject) => {
       const req = https.get(
-        { hostname: '127.0.0.1', port: outsider.port, rejectUnauthorized: true, ca: fs.readFileSync(pinned.cert) },
+        { hostname: '127.0.0.1', port: outsider.port },
         () => resolve('accepted'),
       );
       req.on('error', reject);
     });
-    await expect(foreign).rejects.toThrow();
+    await expect(foreign).rejects.toSatisfy((err: NodeJS.ErrnoException) => {
+      return err.code === 'DEPTH_ZERO_SELF_SIGNED_CERT' || /self.signed/i.test(String(err.message));
+    });
+    await expect(fetch(`https://127.0.0.1:${outsider.port}`)).rejects.toThrow();
     await expect(call).resolves.toMatchObject({ ok: true });
     expect(process.env.NODE_TLS_REJECT_UNAUTHORIZED).toBeUndefined();
     slow.server.close();
     outsider.server.close();
+  });
+
+  it('times out a hung request', async () => {
+    process.env.OPNSENSE_CA_CERT = pinned.cert;
+    const hung = https.createServer(
+      { key: fs.readFileSync(pinned.key), cert: fs.readFileSync(pinned.cert) },
+      () => {
+        // Accept the TLS connection and never write a response.
+      },
+    );
+    const started = await new Promise<{ server: Server; port: number }>((resolve) => {
+      hung.listen(0, '127.0.0.1', () => {
+        const addr = hung.address();
+        if (addr === null || typeof addr === 'string') throw new Error('no port');
+        resolve({ server: hung, port: addr.port });
+      });
+    });
+    try {
+      await expect(
+        opnsenseHttpsRequest(`https://127.0.0.1:${started.port}/api/firewall/alias/export`, {
+          method: 'GET',
+          timeoutMs: 200,
+        }),
+      ).rejects.toThrow(/timed out/i);
+    } finally {
+      if (typeof started.server.closeAllConnections === 'function') {
+        started.server.closeAllConnections();
+      }
+      started.server.close();
+    }
   });
 
   it('refuses to run when skip and a CA pin are both set', async () => {

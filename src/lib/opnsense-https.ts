@@ -11,10 +11,13 @@ export type OpnsenseHttpResponse = {
   json(): Promise<unknown>;
 };
 
+export const OPNSENSE_REQUEST_TIMEOUT_MS = 300_000;
+
 export type OpnsenseHttpsRequestInit = {
   method?: string;
   headers?: Record<string, string>;
   body?: string;
+  timeoutMs?: number;
 };
 
 function rejectTlsError(error: unknown, reject: (reason: Error) => void): void {
@@ -95,6 +98,9 @@ export function opnsenseHttpsRequest(
       },
     );
 
+    req.setTimeout(init.timeoutMs ?? OPNSENSE_REQUEST_TIMEOUT_MS, () => {
+      req.destroy(new Error('OPNsense request timed out'));
+    });
     req.on('error', (err) => rejectTlsError(err, reject));
     if (body !== undefined) {
       req.write(body);
