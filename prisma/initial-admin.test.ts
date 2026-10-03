@@ -41,5 +41,6 @@ describe('prisma/seed.ts import guard', () => {
     for (const spec of importSpecs) {
       expect(spec.startsWith('../')).toBe(false);
     }
+    expect(seed).not.toMatch(/['"](\.\.\/|@\/|src\/)/);
   });
 });
