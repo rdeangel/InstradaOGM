@@ -70,13 +70,9 @@ export async function middleware(req: NextRequest) {
     const httpsUrl = new URL(req.url);
     httpsUrl.protocol = 'https:';
 
-    // If the request has X-Forwarded-For header (from Docker), use the original host
-    // Otherwise, use the host from the request
-    const xForwardedFor = req.headers.get('x-forwarded-for');
-    if (xForwardedFor) {
-      // Extract the first IP from X-Forwarded-For (the original client IP)
-      const originalIp = xForwardedFor.split(',')[0].trim();
-      httpsUrl.hostname = originalIp;
+    const host = req.headers.get('host');
+    if (host) {
+      try { httpsUrl.host = new URL(`https://${host}`).host; } catch { /* keep req.url host */ }
     }
 
     return NextResponse.redirect(httpsUrl, { status: 307 });
