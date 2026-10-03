@@ -9,6 +9,21 @@ import {
   passwordChangeCookieOptions,
   signPasswordChangeToken,
 } from '@/lib/server/password-change-token';
+import {
+  assertCredentialAllowed,
+  clearCredentialFailures,
+  noteCredentialFailure,
+} from '@/lib/auth-throttle';
+import { getClientIp } from '@/lib/network-utils';
+
+const THROTTLED_MESSAGE = 'Too many attempts. Try again later.';
+
+function throttledResponse(retryAfterSeconds: number): NextResponse {
+  return NextResponse.json(
+    { message: THROTTLED_MESSAGE, retryAfterSeconds },
+    { status: 429, headers: { 'Retry-After': String(retryAfterSeconds) } },
+  );
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -20,6 +35,12 @@ export async function POST(request: NextRequest) {
         { error: 'Email and password are required' },
         { status: 400 }
       );
+    }
+
+    const ip = getClientIp(request);
+    const allowed = assertCredentialAllowed(email, ip);
+    if (allowed.limited) {
+      return throttledResponse(allowed.retryAfterSeconds);
     }
 
     // Find user by email or username
@@ -40,6 +61,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (!user || !user.password) {
+      noteCredentialFailure(email, ip, 'password-check');
       return NextResponse.json(
         { mustChangePassword: false },
         { status: 200 }
@@ -50,11 +72,14 @@ export async function POST(request: NextRequest) {
     const isPasswordValid = await bcrypt.compare(password, user.password);
 
     if (!isPasswordValid) {
+      noteCredentialFailure(email, ip, 'password-check');
       return NextResponse.json(
         { mustChangePassword: false },
         { status: 200 }
       );
     }
+
+    clearCredentialFailures(email);
 
     const response = NextResponse.json(
       {

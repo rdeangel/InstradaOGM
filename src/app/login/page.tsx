@@ -249,6 +249,15 @@ export default function LoginPage() {
       // Handle specific errors from the authorize callback
       logger.debug('Login error result:', { error: result.error, status: result.status, url: result.url });
 
+      if (result.error === 'TOO_MANY_ATTEMPTS') {
+        toast({
+          variant: 'destructive',
+          title: 'Too many attempts',
+          description: 'Try again in 15 minutes.',
+        });
+        return;
+      }
+
       // Check if password change is required when login fails
       if (result.error === 'CredentialsSignin') {
         try {
@@ -257,6 +266,20 @@ export default function LoginPage() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email, password }),
           });
+
+          if (checkResponse.status === 429) {
+            const data = await checkResponse.json().catch(() => ({}));
+            const retryAfterSeconds = typeof data.retryAfterSeconds === 'number'
+              ? data.retryAfterSeconds
+              : 900;
+            const minutes = Math.max(1, Math.ceil(retryAfterSeconds / 60));
+            toast({
+              variant: 'destructive',
+              title: 'Too many attempts',
+              description: `Try again in ${minutes} minutes.`,
+            });
+            return;
+          }
 
           if (checkResponse.ok) {
             const data = await checkResponse.json();
