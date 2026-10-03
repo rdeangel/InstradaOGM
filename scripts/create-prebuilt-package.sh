@@ -103,6 +103,14 @@ cp prisma/seed.ts "${PACKAGE_DIR}/prisma/"
 echo -e "${YELLOW}Copying scripts...${NC}"
 cp -r scripts "${PACKAGE_DIR}/"
 
+# Client-IP guard (preload; not part of the Next standalone bundle)
+echo -e "${YELLOW}Copying xff-guard.cjs...${NC}"
+if [[ ! -f "xff-guard.cjs" ]]; then
+    echo -e "${RED}Error: xff-guard.cjs not found at repo root${NC}"
+    exit 1
+fi
+cp xff-guard.cjs "${PACKAGE_DIR}/"
+
 # Copy MAC vendor database
 echo -e "${YELLOW}Copying MAC vendor database...${NC}"
 mkdir -p "${PACKAGE_DIR}/data/mac-db"
@@ -119,7 +127,7 @@ const pkg = JSON.parse(fs.readFileSync('${PACKAGE_DIR}/package.json', 'utf8'));
 
 // Add our custom scripts
 pkg.scripts = {
-  start: 'node server.js',
+  start: 'node -r ./xff-guard.cjs server.js',
   'setup-dirs': 'node scripts/setup-dirs.js',
   'db:init': './scripts/init-db.sh',
   'db:migrate': 'prisma migrate deploy',

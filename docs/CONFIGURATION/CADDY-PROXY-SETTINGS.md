@@ -110,6 +110,8 @@ The app only believes those headers from addresses in `TRUSTED_PROXY_CIDRS`. Uns
 
 If headers are being ignored, the application log prints the exact `TRUSTED_PROXY_CIDRS` value to use.
 
+When you trust the Docker gateway, publish the app as `127.0.0.1:3000:3000` so only Caddy on the host can reach it. Publishing `0.0.0.0:3000` also trusts host-local forwarders (docker-proxy and other processes on the host).
+
 ## No-Cache Configuration
 
 **Critical endpoints must not be cached:**

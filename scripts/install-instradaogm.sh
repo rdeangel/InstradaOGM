@@ -1020,6 +1020,10 @@ create_systemd_service() {
     fi
     
     echo "Using node at: $node_path" >> "$LOG_FILE"
+
+    if [[ ! -f "${INSTALL_DIR}/xff-guard.cjs" ]]; then
+        msg_error "xff-guard.cjs not found in ${INSTALL_DIR}. Production start requires the client-IP guard."
+    fi
     
     cat > "$service_file" << EOF
 [Unit]
@@ -1030,7 +1034,7 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=${INSTALL_DIR}
-ExecStart=${node_path} server.js
+ExecStart=${node_path} -r ${INSTALL_DIR}/xff-guard.cjs server.js
 Restart=always
 RestartSec=10
 Environment=NODE_ENV=production
