@@ -117,7 +117,7 @@ RUN addgroup -g ${NODE_GID} -S nodejs && \
 # Install minimal runtime dependencies as root to avoid ARM64 QEMU issues
 # Then chown to nextjs user for proper ownership
 RUN npm install --omit=dev \
-    prisma@6.18.0 \
+    prisma@6.19.3 \
     tsx@4.16.2 \
     bcryptjs@3.0.3 \
     dotenv@17.4.2 && \
