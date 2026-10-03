@@ -296,6 +296,7 @@ function sanitize(req, options) {
   if (!trustedPeer) {
     headers['x-forwarded-for'] = peer;
     delete headers['x-real-ip'];
+    delete headers['x-forwarded-host'];
     headers['x-ogm-client-ip'] = peer;
     if (hadProxyHeaders && isPrivateIp(peer)) {
       warnUntrustedPeer(peer, log);

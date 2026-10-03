@@ -287,6 +287,26 @@ describe('resolveClientIp + sanitize matrix', () => {
     guard.sanitize(trustedReq, { isTrusted: trusted, log });
     expect(trustedReq.headers['x-ogm-client-ip']).toBe('10.0.0.9');
   });
+
+  it('16. untrusted peer drops X-Forwarded-Host and keeps X-Forwarded-Proto', () => {
+    const req = fakeReq('192.168.1.50', {
+      'x-forwarded-host': 'evil',
+      'x-forwarded-proto': 'https',
+    });
+    guard.sanitize(req, { isTrusted: trusted, log });
+    expect(req.headers['x-forwarded-host']).toBeUndefined();
+    expect(req.headers['x-forwarded-proto']).toBe('https');
+  });
+
+  it('17. trusted peer keeps X-Forwarded-Host', () => {
+    const req = fakeReq('172.18.0.5', {
+      'x-forwarded-host': 'app.example.com',
+      'x-forwarded-proto': 'https',
+    });
+    guard.sanitize(req, { isTrusted: trusted, log });
+    expect(req.headers['x-forwarded-host']).toBe('app.example.com');
+    expect(req.headers['x-forwarded-proto']).toBe('https');
+  });
 });
 
 describe('http.Server hook integration', () => {
