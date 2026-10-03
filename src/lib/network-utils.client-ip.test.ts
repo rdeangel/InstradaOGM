@@ -17,7 +17,6 @@ function fakeRequest(headers: Record<string, string | null>) {
 }
 
 describe('getClientIp', () => {
-  const origEnv = process.env.NODE_ENV;
   const origFlag = (globalThis as { __ogmXffGuard?: boolean }).__ogmXffGuard;
 
   beforeEach(() => {
@@ -26,7 +25,7 @@ describe('getClientIp', () => {
   });
 
   afterEach(() => {
-    process.env.NODE_ENV = origEnv;
+    vi.unstubAllEnvs();
     if (origFlag) {
       (globalThis as { __ogmXffGuard?: boolean }).__ogmXffGuard = origFlag;
     } else {
@@ -53,7 +52,7 @@ describe('getClientIp', () => {
   });
 
   it('fails closed in production when the guard is missing and logs once', async () => {
-    process.env.NODE_ENV = 'production';
+    vi.stubEnv('NODE_ENV', 'production');
     vi.resetModules();
     const { getClientIp: freshGet } = await import('./network-utils');
     const { logger: freshLogger } = await import('./logger');
@@ -61,18 +60,18 @@ describe('getClientIp', () => {
     expect(freshGet(fakeRequest({ 'x-forwarded-for': '10.0.0.9' }))).toBeNull();
     expect(freshGet(fakeRequest({ 'x-forwarded-for': '10.0.0.9' }))).toBeNull();
     expect(freshLogger.error).toHaveBeenCalledTimes(1);
-    expect(String(freshLogger.error.mock.calls[0][0])).toContain('xff-guard is not loaded');
+    expect(String(vi.mocked(freshLogger.error).mock.calls[0][0])).toContain('xff-guard is not loaded');
   });
 
   it('falls back to rightmost XFF in test env when the guard is missing', () => {
-    process.env.NODE_ENV = 'test';
+    vi.stubEnv('NODE_ENV', 'test');
     expect(
       getClientIp(fakeRequest({ 'x-forwarded-for': '1.1.1.1, 10.0.0.9' }))
     ).toBe('10.0.0.9');
   });
 
   it('falls back to X-Real-IP in test env when XFF is absent', () => {
-    process.env.NODE_ENV = 'test';
+    vi.stubEnv('NODE_ENV', 'test');
     expect(getClientIp(fakeRequest({ 'x-real-ip': '::ffff:10.0.0.9' }))).toBe('10.0.0.9');
   });
 });

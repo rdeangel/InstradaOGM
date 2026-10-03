@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports, security/detect-object-injection -- CommonJS preload; stdlib only */
 'use strict';
 
 // ponytail: http only. Next prod/standalone uses http.createServer; next dev --experimental-https is not covered, add https.Server if anyone needs it.
