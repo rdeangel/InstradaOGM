@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Security
+- Security updates to bundled libraries. Updated the web framework, sign-in library, and email library to versions that fix publicly reported security issues. Removed several unused libraries. No configuration changes are needed. Rebuild or pull the new image. If someone was halfway through signing in with an external provider during the upgrade, they may need to click "Sign in" again.
 - API keys now look like `<id>_<secret>` and are checked much faster. Keys created before this version still work, but their first use after each restart is rate-limited per address (HTTP 429 `Legacy API key lookup limited` if exceeded). The account page marks them as legacy. Create a new key, update your scripts, then delete the old one. Limits are kept in memory per app process.
 
 ### Fixed
