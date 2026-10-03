@@ -162,6 +162,8 @@ services:
       - ./data/db/:/app/data/db
       - ./data/backups:/app/data/backups
 
+  # Postgres is only on the compose network, not the host.
+  # docker compose --profile postgres exec db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"
   db:
     image: postgres:16-alpine
     container_name: instrada-ogm-postgres-db
@@ -173,8 +175,6 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
     networks:
       - instradaogm_app_network
     healthcheck:
