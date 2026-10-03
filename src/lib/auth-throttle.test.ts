@@ -49,6 +49,29 @@ describe('credential throttle', () => {
     expect(noteCredentialFailure('ada', '10.0.0.2', 'authorize', T0 + 10_000).limited).toBe(true);
   });
 
+  it('counts each rapid authorize/password-check pair once and locks on the sixth', () => {
+    process.env.AUTH_LOGIN_MAX_FAILURES = '5';
+    for (let i = 0; i < 12; i++) {
+      const t = T0 + i * 300;
+      const auth = noteCredentialFailure('ada', '10.0.0.2', 'authorize', t);
+      noteCredentialFailure('ada', '10.0.0.2', 'password-check', t + 50);
+      if (i < 5) {
+        expect(auth.limited).toBe(false);
+      } else {
+        expect(auth.limited).toBe(true);
+      }
+    }
+    expect(assertCredentialAllowed('ada', '10.0.0.2', T0 + 12 * 300).limited).toBe(true);
+  });
+
+  it('counts a second password-check after a coalesced pair', () => {
+    process.env.AUTH_LOGIN_MAX_FAILURES = '2';
+    expect(noteCredentialFailure('ada', '10.0.0.2', 'authorize', T0).limited).toBe(false);
+    expect(noteCredentialFailure('ada', '10.0.0.2', 'password-check', T0 + 50).limited).toBe(false);
+    expect(noteCredentialFailure('ada', '10.0.0.2', 'password-check', T0 + 100).limited).toBe(false);
+    expect(noteCredentialFailure('ada', '10.0.0.2', 'authorize', T0 + 150).limited).toBe(true);
+  });
+
   it('counts two authorize calls inside 2s separately', () => {
     process.env.AUTH_LOGIN_MAX_FAILURES = '2';
     expect(noteCredentialFailure('ada', '10.0.0.2', 'authorize', T0).limited).toBe(false);
@@ -111,5 +134,16 @@ describe('reset throttle', () => {
     noteResetRequest('b@example.com', '10.0.0.9', T0 + 1000);
     expect(noteResetRequest('c@example.com', '10.0.0.9', T0 + 2000).limited).toBe(true);
     expect(noteResetRequest('c@example.com', null, T0 + 3000).limited).toBe(false);
+  });
+
+  it('does not advance the email counter when the ip is already limited', () => {
+    process.env.AUTH_RESET_EMAIL_MAX = '3';
+    process.env.AUTH_RESET_IP_MAX = '1';
+    expect(noteResetRequest('a@example.com', '10.0.0.1', T0).limited).toBe(false);
+    expect(noteResetRequest('a@example.com', '10.0.0.1', T0 + 1000).limited).toBe(true);
+    expect(noteResetRequest('a@example.com', '10.0.0.1', T0 + 2000).limited).toBe(true);
+    expect(noteResetRequest('a@example.com', '10.0.0.2', T0 + 3000).limited).toBe(false);
+    expect(noteResetRequest('a@example.com', '10.0.0.3', T0 + 4000).limited).toBe(false);
+    expect(noteResetRequest('a@example.com', '10.0.0.4', T0 + 5000).limited).toBe(true);
   });
 });

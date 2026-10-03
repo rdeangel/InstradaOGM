@@ -311,8 +311,9 @@ export function noteCredentialFailure(
   const resolvedIp = usableIp(ip);
   const slotKey = pairKey(identifier, resolvedIp);
   const slot = pairSlots.get(slotKey);
+  // Consume the pair. Refreshing lastAt here chained opposite sources forever.
   if (slot && slot.lastSource !== source && now - slot.lastAt < COALESCE_MS) {
-    pairSlots.set(slotKey, { lastSource: source, lastAt: now });
+    pairSlots.delete(slotKey);
     return NOT_LIMITED;
   }
 
@@ -349,7 +350,7 @@ export function clearCredentialFailures(identifier: string): void {
   }
 }
 
-function incrementWindowBucket(
+function windowBucketLimited(
   map: Map<string, WindowBucket>,
   key: string,
   max: number,
@@ -358,15 +359,30 @@ function incrementWindowBucket(
 ): ThrottleResult {
   const existing = map.get(key);
   if (!existing || windowElapsed(existing.windowStartedAt, windowSec, now)) {
-    map.set(key, { failures: 1, windowStartedAt: now });
     return NOT_LIMITED;
   }
   if (existing.failures >= max) {
     const until = existing.windowStartedAt + windowSec * 1000;
     return { limited: true, retryAfterSeconds: retryAfterSeconds(until, now) };
   }
-  existing.failures += 1;
   return NOT_LIMITED;
+}
+
+function incrementWindowBucket(
+  map: Map<string, WindowBucket>,
+  key: string,
+  max: number,
+  windowSec: number,
+  now: number,
+): void {
+  const existing = map.get(key);
+  if (!existing || windowElapsed(existing.windowStartedAt, windowSec, now)) {
+    map.set(key, { failures: 1, windowStartedAt: now });
+    return;
+  }
+  if (existing.failures < max) {
+    existing.failures += 1;
+  }
 }
 
 export function noteResetRequest(
@@ -378,17 +394,37 @@ export function noteResetRequest(
 
   pruneReset(now);
 
-  const emailResult = incrementWindowBucket(
+  const emailKey = `email:${normalizeIdentifier(email)}`;
+  const emailPeek = windowBucketLimited(
     resetEmailBuckets,
-    `email:${normalizeIdentifier(email)}`,
+    emailKey,
     resetEmailMax(),
     resetEmailWindowSec(),
     now,
   );
+  if (emailPeek.limited) return emailPeek;
+
   const resolvedIp = usableIp(ip);
-  let ipResult = NOT_LIMITED;
   if (resolvedIp) {
-    ipResult = incrementWindowBucket(
+    const ipPeek = windowBucketLimited(
+      resetIpBuckets,
+      ipKey(resolvedIp),
+      resetIpMax(),
+      resetIpWindowSec(),
+      now,
+    );
+    if (ipPeek.limited) return ipPeek;
+  }
+
+  incrementWindowBucket(
+    resetEmailBuckets,
+    emailKey,
+    resetEmailMax(),
+    resetEmailWindowSec(),
+    now,
+  );
+  if (resolvedIp) {
+    incrementWindowBucket(
       resetIpBuckets,
       ipKey(resolvedIp),
       resetIpMax(),
@@ -398,8 +434,6 @@ export function noteResetRequest(
   }
   capMap(resetEmailBuckets);
   capMap(resetIpBuckets);
-  if (emailResult.limited) return emailResult;
-  if (ipResult.limited) return ipResult;
   return NOT_LIMITED;
 }
 
