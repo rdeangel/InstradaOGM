@@ -14,6 +14,9 @@ const { prismaMock, sendPasswordResetEmail } = vi.hoisted(() => ({
       updateMany: vi.fn(),
       findFirst: vi.fn(),
     },
+    session: {
+      deleteMany: vi.fn(),
+    },
   },
   sendPasswordResetEmail: vi.fn(),
 }));
@@ -107,6 +110,7 @@ describe('POST /api/auth/password-reset/confirm', () => {
     vi.clearAllMocks();
     prismaMock.user.findUnique.mockResolvedValue(null);
     prismaMock.user.updateMany.mockResolvedValue({ count: 1 });
+    prismaMock.session.deleteMany.mockResolvedValue({ count: 0 });
   });
 
   it('confirms the second of two pending users (M2 regression)', async () => {
@@ -144,6 +148,7 @@ describe('POST /api/auth/password-reset/confirm', () => {
     expect(prismaMock.user.findFirst).not.toHaveBeenCalled();
     expect(prismaMock.user.updateMany.mock.calls).toHaveLength(1);
     expect(prismaMock.user.updateMany.mock.calls[0][0].where.id).toBe('b');
+    expect(prismaMock.session.deleteMany).toHaveBeenCalledWith({ where: { userId: 'b' } });
   });
 
   it('returns the shared invalid message for an unknown or legacy token', async () => {
@@ -155,6 +160,7 @@ describe('POST /api/auth/password-reset/confirm', () => {
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({ error: PASSWORD_RESET_INVALID_MESSAGE });
     expect(prismaMock.user.updateMany).not.toHaveBeenCalled();
+    expect(prismaMock.session.deleteMany).not.toHaveBeenCalled();
   });
 
   it('returns the shared invalid message for an expired token and does not update', async () => {
@@ -231,5 +237,38 @@ describe('POST /api/auth/password-reset/confirm', () => {
     expect(data.passwordResetTokenHash).toBeNull();
     expect(data.passwordResetExpires).toBeNull();
     expect(data.passwordChangedAt).toBeInstanceOf(Date);
+    expect(prismaMock.session.deleteMany).toHaveBeenCalledWith({ where: { userId: 'b' } });
+  });
+
+  it('rejects a password shorter than AUTH_PASSWORD_MIN_LENGTH', async () => {
+    const response = await confirmReset(jsonRequest(
+      'http://localhost/api/auth/password-reset/confirm',
+      { token: TOKEN_B, password: 'abc' },
+    ));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: 'Password must be at least 8 characters' });
+    expect(prismaMock.user.findUnique).not.toHaveBeenCalled();
+    expect(prismaMock.user.updateMany).not.toHaveBeenCalled();
+    expect(prismaMock.session.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('rejects a password longer than 1024 characters without hashing', async () => {
+    const response = await confirmReset(jsonRequest(
+      'http://localhost/api/auth/password-reset/confirm',
+      { token: TOKEN_B, password: 'a'.repeat(1025) },
+    ));
+    expect(response.status).toBe(400);
+    expect(prismaMock.user.findUnique).not.toHaveBeenCalled();
+    expect(prismaMock.user.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('rejects a non-string password without hashing', async () => {
+    const response = await confirmReset(jsonRequest(
+      'http://localhost/api/auth/password-reset/confirm',
+      { token: TOKEN_B, password: { length: 12 } },
+    ));
+    expect(response.status).toBe(400);
+    expect(prismaMock.user.findUnique).not.toHaveBeenCalled();
+    expect(prismaMock.user.updateMany).not.toHaveBeenCalled();
   });
 });

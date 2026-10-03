@@ -27,7 +27,7 @@ vi.mock('@/lib/server/password-change-token', () => ({
 import { POST } from '@/app/api/auth/check-password-change/route';
 import { resetAuthThrottleForTests } from '@/lib/auth-throttle';
 
-function jsonRequest(body: Record<string, string>, ip: string): NextRequest {
+function jsonRequest(body: unknown, ip: string): NextRequest {
   return new NextRequest('http://localhost/api/auth/check-password-change', {
     method: 'POST',
     headers: {
@@ -58,6 +58,7 @@ describe('POST /api/auth/check-password-change throttle', () => {
     resetAuthThrottleForTests();
     delete (globalThis as { __ogmXffGuard?: boolean }).__ogmXffGuard;
     delete process.env.AUTH_LOGIN_MAX_FAILURES;
+    delete process.env.AUTH_THROTTLE_ENABLED;
   });
 
   it('returns 429 and does not compare on the locked attempt', async () => {
@@ -92,5 +93,35 @@ describe('POST /api/auth/check-password-change throttle', () => {
       retryAfterSeconds: 900,
     });
     expect(second.headers.get('retry-after')).toBe('900');
+  });
+
+  it('does not clear the account bucket for a 2FA user after a correct password', async () => {
+    process.env.AUTH_LOGIN_MAX_FAILURES = '2';
+    prismaMock.user.findFirst.mockResolvedValue({
+      id: 'u1',
+      email: 'ada@example.com',
+      password: 'hash',
+      mustChangePassword: false,
+      is2FAEnabled: true,
+    });
+    bcryptMock.compare.mockResolvedValue(false);
+    const first = await POST(jsonRequest({ email: 'ada@example.com', password: 'nope' }, '10.1.0.1'));
+    expect(first.status).toBe(200);
+    bcryptMock.compare.mockResolvedValue(true);
+    const correct = await POST(jsonRequest({ email: 'ada@example.com', password: 'ok' }, '10.1.0.1'));
+    expect(correct.status).toBe(200);
+    expect(await correct.json()).toEqual({ mustChangePassword: false, requires2FA: false });
+    bcryptMock.compare.mockResolvedValue(false);
+    const secondFail = await POST(jsonRequest({ email: 'ada@example.com', password: 'nope' }, '10.1.0.1'));
+    expect(secondFail.status).toBe(200);
+    const locked = await POST(jsonRequest({ email: 'ada@example.com', password: 'nope' }, '10.1.0.2'));
+    expect(locked.status).toBe(429);
+  });
+
+  it('returns 400 for a non-string email even with throttling off', async () => {
+    process.env.AUTH_THROTTLE_ENABLED = 'false';
+    const response = await POST(jsonRequest({ email: { startsWith: 'a' }, password: 'x' }, '10.1.0.1'));
+    expect(response.status).toBe(400);
+    expect(prismaMock.user.findFirst).not.toHaveBeenCalled();
   });
 });

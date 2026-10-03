@@ -37,9 +37,15 @@ vi.mock('next-auth/providers/credentials', () => ({
     ...options,
   }),
 }));
+vi.mock('otplib', () => ({
+  authenticator: { verify: vi.fn(() => false) },
+}));
+vi.mock('@/lib/totp-encryption', () => ({
+  getTotpSecretWithMigration: vi.fn(async () => 'JBSWY3DPEHPK3PXP'),
+}));
 
 import { authOptions } from '@/lib/auth';
-import { resetAuthThrottleForTests } from '@/lib/auth-throttle';
+import { noteCredentialFailure, resetAuthThrottleForTests } from '@/lib/auth-throttle';
 
 type Authorize = (
   credentials: Record<string, string> | undefined,
@@ -152,6 +158,30 @@ describe('credentials authorize throttle', () => {
     )).rejects.toThrow('CredentialsSignin');
   });
 
+  it('does not clear the account counter on must-change for a 2FA user', async () => {
+    process.env.AUTH_LOGIN_MAX_FAILURES = '5';
+    prismaMock.user.findFirst.mockResolvedValue({
+      ...localUser,
+      mustChangePassword: true,
+      is2FAEnabled: true,
+      totpSecret: 'secret',
+    });
+    bcryptMock.compare.mockResolvedValue(true);
+    const { authorize } = credentialsAuthorize();
+    for (let i = 0; i < 4; i++) {
+      expect(noteCredentialFailure('ada@example.com', '10.2.0.4', 'password-check').limited).toBe(false);
+    }
+    await expect(authorize(
+      { email: 'ada@example.com', password: 'correct' },
+      lockedReq,
+    )).resolves.toBeNull();
+    expect(noteCredentialFailure('ada@example.com', '10.2.0.4', 'password-check').limited).toBe(false);
+    await expect(authorize(
+      { email: 'ada@example.com', password: 'correct' },
+      lockedReq,
+    )).rejects.toThrow('TOO_MANY_ATTEMPTS');
+  });
+
   it('does not count a correct password on an unverified account', async () => {
     process.env.AUTH_LOGIN_MAX_FAILURES = '1';
     prismaMock.user.findFirst.mockResolvedValue({
@@ -173,6 +203,35 @@ describe('credentials authorize throttle', () => {
       { email: 'ada@example.com', password: 'nope' },
       lockedReq,
     )).rejects.toThrow('CredentialsSignin');
+  });
+
+  it('does not clear the account counter on 2FA_REQUIRED so TOTP guesses still lock', async () => {
+    process.env.AUTH_LOGIN_MAX_FAILURES = '5';
+    prismaMock.user.findFirst.mockResolvedValue({
+      ...localUser,
+      is2FAEnabled: true,
+      totpSecret: 'secret',
+    });
+    bcryptMock.compare.mockResolvedValue(true);
+    const { authorize } = credentialsAuthorize();
+    for (let i = 0; i < 4; i++) {
+      await expect(authorize(
+        { email: 'ada@example.com', password: 'correct', totpCode: '000000' },
+        lockedReq,
+      )).rejects.toThrow('INVALID_2FA_CODE');
+    }
+    await expect(authorize(
+      { email: 'ada@example.com', password: 'correct' },
+      lockedReq,
+    )).rejects.toThrow('2FA_REQUIRED');
+    await expect(authorize(
+      { email: 'ada@example.com', password: 'correct', totpCode: '000000' },
+      lockedReq,
+    )).rejects.toThrow('INVALID_2FA_CODE');
+    await expect(authorize(
+      { email: 'ada@example.com', password: 'correct', totpCode: '000000' },
+      lockedReq,
+    )).rejects.toThrow('TOO_MANY_ATTEMPTS');
   });
 
   it('does not count a correct password on a suspended account', async () => {

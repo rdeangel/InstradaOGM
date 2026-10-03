@@ -54,7 +54,9 @@ export function csrfAllowed(r: CsrfRequest): boolean {
   const method = r.method.toUpperCase();
   if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return true;
   if (!r.pathname.startsWith('/api/')) return true;
-  if (!r.hasSessionCookie) return true;
+  // Cookieless writes skip Origin/SFS only on NextAuth public auth routes
+  // (OIDC form_post, credentials sign-in). Other /api/* writes are checked.
+  if (!r.hasSessionCookie && r.pathname.startsWith('/api/auth/')) return true;
   if (r.hasApiKeyHeader) return true;
 
   const sfs = (r.secFetchSite ?? '').trim().toLowerCase();

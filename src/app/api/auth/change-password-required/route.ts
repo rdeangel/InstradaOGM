@@ -10,6 +10,21 @@ import {
   verifyPasswordChangeToken,
 } from '@/lib/server/password-change-token';
 import { verifySensitiveReauth } from '@/lib/server/sensitive-reauth';
+import {
+  assertCredentialAllowed,
+  clearCredentialFailures,
+  noteCredentialFailure,
+} from '@/lib/auth-throttle';
+import { getClientIp } from '@/lib/network-utils';
+
+const THROTTLED_MESSAGE = 'Too many attempts. Try again later.';
+
+function throttledResponse(retryAfterSeconds: number): NextResponse {
+  return NextResponse.json(
+    { message: THROTTLED_MESSAGE, retryAfterSeconds },
+    { status: 429, headers: { 'Retry-After': String(retryAfterSeconds) } },
+  );
+}
 
 function clearPasswordChangeCookies(response: NextResponse): void {
   const expired = { ...passwordChangeCookieOptions(), maxAge: 0 };
@@ -39,6 +54,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         message: 'Session expired. Please try logging in again.',
       }, { status: 400 });
+    }
+
+    const ip = getClientIp(request);
+    const allowed = assertCredentialAllowed(claims.email, ip);
+    if (allowed.limited) {
+      return throttledResponse(allowed.retryAfterSeconds);
     }
 
     const minLength = parseInt(process.env.AUTH_PASSWORD_MIN_LENGTH || '8');
@@ -98,6 +119,7 @@ export async function POST(request: NextRequest) {
 
     const isCurrentPasswordValid = await bcrypt.compare(currentPassword, user.password);
     if (!isCurrentPasswordValid) {
+      noteCredentialFailure(claims.email, ip, 'password-check');
       await logAuditEvent({
         action: 'PASSWORD_CHANGE_FAILURE',
         reason: 'Current password verification failed',
@@ -110,6 +132,7 @@ export async function POST(request: NextRequest) {
     if (user.is2FAEnabled) {
       const totp = await verifySensitiveReauth(user, { totpCode, code, backupCode, isBackupCode }, null);
       if (!totp.ok) {
+        noteCredentialFailure(claims.email, ip, 'password-check');
         await logAuditEvent({
           action: 'PASSWORD_CHANGE_FAILURE',
           reason: totp.message,
@@ -145,6 +168,8 @@ export async function POST(request: NextRequest) {
         passwordChangedAt: new Date(),
       },
     });
+
+    clearCredentialFailures(claims.email);
 
     await logAuditEvent({
       action: 'PASSWORD_CHANGE_SUCCESS',

@@ -30,7 +30,14 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { email, password } = body;
 
-    if (!email || !password) {
+    if (
+      typeof email !== 'string' ||
+      typeof password !== 'string' ||
+      !email ||
+      !password ||
+      email.length > 320 ||
+      password.length > 1024
+    ) {
       return NextResponse.json(
         { error: 'Email and password are required' },
         { status: 400 }
@@ -79,7 +86,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    clearCredentialFailures(email);
+    if (!user.is2FAEnabled) {
+      clearCredentialFailures(email);
+    }
 
     const response = NextResponse.json(
       {

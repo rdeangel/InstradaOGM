@@ -31,11 +31,44 @@ describe('csrfAllowed', () => {
     expect(check({ pathname: '/login', method: 'POST' })).toBe(true);
   });
 
-  it('allows requests with no session cookie', () => {
+  it('denies cookieless cross-site writes to non-auth API paths', () => {
     expect(
       check({
         hasSessionCookie: false,
+        pathname: '/api/opnsense/host-group-management',
         origin: 'https://evil.example',
+        secFetchSite: 'cross-site',
+      }),
+    ).toBe(false);
+  });
+
+  it('allows cookieless same-origin writes to non-auth API paths', () => {
+    expect(
+      check({
+        hasSessionCookie: false,
+        pathname: '/api/opnsense/host-group-management',
+        secFetchSite: 'same-origin',
+      }),
+    ).toBe(true);
+  });
+
+  it('allows cookieless writes when Sec-Fetch-Site and Origin are both absent', () => {
+    expect(
+      check({
+        hasSessionCookie: false,
+        pathname: '/api/opnsense/host-group-management',
+        secFetchSite: null,
+        origin: null,
+      }),
+    ).toBe(true);
+  });
+
+  it('allows cookieless cross-site POSTs to /api/auth/*', () => {
+    expect(
+      check({
+        hasSessionCookie: false,
+        pathname: '/api/auth/callback/authentik',
+        origin: 'https://idp.example',
         secFetchSite: 'cross-site',
       }),
     ).toBe(true);
@@ -45,6 +78,15 @@ describe('csrfAllowed', () => {
     expect(
       check({
         hasApiKeyHeader: true,
+        origin: 'https://evil.example',
+        secFetchSite: 'cross-site',
+      }),
+    ).toBe(true);
+    expect(
+      check({
+        hasSessionCookie: false,
+        hasApiKeyHeader: true,
+        pathname: '/api/opnsense/host-group-management',
         origin: 'https://evil.example',
         secFetchSite: 'cross-site',
       }),

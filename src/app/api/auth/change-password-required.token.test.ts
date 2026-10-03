@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { prismaMock, verifyPasswordChangeToken, verifySensitiveReauth } = vi.hoisted(() => ({
   prismaMock: {
@@ -30,11 +30,16 @@ vi.mock('bcryptjs', () => ({
 }));
 
 import { POST } from '@/app/api/auth/change-password-required/route';
+import { resetAuthThrottleForTests } from '@/lib/auth-throttle';
 
 function requestWithCookie(body: unknown, cookie = 'password_change_token=signed'): Request {
   return new Request('http://localhost/api/auth/change-password-required', {
     method: 'POST',
-    headers: { 'content-type': 'application/json', cookie },
+    headers: {
+      'content-type': 'application/json',
+      cookie,
+      'x-ogm-client-ip': '10.3.0.1',
+    },
     body: JSON.stringify(body),
   });
 }
@@ -42,6 +47,9 @@ function requestWithCookie(body: unknown, cookie = 'password_change_token=signed
 describe('POST /api/auth/change-password-required token', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetAuthThrottleForTests();
+    delete process.env.AUTH_LOGIN_MAX_FAILURES;
+    (globalThis as { __ogmXffGuard?: boolean }).__ogmXffGuard = true;
     prismaMock.user.findUnique.mockResolvedValue({
       id: 'user-1',
       email: 'admin@example.com',
@@ -52,6 +60,12 @@ describe('POST /api/auth/change-password-required token', () => {
       backupCodes: null,
     });
     prismaMock.user.update.mockResolvedValue({ id: 'user-1' });
+  });
+
+  afterEach(() => {
+    resetAuthThrottleForTests();
+    delete (globalThis as { __ogmXffGuard?: boolean }).__ogmXffGuard;
+    delete process.env.AUTH_LOGIN_MAX_FAILURES;
   });
 
   it('rejects a client-settable email cookie without a signed token', async () => {
@@ -121,6 +135,54 @@ describe('POST /api/auth/change-password-required token', () => {
 
     expect(response.status).toBe(400);
     expect(verifySensitiveReauth).not.toHaveBeenCalled();
+    expect(prismaMock.user.update).not.toHaveBeenCalled();
+  });
+
+  it('returns 429 after too many wrong current passwords', async () => {
+    process.env.AUTH_LOGIN_MAX_FAILURES = '1';
+    verifyPasswordChangeToken.mockReturnValue({ userId: 'user-1', email: 'admin@example.com' });
+    const first = await POST(requestWithCookie({
+      currentPassword: 'wrong-pass',
+      newPassword: 'new-pass-12',
+    }) as never);
+    expect(first.status).toBe(400);
+    const second = await POST(requestWithCookie({
+      currentPassword: 'wrong-pass',
+      newPassword: 'new-pass-12',
+    }) as never);
+    expect(second.status).toBe(429);
+    expect(prismaMock.user.update).not.toHaveBeenCalled();
+  });
+
+  it('notes a failed TOTP and locks on the next attempt', async () => {
+    process.env.AUTH_LOGIN_MAX_FAILURES = '1';
+    verifyPasswordChangeToken.mockReturnValue({ userId: 'user-1', email: 'admin@example.com' });
+    prismaMock.user.findUnique.mockResolvedValue({
+      id: 'user-1',
+      email: 'admin@example.com',
+      password: 'hash',
+      mustChangePassword: true,
+      is2FAEnabled: true,
+      totpSecret: 'secret',
+      backupCodes: null,
+    });
+    verifySensitiveReauth.mockResolvedValue({
+      ok: false,
+      status: 400,
+      message: 'Invalid authenticator or backup code',
+    });
+    const first = await POST(requestWithCookie({
+      currentPassword: 'old-pass',
+      newPassword: 'new-pass-12',
+      totpCode: '000000',
+    }) as never);
+    expect(first.status).toBe(400);
+    const second = await POST(requestWithCookie({
+      currentPassword: 'old-pass',
+      newPassword: 'new-pass-12',
+      totpCode: '000000',
+    }) as never);
+    expect(second.status).toBe(429);
     expect(prismaMock.user.update).not.toHaveBeenCalled();
   });
 });

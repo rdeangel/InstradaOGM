@@ -401,7 +401,7 @@ if (process.env.AUTH_ALLOW_LOCAL_LOGIN === 'true') {
           const reason = user.role === Role.PENDING ? 'Account pending verification' : 'Email not verified';
           logger.warn(`[Authorize] Login blocked for ${user.email}: ${reason}`);
           await logAuditEvent({ action: 'USER_LOGIN_FAILURE', event: 'LOGIN_FAILURE', ...auditData, userId: user.id, reason: reason });
-          clearCredentialFailures(identifier);
+          if (!user.is2FAEnabled) clearCredentialFailures(identifier);
           // Throw the same error for both cases to prompt user to check email
           throw new Error('EMAIL_NOT_VERIFIED');
         }
@@ -410,7 +410,7 @@ if (process.env.AUTH_ALLOW_LOCAL_LOGIN === 'true') {
         if (user.role === Role.SUSPENDED) {
           logger.error("[Authorize] Account suspended for:", user.email);
           await logAuditEvent({ action: 'USER_LOGIN_FAILURE', event: 'LOGIN_FAILURE', ...auditData, userId: user.id, reason: 'Account suspended' });
-          clearCredentialFailures(identifier);
+          if (!user.is2FAEnabled) clearCredentialFailures(identifier);
           throw new Error('ACCOUNT_SUSPENDED'); // Use specific error for suspension
         }
         // --- End Status & Verification Check ---
@@ -420,7 +420,7 @@ if (process.env.AUTH_ALLOW_LOCAL_LOGIN === 'true') {
         if (user.mustChangePassword) {
           logger.warn(`[Authorize] Password change required for user: ${user.email}`);
           await logAuditEvent({ action: 'USER_LOGIN_FAILURE', event: 'LOGIN_FAILURE', ...auditData, userId: user.id, reason: 'Password change required' });
-          clearCredentialFailures(identifier);
+          if (!user.is2FAEnabled) clearCredentialFailures(identifier);
           // Return null to deny login - the client will need to check the user's status
           return null;
         }
@@ -431,7 +431,6 @@ if (process.env.AUTH_ALLOW_LOCAL_LOGIN === 'true') {
           if (!credentials.totpCode) {
             logger.debug(`[Authorize] 2FA required but not provided for user: ${user.email}`);
             await logAuditEvent({ action: 'USER_LOGIN_FAILURE', event: 'LOGIN_FAILURE', ...auditData, userId: user.id, reason: '2FA code required but not provided' });
-            clearCredentialFailures(identifier);
             throw new Error('2FA_REQUIRED'); // Signal frontend
           }
 

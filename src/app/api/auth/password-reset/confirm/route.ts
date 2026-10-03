@@ -13,8 +13,22 @@ export async function POST(request: Request) {
   try {
     const { token, password } = await request.json();
 
-    if (!token || !password) {
+    if (
+      typeof token !== 'string' ||
+      typeof password !== 'string' ||
+      !token ||
+      !password ||
+      password.length > 1024
+    ) {
       return NextResponse.json({ error: 'Token and new password are required' }, { status: 400 });
+    }
+
+    const minLength = parseInt(process.env.AUTH_PASSWORD_MIN_LENGTH || '8', 10);
+    if (password.length < minLength) {
+      return NextResponse.json(
+        { error: `Password must be at least ${minLength} characters` },
+        { status: 400 },
+      );
     }
 
     if (!isValidPasswordResetTokenFormat(token)) {
@@ -47,6 +61,8 @@ export async function POST(request: Request) {
       logger.warn('Password reset confirm failed: invalid token');
       return NextResponse.json({ error: PASSWORD_RESET_INVALID_MESSAGE }, { status: 400 });
     }
+
+    await prisma.session.deleteMany({ where: { userId: user.id } });
 
     logger.info(`Password reset completed successfully for user: ${user.id}`);
     return NextResponse.json({ message: 'Password has been reset successfully' }, { status: 200 });
