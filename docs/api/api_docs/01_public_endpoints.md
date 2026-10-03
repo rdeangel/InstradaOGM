@@ -79,15 +79,13 @@ curl -X GET "{{SERVER_URL}}/api/health" \
 ```json
 {
   "status": "healthy",
-  "timestamp": "2024-01-15T10:30:00.000Z",
-  "version": "1.0.0"
+  "timestamp": "2024-01-15T10:30:00.000Z"
 }
 ```
 
 **Response Fields:**
 - `status`: Health status (`healthy`)
 - `timestamp`: Current server timestamp in ISO 8601 format
-- `version`: Application version from `NEXT_PUBLIC_APP_VERSION` environment variable
 
 #### Usage Case 2: Unhealthy Application
 
@@ -103,7 +101,8 @@ curl -X GET "{{SERVER_URL}}/api/health" \
 ```json
 {
   "status": "unhealthy",
-  "error": "Database connection failed"
+  "timestamp": "2024-01-15T10:30:00.000Z",
+  "error": "database unavailable"
 }
 ```
 
@@ -164,8 +163,9 @@ scrape_configs:
 1. **Database Check**: The endpoint performs a simple database query (`SELECT 1`) to verify connectivity
 2. **No Authentication**: This endpoint is intentionally public for monitoring purposes
 3. **Lightweight**: Designed to be called frequently without performance impact
-4. **Version Info**: Returns application version for deployment verification
-5. **Timestamp**: Useful for detecting time synchronization issues
+4. **No version field**: The body does not include the application version
+5. **Generic errors**: Unhealthy responses use `database unavailable` and do not include driver text
+6. **Timestamp**: Useful for detecting time synchronization issues
 
 ---
 

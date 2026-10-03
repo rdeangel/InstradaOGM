@@ -1767,12 +1767,14 @@ curl -X GET "{{SERVER_URL}}/api/admin/provider-display-names" \
 
 **Scenario**: USER role attempts to access provider display names
 
-**Error Response**:
+**Error Response** (403 Forbidden):
 ```json
 {
-  "message": "Unauthorized"
+  "message": "Forbidden"
 }
 ```
+
+Anonymous callers receive HTTP 401 from authentication before the handler runs.
 
 #### Usage Case 3: No SSO Providers Configured
 

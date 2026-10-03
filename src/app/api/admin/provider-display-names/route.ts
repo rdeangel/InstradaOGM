@@ -1,24 +1,36 @@
 import { NextResponse } from 'next/server';
 import { logger } from '@/lib/logger';
 import { loadOidcProviders } from '@/lib/auth-config';
+import { authenticateAndTrackRequest } from '@/lib/auth-middleware';
+import { Role } from '@/types/opnsense';
 
-export async function GET() {
-  try {
-    // Load configured OIDC providers
-    const providers = loadOidcProviders();
+type SessionUserWithRole = {
+  id: string;
+  role?: Role;
+};
 
-    // Create a mapping of provider IDs to their display names
-    // This uses the DISPLAY_NAME from environment variables
-    const displayNames = providers.reduce((acc, provider) => {
-      acc[provider.id] = provider.name; // provider.name comes from AUTH_OIDC_PROVIDER_${alias}_DISPLAY_NAME
-      return acc;
-    }, {} as Record<string, string>);
+export async function GET(request: Request) {
+  return authenticateAndTrackRequest(request, async (auth) => {
+    const user = auth.user as SessionUserWithRole | undefined;
 
-    logger.info(`Provider display names mapping: ${JSON.stringify(displayNames)}`);
+    if (!user || (user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN')) {
+      return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
+    }
 
-    return NextResponse.json(displayNames);
-  } catch (error) {
-    logger.error('Error fetching provider display names:', error);
-    return NextResponse.json({ error: 'Failed to fetch provider display names' }, { status: 500 });
-  }
+    try {
+      const providers = loadOidcProviders();
+
+      const displayNames = providers.reduce((acc, provider) => {
+        acc[provider.id] = provider.name;
+        return acc;
+      }, {} as Record<string, string>);
+
+      logger.debug(`Provider display names mapping: ${JSON.stringify(displayNames)}`);
+
+      return NextResponse.json(displayNames);
+    } catch (error) {
+      logger.error('Error fetching provider display names:', error);
+      return NextResponse.json({ error: 'Failed to fetch provider display names' }, { status: 500 });
+    }
+  });
 }

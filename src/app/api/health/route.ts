@@ -23,7 +23,6 @@ export async function GET() {
       {
         status: 'healthy',
         timestamp: new Date().toISOString(),
-        version: process.env.NEXT_PUBLIC_APP_VERSION || 'unknown',
       },
       { status: 200 }
     );
@@ -34,7 +33,7 @@ export async function GET() {
       {
         status: 'unhealthy',
         timestamp: new Date().toISOString(),
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: 'database unavailable',
       },
       { status: 503 }
     );

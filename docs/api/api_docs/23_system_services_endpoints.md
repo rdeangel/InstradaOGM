@@ -432,7 +432,6 @@ curl -X GET "{{SERVER_URL}}/api/health" \
   "status": "healthy",
   "timestamp": "2024-01-01T12:00:00Z",
   "uptime": 2592000,
-  "version": "1.2.3",
   "environment": "production",
   "services": {
     "database": {
@@ -490,7 +489,6 @@ curl -X GET "{{SERVER_URL}}/api/health" \
   "status": "degraded",
   "timestamp": "2024-01-01T12:00:00Z",
   "uptime": 2592000,
-  "version": "1.2.3",
   "environment": "production",
   "issues": [
     {
@@ -523,23 +521,7 @@ curl -X GET "{{SERVER_URL}}/api/health" \
 {
   "status": "unhealthy",
   "timestamp": "2024-01-01T12:00:00Z",
-  "uptime": 2592000,
-  "version": "1.2.3",
-  "environment": "production",
-  "criticalIssues": [
-    {
-      "service": "database",
-      "severity": "critical",
-      "message": "Database connection failed",
-      "details": "Connection timeout after 30 seconds"
-    }
-  ],
-  "services": {
-    "database": {
-      "status": "unhealthy",
-      "error": "Connection timeout"
-    }
-  }
+  "error": "database unavailable"
 }
 ```
 
@@ -549,13 +531,9 @@ curl -X GET "{{SERVER_URL}}/api/health" \
 - `timeout` (number, optional): Custom timeout for health checks in seconds
 
 **Response Fields**:
-- `status`: Overall system health status (healthy, degraded, unhealthy)
+- `status`: Overall system health status (`healthy` or `unhealthy`)
 - `timestamp`: When the health check was performed
-- `uptime`: System uptime in seconds
-- `version`: Application version
-- `environment`: Deployment environment
-- `services`: Status of individual services
-- `metrics`: System performance metrics
+- `error`: Present on 503 responses; always the generic string `database unavailable`
 
 ## System Initialization
 
