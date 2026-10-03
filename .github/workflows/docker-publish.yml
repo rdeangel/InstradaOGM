@@ -101,7 +101,7 @@ jobs:
 
       # Only log into Docker Hub for official published releases
       - name: Log into Docker Hub
-        if: github.event_name == 'release' && secrets.DOCKER_USERNAME != ''
+        if: github.event_name == 'release'
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
