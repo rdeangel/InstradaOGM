@@ -41,7 +41,7 @@ If the app is ignoring proxy headers, the container log prints the exact value t
 
 Start with `npm start` / `npm run dev`, the prebuilt package `start` script, or the installer systemd unit (they load the client-IP guard). Starting `next start` or `server.js` directly without `-r ./xff-guard.cjs` turns self-service off in production on purpose.
 
-When nginx or Caddy runs on the Docker host and you trust the gateway, publish the app as `127.0.0.1:3000:3000` rather than `0.0.0.0:3000`.
+When nginx or Caddy runs on the Docker host and you trust the gateway, you can edit the app publish locally to `127.0.0.1:3000:3000` so only that proxy reaches it. The `docker-compose.yml` shipped in the repo keeps `3000:3000` so LAN clients can still connect directly. Set `TRUSTED_PROXY_CIDRS` to the proxy address the app sees.
 
 **Upgrading:** Client IP detection is stricter. Behind a reverse proxy that is **not** on the app's Docker network (nginx on the host, a proxy on another machine, Nginx Proxy Manager in a separate stack), set `TRUSTED_PROXY_CIDRS` to the proxy's address **before upgrading**, or every visitor will look like the proxy and self-service will stop recognising devices. Traefik users: the bundled Traefik config no longer trusts forwarded headers from your LAN. Regenerate it, or set `trustedIPs` to only the proxies in front of Traefik.
 

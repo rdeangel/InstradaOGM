@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- OPNsense HTTPS no longer turns off certificate checks for the whole process. A self-signed firewall needs `OPNSENSE_CA_CERT` (a PEM or a file path). `SKIP_SSL_VERIFICATION=true` still skips checks for OPNsense only, and only when you set it.
+
 ### Changed
 - Postgres in Docker Compose is no longer reachable on the host port; connect with `docker compose exec`. The Traefik stack no longer publishes the app on port 3000 or a dashboard on port 8080. Traefik is pinned to v3.7.13. The plain stack still publishes the app on port 3000.
 

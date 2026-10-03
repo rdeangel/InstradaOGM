@@ -809,6 +809,7 @@ create_environment_file() {
     local opnsense_url=""
     local opnsense_api_key=""
     local opnsense_api_secret=""
+    local opnsense_ca=""
     local skip_ssl="false"
     local configure_now=false
     
@@ -830,14 +831,24 @@ create_environment_file() {
         read -sp "Enter OPNsense API Secret: " opnsense_api_secret
         echo
         
-        # Prompt for SSL verification
-        read -p "Skip SSL verification? (true/false, default: false): " skip_ssl
-        skip_ssl=${skip_ssl:-false}
+        read -p "Path to OPNsense CA PEM (empty if the certificate is already trusted): " opnsense_ca
+        opnsense_ca=${opnsense_ca:-}
+        while true; do
+            read -p "Disable OPNsense certificate checks? Lab only (true/false, default: false): " skip_ssl
+            skip_ssl=${skip_ssl:-false}
+            if [[ -n "$opnsense_ca" && "$skip_ssl" == "true" ]]; then
+                echo -e "${YELLOW}Set a CA path or disable checks, not both. Leave the path empty for a lab bypass.${NC}"
+                skip_ssl=""
+                continue
+            fi
+            break
+        done
     else
         # Leave fields empty when skipped
         opnsense_url=""
         opnsense_api_key=""
         opnsense_api_secret=""
+        opnsense_ca=""
         skip_ssl="false"
         
         echo -e "${YELLOW}Skipping OPNsense configuration. You MUST edit ${INSTALL_DIR}/.env before starting the service.${NC}"
@@ -873,6 +884,7 @@ create_environment_file() {
 OPNSENSE_URL=${opnsense_url}
 OPNSENSE_API_KEY=${opnsense_api_key}
 OPNSENSE_API_SECRET=${opnsense_api_secret}
+OPNSENSE_CA_CERT=${opnsense_ca}
 SKIP_SSL_VERIFICATION=${skip_ssl}
 
 # Database Configuration
@@ -918,7 +930,8 @@ EOF
         echo -e "${YELLOW}  - OPNSENSE_URL${NC}"
         echo -e "${YELLOW}  - OPNSENSE_API_KEY${NC}"
         echo -e "${YELLOW}  - OPNSENSE_API_SECRET${NC}"
-        echo -e "${YELLOW}  - SKIP_SSL_VERIFICATION (if needed)${NC}"
+        echo -e "${YELLOW}  - OPNSENSE_CA_CERT (self-signed firewall CA PEM or path)${NC}"
+        echo -e "${YELLOW}  - SKIP_SSL_VERIFICATION (lab only)${NC}"
         echo ""
         echo -e "${YELLOW}After editing, restart the service:${NC}"
         echo -e "${YELLOW}  systemctl restart ${SERVICE_NAME}${NC}"

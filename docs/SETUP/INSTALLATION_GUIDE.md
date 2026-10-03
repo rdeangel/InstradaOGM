@@ -618,7 +618,7 @@ chmod 755 data/db
 docker ps | grep postgres
 
 # Check PostgreSQL logs
-docker logs instrada-ogm-postgres-db-1
+docker logs instrada-ogm-postgres-db
 
 # Verify connection (Postgres is not published on the host)
 source .env

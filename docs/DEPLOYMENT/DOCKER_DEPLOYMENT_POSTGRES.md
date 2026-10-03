@@ -97,8 +97,9 @@ OPNSENSE_URL=https://your-opnsense-firewall.local
 OPNSENSE_API_KEY=your_api_key_here
 OPNSENSE_API_SECRET=your_api_secret_here
 
-# For self-signed certificates (development only)
-SKIP_SSL_VERIFICATION=true
+# Self-signed firewall: pin its CA. Do not disable verification for the whole process.
+# OPNSENSE_CA_CERT=/path/to/opnsense-ca.pem
+SKIP_SSL_VERIFICATION=false
 
 # --- HTTP Configuration ---
 ALLOW_HTTP=true
@@ -224,8 +225,9 @@ OPNSENSE_URL=https://your-opnsense-firewall.local
 OPNSENSE_API_KEY=your_api_key_here
 OPNSENSE_API_SECRET=your_api_secret_here
 
-# For self-signed certificates
-SKIP_SSL_VERIFICATION=true
+# Self-signed firewall: pin its CA. Do not disable verification for the whole process.
+# OPNSENSE_CA_CERT=/path/to/opnsense-ca.pem
+SKIP_SSL_VERIFICATION=false
 
 # --- HTTPS Configuration ---
 ALLOW_HTTP=false
@@ -492,7 +494,8 @@ instrada-ogm/
 | `POSTGRES_HOST` | `db` | PostgreSQL hostname |
 | `POSTGRES_PORT` | `5432` | PostgreSQL port |
 | `APP_DEBUG_LEVEL` | `SILENT` | Logging level (SILENT/ERROR/WARN/INFO/DEBUG) |
-| `SKIP_SSL_VERIFICATION` | `false` | Skip OPNsense SSL verification (dev only) |
+| `OPNSENSE_CA_CERT` | unset | PEM or file path. When unset, a self-signed firewall is rejected. |
+| `SKIP_SSL_VERIFICATION` | `false` | Lab only. Disables verification for OPNsense calls only. Default false. |
 
 ---
 
@@ -588,7 +591,7 @@ docker compose --profile postgres up -d
 - [ ] Generate secure `NEXTAUTH_SECRET` using `openssl rand -base64 32`
 - [ ] Generate secure `BACKUP_ENCRYPTION_SECRET_KEY` using `openssl rand -hex 32`
 - [ ] Set `ALLOW_HTTP=false` for HTTPS enforcement
-- [ ] Set `SKIP_SSL_VERIFICATION=false` (use valid SSL for OPNsense)
+- [ ] Set `SKIP_SSL_VERIFICATION=false` (use valid SSL for OPNsense); set `OPNSENSE_CA_CERT` when the firewall certificate is self-signed.
 - [ ] Set `APP_DEBUG_LEVEL=ERROR` or `SILENT`
 - [ ] Set `NODE_ENV=production`
 - [ ] Configure regular database backups

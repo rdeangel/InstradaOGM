@@ -498,10 +498,8 @@ INTERNAL_APP_URL="http://192.168.1.151:9002"
 - `OPNSENSE_URL` - OPNsense firewall URL
 - `OPNSENSE_API_KEY` - OPNsense API key
 - `OPNSENSE_API_SECRET` - OPNsense API secret
-- `SKIP_SSL_VERIFICATION` - Bypass SSL verification (dev only)
-  - Set to `true` to bypass SSL certificate validation for OPNsense API calls
-  - Useful for development with self-signed certificates or IP-based connections
-  - ⚠️ WARNING: Only use in development/testing - NOT recommended for production
+- `OPNSENSE_CA_CERT` - Firewall CA PEM text, or a path to a PEM file. When set, OPNsense TLS trusts this certificate only. Leave unset when the firewall cert is already trusted by the system. A self-signed firewall fails closed until this is set.
+- `SKIP_SSL_VERIFICATION` - Lab only. Disables certificate checks for OPNsense calls on this process. It does not disable TLS for any other host. Do not set this together with `OPNSENSE_CA_CERT`. Leave false or unset in production.
 
 ### Database Configuration
 - `DATABASE_URL` - Database connection string (SQLite or PostgreSQL)
