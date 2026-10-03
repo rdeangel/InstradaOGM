@@ -12,23 +12,7 @@ WORKDIR /app
 # libc6-compat: Compatibility layer for Node.js native modules
 RUN apk add --no-cache openssl libc6-compat
 
-# 2. Dependencies stage - install production dependencies
-FROM base AS deps
-
-ARG PRISMA_SCHEMA_FILE=schema.postgres.prisma
-
-COPY package.json package-lock.json* ./
-COPY prisma/${PRISMA_SCHEMA_FILE} ./prisma/schema.prisma
-
-# Pin npm to v11 to match the committed lockfile. node:24-alpine already ships npm 11, but the
-# explicit pin guarantees the major matches the platform optional-dependency layout written by
-# npm 11 (e.g. esbuild/lightningcss/@next-swc variants), independent of the base image's bundled npm.
-# Install production dependencies only
-RUN npm install -g npm@11 && \
-    npm ci --omit=dev && \
-    rm -rf /root/.npm
-
-# 3. Builder stage - build the application
+# 2. Builder stage - build the application
 FROM base AS builder
 
 ARG DATABASE_URL
@@ -60,7 +44,7 @@ COPY . .
 # Build Next.js (standalone mode configured in next.config.ts)
 RUN npm run build
 
-# 4. Database tools stage - isolated layer for DB utilities
+# 3. Database tools stage - isolated layer for DB utilities
 FROM alpine:3.21 AS db-tools
 
 # Install database clients based on architecture
@@ -69,7 +53,7 @@ RUN apk add --no-cache \
     sqlite \
     bash
 
-# 5. Runtime stage - minimal production image
+# 4. Runtime stage - minimal production image
 FROM base AS runner
 
 # User configuration with safer UID/GID to avoid host collisions
@@ -114,13 +98,11 @@ RUN addgroup -g ${NODE_GID} -S nodejs && \
     adduser -S nextjs -u ${NODE_UID} -G nodejs && \
     chown nextjs:nodejs /app
 
-# Install minimal runtime dependencies as root to avoid ARM64 QEMU issues
-# Then chown to nextjs user for proper ownership
-RUN npm install --omit=dev \
-    prisma@6.19.3 \
-    tsx@4.16.2 \
-    bcryptjs@3.0.3 \
-    dotenv@17.4.2 && \
+# Install pinned runtime tools (prisma, tsx, bcryptjs, dotenv) from docker/runtime lockfile.
+# Standalone COPY below overwrites /app/package.json the same as before.
+COPY docker/runtime/package.json docker/runtime/package-lock.json ./
+RUN npm install -g npm@11 && \
+    npm ci --omit=dev && \
     rm -rf /root/.npm && \
     chown -R nextjs:nodejs /app/node_modules
 

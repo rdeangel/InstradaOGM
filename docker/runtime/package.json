@@ -1,0 +1,10 @@
+{
+  "name": "instradaogm-runtime",
+  "private": true,
+  "dependencies": {
+    "bcryptjs": "3.0.3",
+    "dotenv": "17.4.2",
+    "prisma": "6.19.3",
+    "tsx": "4.22.3"
+  }
+}
