@@ -410,15 +410,12 @@ export function clientIpFromHeaderRecord(
     headers: {
       get(name: string) {
         if (!headers) return null;
-        const lower = name.toLowerCase();
-        let value: unknown;
-        if (Object.prototype.hasOwnProperty.call(headers, name)) {
-          value = headers[name];
-        } else if (Object.prototype.hasOwnProperty.call(headers, lower)) {
-          value = headers[lower];
-        } else {
-          return null;
+        const lookup = new Map<string, unknown>();
+        for (const [key, headerValue] of Object.entries(headers)) {
+          lookup.set(key, headerValue);
+          lookup.set(key.toLowerCase(), headerValue);
         }
+        const value = lookup.get(name) ?? lookup.get(name.toLowerCase());
         if (Array.isArray(value)) return typeof value[0] === 'string' ? value[0] : null;
         return typeof value === 'string' ? value : null;
       },
