@@ -109,7 +109,7 @@ async function getIpGroupMembership(ipAddress: string): Promise<NetworkGroup[]> 
     return memberOfGroups;
   } catch (error) {
     logger.error('Error getting IP group membership:', error);
-    return [];
+    throw new Error('Failed to determine IP group membership');
   }
 }
 
@@ -824,7 +824,12 @@ export async function POST(request: Request) {
         }
       } catch (error) {
         logger.error('Error checking unmanaged group status for DHCP reservation:', error);
-        // Continue with operation if check fails (fail open)
+        await logAuditEvent({
+          action: 'DHCP_RESERVATION_ADD_FAILURE', userId, ipAddress: ipAddressReq, userAgent,
+          reason: 'Could not verify group management status',
+          details: { ...normalizedPayload, validationFailure: 'UNMANAGED_CHECK_FAILED' },
+        });
+        return NextResponse.json({ success: false, message: 'Could not verify group management status. Try again.' }, { status: 503 });
       }
     }
 

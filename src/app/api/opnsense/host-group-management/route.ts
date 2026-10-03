@@ -30,6 +30,7 @@ import { firstInvalidIpAddress, InvalidIpAddressError, isOwnDeviceSelfService, t
 import { fetchUnmanagedGroupFilterData, isHostInUnmanagedGroups } from '@/lib/unmanaged-group-utils';
 import { resolveUserAliasPermissions, resolveUserPermissions, type ResolvedUserPermissions } from '@/lib/user-permissions';
 import { isAnonSelfServiceAllowed } from '@/lib/server/global-settings';
+import { filterNetworkGroups } from '@/lib/group-filter-utils';
 
 /**
  * Validates a single operation against already-resolved permissions.
@@ -91,14 +92,30 @@ async function validateUserOperationPermission(
 
 /** A reusable permission check bound to a user's resolved permissions, plus self-service context. */
 interface PermissionValidator {
-  /** Returns a 403 response if the operation is denied, or null if allowed. */
-  validate: (hostAliasName: string, targetGroupUuid: string | null) => Promise<NextResponse | null>;
+  /** Returns a 403/503 response if the operation is denied, or null if allowed. */
+  validate: (hostAliasName: string, targetGroupUuid: string | null, op: 'assign' | 'unassign') => Promise<NextResponse | null>;
   /**
    * True when the host is authorized ONLY via own-device self-service (the caller is physically at
    * the device's IP and lacks a real host-alias permission for it). Self-service restrictions such as
    * the unmanaged-groups check must still apply to these operations, exactly as for unauthenticated users.
    */
   isSelfServiceGrant: (hostAliasName: string) => boolean;
+}
+
+/**
+ * UUIDs (lower-cased) of the groups the anonymous self-service UI shows:
+ * GET /api/opnsense/network-groups for an anonymous caller = global filters + globally disabled.
+ */
+async function loadSelfServiceTargetUuids(exportResponse?: Awaited<ReturnType<typeof exportAliases>>): Promise<Set<string>> {
+  const [exp, filterData] = await Promise.all([
+    exportResponse ?? exportAliases(),
+    fetchUnmanagedGroupFilterData(), // no user → global filters + globally disabled only
+  ]);
+  const groups = Object.entries(exp.aliases.alias)
+    .filter(([, a]) => a.type === 'networkgroup')
+    .map(([uuid, a]) => ({ id: uuid, uuid, name: a.name }) as NetworkGroup); // filter reads only uuid + name
+  const visible = await filterNetworkGroups(groups, filterData.globalFilters, filterData.globallyDisabledGroups, null, null);
+  return new Set(visible.map(g => g.uuid.toLowerCase()));
 }
 
 /**
@@ -111,6 +128,7 @@ interface PermissionValidator {
  * in allowedNetworks, self-service enabled) is granted the same access an unauthenticated
  * self-service user would get at that machine, even without a group-based device permission.
  * Logging in must never remove access that anonymous self-service would have allowed.
+ * The grant equals anonymous access exactly, including the anonymous-visible target-group set.
  */
 async function buildPermissionValidator(
   userId: string | null,
@@ -119,6 +137,32 @@ async function buildPermissionValidator(
   allowedNetworks: ValidLocalNetwork[],
   selfServiceEnabled: boolean
 ): Promise<PermissionValidator> {
+  let targetsPromise: Promise<Set<string>> | null = null;
+  const checkSelfServiceTarget = async (
+    targetGroupUuid: string | null, op: 'assign' | 'unassign', exp?: Awaited<ReturnType<typeof exportAliases>>
+  ): Promise<NextResponse | null> => {
+    if (op !== 'assign' || !targetGroupUuid) return null;
+    let allowed: Set<string>;
+    try {
+      allowed = await (targetsPromise ??= loadSelfServiceTargetUuids(exp));
+    } catch (error) {
+      logger.error('[host-group-management] Could not load self-service group set:', error);
+      await logAuditEvent({ userId, action: 'OPNSENSE_GROUP_IP_OPERATION_FAILURE',
+        details: { reason: 'Could not verify self-service group set', targetGroupUuid, authMethod,
+                   validationFailure: 'SELF_SERVICE_TARGET_CHECK_FAILED' } });
+      return NextResponse.json({ success: false, message: 'Could not verify group management status. Try again.' }, { status: 503 });
+    }
+    if (allowed.has(targetGroupUuid.toLowerCase())) return null;
+    logger.warn(`[host-group-management] Self-service target denied: group ${targetGroupUuid} is not available for self-service (user: ${userId ?? 'unauthenticated'})`);
+    await logAuditEvent({ userId, action: 'OPNSENSE_GROUP_IP_OPERATION_FAILURE',
+      details: { reason: 'Target group is not available for self-service', targetGroupUuid, authMethod,
+                 validationFailure: 'SELF_SERVICE_TARGET_DENIED' } });
+    return NextResponse.json({ success: false, message: 'Forbidden: This group is not available for self-service' }, { status: 403 });
+  };
+
+  // Anonymous callers must not inherit resolveUserAliasPermissions(null) → wildcard.
+  if (userId === null) return { validate: (_h, t, op) => checkSelfServiceTarget(t, op), isSelfServiceGrant: () => false };
+
   // Resolve host-alias permissions cheaply first — wildcard callers need no OPNsense call and
   // are never restricted, so they never rely on the self-service grant.
   const aliasPerms = await resolveUserAliasPermissions(userId);
@@ -150,7 +194,7 @@ async function buildPermissionValidator(
   };
 
   return {
-    validate: async (hostAliasName, targetGroupUuid) => {
+    validate: async (hostAliasName, targetGroupUuid, op) => {
       const denial = await validateUserOperationPermission(
         permissions,
         userId,
@@ -161,7 +205,7 @@ async function buildPermissionValidator(
       if (!denial) return null;
       // No genuine permission — fall back to the self-service grant for the caller's own device.
       if (selfServiceEnabled && isOwnDeviceSelfService(clientIp, nameToIp.get(hostAliasName) ?? null, allowedNetworks)) {
-        return null;
+        return checkSelfServiceTarget(targetGroupUuid, op, allAliasesResponse); // reuse the export already fetched
       }
       return denial;
     },
@@ -793,7 +837,7 @@ async function handleAssignOperation(
 
   // Validate user has permission to operate on this host alias and target group
   const validator = await buildPermissionValidator(userId, authMethod, clientIp, allowedNetworks, selfServiceEnabled);
-  const permissionError = await validator.validate(resolvedHostAliasName, resolvedGroupId);
+  const permissionError = await validator.validate(resolvedHostAliasName, resolvedGroupId, 'assign');
   if (permissionError) return permissionError;
 
   // Check if the target group is enabled - consistent with UI validation
@@ -1327,7 +1371,7 @@ async function handleUnassignOperation(
 
   // Validate user has permission to operate on this host alias (for unassign-all)
   if (!groupId && !groupName && !groupFriendlyName) {
-    const permissionError = await validator.validate(resolvedHostAliasName, null); // No specific group for unassign-all
+    const permissionError = await validator.validate(resolvedHostAliasName, null, 'unassign'); // No specific group for unassign-all
     if (permissionError) return permissionError;
   }
 
@@ -1496,7 +1540,7 @@ async function handleUnassignOperation(
   const { groupId: resolvedGroupIdForUnassign, group: groupForUnassign } = resolvedGroupForUnassign;
 
   // Validate user has permission to operate on this host alias and target group
-  const permissionError2 = await validator.validate(resolvedHostAliasName, resolvedGroupIdForUnassign);
+  const permissionError2 = await validator.validate(resolvedHostAliasName, resolvedGroupIdForUnassign, 'unassign');
   if (permissionError2) return permissionError2;
 
   // Regular unassign from specific group
@@ -1977,7 +2021,7 @@ async function handleBatchOperation(
         const { groupId: resolvedGroupId, group: targetGroup } = resolvedGroup;
 
         // Validate user has permission to operate on this host alias and target group
-        const batchPermError = await validator.validate(resolvedHostAliasName, resolvedGroupId);
+        const batchPermError = await validator.validate(resolvedHostAliasName, resolvedGroupId, operationType);
         if (batchPermError) {
           operationResults.push({
             hostAlias: resolvedHostAlias,

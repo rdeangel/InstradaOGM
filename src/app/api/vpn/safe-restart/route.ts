@@ -171,7 +171,11 @@ export async function POST(req: Request) {
         }
       } catch (error) {
         logger.error('Error checking unmanaged group status for VPN restart:', error);
-        // Continue with operation if check fails (fail open)
+        return new NextResponse(JSON.stringify({
+          success: false,
+          error: 'Could not verify group management status. Try again.',
+          message: 'Could not verify group management status. Try again.',
+        }), { status: 503 });
       }
     }
 
