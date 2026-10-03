@@ -146,8 +146,8 @@ OPNSENSE_API_KEY=your_api_key_here
 OPNSENSE_API_SECRET=your_api_secret_here
 
 # Security (Required - generate with commands below)
-NEXTAUTH_SECRET=generate_with_openssl_rand_base64_32
-BACKUP_ENCRYPTION_SECRET_KEY=generate_with_openssl_rand_hex_32
+NEXTAUTH_SECRET=REPLACE_ME_openssl_rand_base64_32
+BACKUP_ENCRYPTION_SECRET_KEY=REPLACE_ME_openssl_rand_hex_32
 
 # Application URL (Required - update with your server IP/domain)
 NEXTAUTH_URL=http://your-server-ip:3000

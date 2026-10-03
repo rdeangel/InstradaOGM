@@ -2,6 +2,7 @@
 import 'server-only';
 import { logger } from '@/lib/logger';
 import { initializeServices, shutdownServices } from './service-initializer';
+import { placeholderSecretWarnings } from './placeholder-secrets';
 
 let appInitialized = false;
 
@@ -17,6 +18,10 @@ export async function initializeApp(): Promise<void> {
 
   try {
     logger.info('Initializing InstradaOGM application...');
+
+    for (const warning of placeholderSecretWarnings()) {
+      logger.warn(`SECURITY: ${warning}`);
+    }
 
     // Initialize background services
     await initializeServices();

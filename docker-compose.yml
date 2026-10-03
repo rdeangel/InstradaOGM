@@ -63,7 +63,6 @@ services:
       dockerfile: Dockerfile
       args:
         - NEXT_PUBLIC_APP_VERSION=${NEXT_PUBLIC_APP_VERSION:-latest}
-        - BACKUP_ENCRYPTION_SECRET_KEY="your_encryption_key_here_64_chars"
         - PRISMA_SCHEMA_FILE=schema.postgres.prisma
         - PRISMA_MIGRATIONS_DIR=migrations-postgres
         - DATABASE_URL=postgresql://user:password@localhost:5432/instrada-ogm_build?schema=public # Dummy URL for build-time Prisma operations
@@ -119,7 +118,6 @@ services:
       dockerfile: Dockerfile
       args:
         - NEXT_PUBLIC_APP_VERSION=${NEXT_PUBLIC_APP_VERSION:-latest}
-        - BACKUP_ENCRYPTION_SECRET_KEY="your_encryption_key_here_64_chars"
         - PRISMA_SCHEMA_FILE=schema.sqlite.prisma
         - PRISMA_MIGRATIONS_DIR=migrations-sqlite
         - DATABASE_URL=file:/app/data/db/${SQLITE_DB_NAME:-instrada-ogm.db} # Default URL for build-time Prisma operations

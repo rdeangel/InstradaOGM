@@ -223,7 +223,7 @@ openssl rand -hex 32
 
 Add to your `.env` file:
 ```bash
-BACKUP_ENCRYPTION_SECRET_KEY=your_64_character_hex_string_here
+BACKUP_ENCRYPTION_SECRET_KEY=REPLACE_ME_openssl_rand_hex_32
 ```
 
 ### Manual Backup Encryption/Decryption

@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 
 // Create CSS preview component for default option (shows both single and multi dots)
@@ -218,6 +219,19 @@ export function SystemSummaryTab({
         </div>
       </CardHeader>
       <CardContent className="p-4 md:p-6 relative flex-1 overflow-hidden flex flex-col">
+        {Array.isArray(systemSummaryData.securityWarnings) && systemSummaryData.securityWarnings.length > 0 && (
+          <Alert variant="destructive" className="mb-4">
+            <LucideIcons.ShieldAlert className="h-4 w-4" />
+            <AlertTitle>Placeholder secrets detected</AlertTitle>
+            <AlertDescription>
+              <ul className="list-disc pl-4 space-y-1">
+                {systemSummaryData.securityWarnings.map((warning: string) => (
+                  <li key={warning}>{warning}</li>
+                ))}
+              </ul>
+            </AlertDescription>
+          </Alert>
+        )}
         <ScrollArea className="flex-1 min-h-0 w-full">
           <div className="space-y-6">
 

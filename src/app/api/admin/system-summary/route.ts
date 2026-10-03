@@ -9,6 +9,7 @@ import { promises as fs } from 'fs';
 import { getDataPath } from '@/lib/server/data-paths';
 import { toJsonArrayOrUndefined } from '@/lib/utils';
 import { ValidLocalNetwork } from '@/types/settings';
+import { placeholderSecretWarnings } from '@/lib/server/placeholder-secrets';
 
 type KeaDhcpv4ReservationRow = object;
 interface KeaLeases4Row { state: string; }
@@ -617,6 +618,7 @@ export async function GET(req: Request) {
       }
 
       const summary = {
+        securityWarnings: placeholderSecretWarnings(),
         globalSettings: {
           enableRegistration: globalSettings?.enableRegistration ?? false,
           removeSelfServicePage: globalSettings?.removeSelfServicePage ?? false,
