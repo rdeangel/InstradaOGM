@@ -1,5 +1,6 @@
 import { prisma } from "./prisma";
 import { logger } from './logger';
+import { getClientIp } from './network-utils';
 import { Prisma } from "@prisma/client"; // Import Prisma namespace for JsonValue type
 
 export interface AuditEventData {
@@ -166,7 +167,7 @@ export async function logApiKeyEvent(
             })
         },
         reason,
-        ipAddress: request?.headers.get('x-forwarded-for') || request?.headers.get('remote-addr') || null,
+        ipAddress: request ? getClientIp(request) : null,
         userAgent: request?.headers.get('user-agent') || null,
     });
 }
@@ -208,7 +209,7 @@ export async function logApiAccess(
             })
         },
         reason,
-        ipAddress: request?.headers.get('x-forwarded-for') || request?.headers.get('remote-addr') || null,
+        ipAddress: request ? getClientIp(request) : null,
         userAgent: request?.headers.get('user-agent') || null,
     });
 }

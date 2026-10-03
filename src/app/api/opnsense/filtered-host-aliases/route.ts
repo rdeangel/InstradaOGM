@@ -4,7 +4,7 @@ import { authenticateRequest, handleAuthResponse, trackUsageByAuthMethod } from 
 import { getFilteredHostAliases } from '@/lib/host-alias-filtering';
 import { prisma } from '@/lib/prisma';
 import type { ValidLocalNetwork } from '@/types/settings';
-import { isIpAllowedForSelfService } from '@/lib/network-utils';
+import { isIpAllowedForSelfService, getClientIp } from '@/lib/network-utils';
 import type { OpnsenseAliasDetailFromExport } from '@/types/opnsense';
 import { toJsonArrayOrUndefined } from '@/lib/utils';
 import { resolveUserAliasPermissions } from '@/lib/user-permissions';
@@ -20,7 +20,7 @@ export async function GET(request: Request) {
     if (authError) return authError;
   }
 
-  const clientIp = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'UNKNOWN_IP';
+  const clientIp = getClientIp(request) || 'UNKNOWN_IP';
 
   try {
     if (ipAddress) {

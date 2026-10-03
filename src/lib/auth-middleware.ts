@@ -10,6 +10,7 @@ import { trackApiUsageEvent } from './api-usage-tracker';
 import { trackSessionUsageEvent } from './session-usage-tracker';
 import { isAdvancedAnalyticsEnabled } from './analytics-settings';
 import { shouldExcludeFromAnalytics } from './analytics-exclusions';
+import { getClientIp } from './network-utils';
 import { User } from '@prisma/client';
 
 // Define types for authentication response
@@ -83,7 +84,7 @@ export async function trackApiUsage(
     const url = new URL(req.url);
     const endpoint = url.pathname;
     const method = req.method;
-    const ipAddress = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || undefined;
+    const ipAddress = getClientIp(req) ?? undefined;
     const userAgent = req.headers.get('user-agent') || undefined;
 
     // Get request size from content-length header
@@ -138,7 +139,7 @@ export async function trackSessionUsage(
       return;
     }
     const method = req.method;
-    const ipAddress = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || undefined;
+    const ipAddress = getClientIp(req) ?? undefined;
     const userAgent = req.headers.get('user-agent') || undefined;
     const referrer = req.headers.get('referer') || undefined;
 
@@ -230,7 +231,7 @@ export async function authenticateRequest(req: Request) {
             rateLimitInfo,
             endpoint: req.url || 'unknown',
             userAgent: req.headers.get('user-agent') || 'unknown',
-            ipAddress: req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || 'unknown',
+            ipAddress: getClientIp(req) || 'unknown',
           },
           reason: `Rate limit exceeded: ${rateLimitInfo.windowType} window (${rateLimitInfo.limit} limit)`,
         });

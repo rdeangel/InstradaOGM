@@ -7,7 +7,7 @@ import type { NetworkGroup } from '@/types/opnsense';
 import { prisma } from '@/lib/prisma';
 import type { ValidLocalNetwork } from '@/types/settings';
 import { Role } from '@/types/opnsense';
-import { isIpAllowedForSelfService } from '@/lib/network-utils';
+import { isIpAllowedForSelfService, getClientIp } from '@/lib/network-utils';
 import { resolveUserAliasPermissions } from '@/lib/user-permissions';
 import { toJsonArrayOrUndefined } from '@/lib/utils';
  
@@ -94,22 +94,7 @@ export async function GET(request: Request) {
   }
 
   // Derive the client IP for all callers so own-IP self-service works for authenticated users too.
-  let clientIp: string | undefined = undefined;
-  {
-    const forwardedFor = request.headers.get('x-forwarded-for');
-    if (forwardedFor) {
-      clientIp = forwardedFor.split(',')[0].trim();
-    } else {
-      const realIp = request.headers.get('x-real-ip');
-      if (realIp) {
-        clientIp = realIp.trim();
-      }
-    }
-
-    if (clientIp && clientIp.startsWith('::ffff:')) {
-      clientIp = clientIp.substring(7); // Remove '::ffff:' IPv4-mapped IPv6 address prefix
-    }
-  }
+  const clientIp = getClientIp(request) ?? undefined;
 
   // Normalize IPs for comparison
   const normalizedTargetIp = ip ? ip.trim().replace(/^::ffff:/, '') : undefined;

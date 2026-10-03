@@ -3,6 +3,7 @@ import { logger } from '@/lib/logger';
 import { authenticateAndTrackRequest } from '@/lib/auth-middleware';
 import { Role } from '@/types/opnsense';
 import { getGlobalSettingsServer } from '@/lib/server/global-settings-utils';
+import { getClientIp } from '@/lib/network-utils';
 
 export async function GET(request: Request) {
   return authenticateAndTrackRequest(request, async (auth) => {
@@ -21,7 +22,7 @@ export async function GET(request: Request) {
 
     logger.info(`Global Settings Full API: Authenticated access by user ${auth.user.id} (${auth.user.role})`);
 
-    const clientIp = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || null;
+    const clientIp = getClientIp(request);
     const result = await getGlobalSettingsServer(clientIp);
 
     if (!result.success || !result.data) {

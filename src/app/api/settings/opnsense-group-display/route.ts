@@ -3,6 +3,7 @@ import { logger } from '@/lib/logger';
 import { prisma } from '@/lib/prisma'; // Import Prisma client
 import { logAuditEvent } from '@/lib/auditLog';
 import { authenticateAndTrackRequest } from '@/lib/auth-middleware';
+import { getClientIp } from '@/lib/network-utils';
 import type { OpnsenseGroupDisplay } from '@/types/settings'; // Import the type
 import { Role } from '@/types/opnsense'; // Import Role enum
 
@@ -46,7 +47,7 @@ export async function POST(request: Request) {
       }
 
     const userId = auth.user.id;
-    const ipAddress = request.headers.get('x-forwarded-for') || null;
+    const ipAddress = getClientIp(request);
     const userAgent = request.headers.get('user-agent') || null;
 
     const incomingGroupDisplays: OpnsenseGroupDisplay[] = await request.json();
@@ -188,7 +189,7 @@ export async function DELETE(request: Request) {
       }
 
     const userId = auth.user.id;
-    const ipAddress = request.headers.get('x-forwarded-for') || null;
+    const ipAddress = getClientIp(request);
     const userAgent = request.headers.get('user-agent') || null;
 
     const { opnsenseUuid } = await request.json();

@@ -188,4 +188,5 @@ echo "Database setup completed successfully"
 echo "Starting Next.js application..."
 
 # Execute the main application command
-exec node server.js
+# -r only on the final exec so prisma in this script does not load the guard
+exec node -r /app/xff-guard.cjs server.js

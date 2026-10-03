@@ -6,11 +6,12 @@ import { authenticator } from 'otplib';
 import qrcode from 'qrcode';
 import { logAuditEvent } from '@/lib/auditLog'; // Import logAuditEvent
 import { storeTotpSecret } from '@/lib/totp-encryption';
+import { getClientIp } from '@/lib/network-utils';
 
 export async function POST(req: Request) {
   return authenticateAndTrackRequest(req, async (auth) => {
     const userId = auth.user?.id || null;
-    const ipAddressReq = req.headers.get('x-forwarded-for') || req.headers.get('remote-addr') || 'N/A';
+    const ipAddressReq = getClientIp(req) || 'N/A';
     const userAgent = req.headers.get('user-agent') || 'N/A';
 
     if (!userId) {

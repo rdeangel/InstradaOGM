@@ -208,8 +208,6 @@ export async function GET(request: Request) {
     } else if (action === 'search_reservation') {
       const ipAddress = searchParams.get('ip');
       const macAddress = searchParams.get('mac');
-      // Remove unused variable
-      // const clientIp = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'UNKNOWN_IP';
 
       if (!ipAddress || !macAddress) {
         return NextResponse.json({ message: 'Both IP Address and MAC Address are required for reservation lookup.' }, { status: 400 });

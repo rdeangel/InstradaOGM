@@ -149,6 +149,9 @@ COPY --from=builder --chown=nextjs:nodejs /app/scripts/setup-dirs.js ./scripts/s
 # Copy MAC vendor database
 COPY --from=builder --chown=nextjs:nodejs /app/data/mac-db ./data/mac-db
 
+# Client-IP guard (preload; not part of the Next standalone bundle)
+COPY --from=builder --chown=nextjs:nodejs /app/xff-guard.cjs ./xff-guard.cjs
+
 # Copy entrypoint script
 COPY --chmod=755 docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 

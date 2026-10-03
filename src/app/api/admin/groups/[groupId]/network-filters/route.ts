@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { logger } from '@/lib/logger';
 import { prisma } from '@/lib/prisma';
 import { authenticateAndTrackRequest } from '@/lib/auth-middleware';
+import { getClientIp } from '@/lib/network-utils';
 import { logAuditEvent } from '@/lib/auditLog';
 import { Role } from '@/types/opnsense'; // Assuming Role is defined here or similar
 
@@ -48,7 +49,7 @@ export async function POST(
 ) {
   return authenticateAndTrackRequest(request, async (auth) => {
     const userId = auth.user?.id || null;
-  const ipAddress = request.headers.get('x-forwarded-for') || null;
+  const ipAddress = getClientIp(request);
   const userAgent = request.headers.get('user-agent') || null;
 
   if (!auth.user) {

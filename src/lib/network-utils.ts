@@ -6,37 +6,40 @@ import { logger } from './logger';
 import type { ValidLocalNetwork } from '@/types/settings'; // Import ValidLocalNetwork type
 
 /**
- * Type for request objects that may have an ip property (like NextRequest)
+ * Request objects that expose the Fetch Headers API (`NextRequest`, `Request`).
  */
-type RequestWithIp = { headers: Pick<Headers, 'get'>; ip?: string };
+type RequestWithIp = { headers: Pick<Headers, 'get'> };
+
+let warnedGuardMissing = false;
+
+function isXffGuardLoaded(): boolean {
+  return Boolean((globalThis as { __ogmXffGuard?: boolean }).__ogmXffGuard);
+}
+
+function warnGuardMissingOnce(): void {
+  if (warnedGuardMissing) return;
+  warnedGuardMissing = true;
+  logger.error(
+    '[getClientIp] xff-guard is not loaded. Start with npm start / npm run dev, or node -r ./xff-guard.cjs. Self-service is disabled in production until the guard is loaded.'
+  );
+}
 
 /**
- * Extracts the client's IP address from the request headers or socket.
- * Prioritizes headers (X-Forwarded-For, X-Real-IP) for proxy support,
- * falling back to Next.js request.ip for direct connections.
+ * Client IP computed once by `xff-guard.cjs` and passed in `x-ogm-client-ip`.
+ * Production fails closed (null) when the guard is not loaded. Dev/test keep a
+ * rightmost-XFF then X-Real-IP fallback so existing tests still work.
  */
 export function getClientIp(request: RequestWithIp): string | null {
-  const headers = request.headers;
-
-  // Standard Proxy Header (Comma-separated, first is original client)
-  const forwardedFor = headers.get('x-forwarded-for');
-  if (forwardedFor) {
-    return forwardedFor.split(',')[0].trim();
+  if (isXffGuardLoaded()) {
+    return request.headers.get('x-ogm-client-ip') || null;
   }
-
-  // Fallback Proxy Header
-  const realIp = headers.get('x-real-ip');
-  if (realIp) {
-    return realIp.trim();
+  warnGuardMissingOnce();
+  if (process.env.NODE_ENV === 'production') {
+    return null;
   }
-
-  // Native Next.js IP (Direct Access)
-  // Note: 'ip' property exists on NextRequest but might be missing on standard Request
-  if ('ip' in request && request.ip) {
-    return request.ip;
-  }
-
-  return null;
+  const xff = request.headers.get('x-forwarded-for');
+  const ip = xff ? xff.split(',').pop()!.trim() : request.headers.get('x-real-ip')?.trim();
+  return ip ? ip.replace(/^::ffff:/i, '') : null;
 }
 
 /**

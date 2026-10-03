@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma';
 import type { GroupFilter } from '@/types/settings'; // Our application-specific type
 import { logAuditEvent } from '@/lib/auditLog';
 import { authenticateAndTrackRequest } from '@/lib/auth-middleware';
+import { getClientIp } from '@/lib/network-utils';
 import { Role } from '@/types/opnsense'; // Import Role enum
 
 export async function GET(request: Request) {
@@ -54,7 +55,7 @@ export async function POST(request: Request) {
     }
 
   const userId = auth.user?.id || null;
-  const ipAddress = request.headers.get('x-forwarded-for') || null;
+  const ipAddress = getClientIp(request);
   const userAgent = request.headers.get('user-agent') || null;
 
   try {

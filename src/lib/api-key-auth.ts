@@ -5,6 +5,7 @@ import bcrypt from 'bcryptjs';
 import { prisma } from '@/lib/prisma';
 import { logAuditEvent } from '@/lib/auditLog';
 import { logger } from '@/lib/logger';
+import { getClientIp } from '@/lib/network-utils';
 
 export interface ApiKeyUser {
   id: string;
@@ -29,7 +30,7 @@ export interface ApiKeyValidationResult {
 export async function validateApiKey(req: NextRequest): Promise<ApiKeyValidationResult> {
   const authHeader = req.headers.get('authorization');
   const apiKeyHeader = req.headers.get('x-api-key');
-  const ipAddress = req.headers.get('x-forwarded-for') || req.headers.get('remote-addr') || 'N/A';
+  const ipAddress = getClientIp(req) || 'N/A';
   const userAgent = req.headers.get('user-agent') || 'N/A';
   const apiEndpoint = new URL(req.url).pathname;
 

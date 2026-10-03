@@ -5,7 +5,7 @@ import { Role } from '@/types/opnsense';
 import { OpnsenseAliasDetailFromExport } from '@/lib/opnsense-api';
 // Removed unused import NetworkGroup
 import type { ValidLocalNetwork } from '@/types/settings';
-import { isIpAllowedForSelfService } from '@/lib/network-utils';
+import { isIpAllowedForSelfService, getClientIp } from '@/lib/network-utils';
 import { prisma } from '@/lib/prisma';
 import { logApiAccess } from '@/lib/auditLog';
 import { toJsonArrayOrUndefined } from '@/lib/utils';
@@ -14,7 +14,7 @@ export async function GET(request: Request) {
   return authenticateAndTrackRequest(request, async (auth) => {
     const { searchParams } = new URL(request.url);
     const ipAddress = searchParams.get('ipAddress');
-    const clientIp = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'UNKNOWN_IP';
+    const clientIp = getClientIp(request) || 'UNKNOWN_IP';
 
     try {
       if (ipAddress) {

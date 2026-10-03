@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { Role } from '@/types/opnsense';
 import { logger } from '@/lib/logger';
 import { logAuditEvent } from '@/lib/auditLog';
+import { getClientIp } from '@/lib/network-utils';
 
 interface TrimRequest {
     retentionPeriod: number;
@@ -226,7 +227,7 @@ export async function POST(request: Request) {
             await logAuditEvent({
                 userId: auth.user.id,
                 action: auditAction,
-                ipAddress: request.headers.get('x-forwarded-for'),
+                ipAddress: getClientIp(request),
                 userAgent: request.headers.get('user-agent'),
                 details: {
                     retentionPeriod,
@@ -254,7 +255,7 @@ export async function POST(request: Request) {
                 await logAuditEvent({
                     userId: auth.user?.id || null,
                     action: 'AUDIT_MANAGEMENT_TRIM_FAILED',
-                    ipAddress: request.headers.get('x-forwarded-for'),
+                    ipAddress: getClientIp(request),
                     userAgent: request.headers.get('user-agent'),
                     details: {
                         error: (error as Error).message || 'Unknown error'

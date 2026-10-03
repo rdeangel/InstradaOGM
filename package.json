@@ -4,9 +4,9 @@
   "private": true,
   "license": "MIT",
   "scripts": {
-    "dev": "export $(grep -v '^#' .env.development 2>/dev/null | xargs) && npm run setup-dirs && prisma db push --accept-data-loss && prisma generate && npm run prisma:seed && NODE_ENV=development next dev --turbopack -H 0.0.0.0 -p 9002",
+    "dev": "export $(grep -v '^#' .env.development 2>/dev/null | xargs) && npm run setup-dirs && prisma db push --accept-data-loss && prisma generate && npm run prisma:seed && NODE_ENV=development NODE_OPTIONS=\"--require ./xff-guard.cjs ${NODE_OPTIONS:-}\" next dev --turbopack -H 0.0.0.0 -p 9002",
     "build": "prisma generate && next build",
-    "start": "export $(grep -v '^#' .env.production 2>/dev/null | xargs) && npm run setup-dirs && NODE_ENV=production next start",
+    "start": "export $(grep -v '^#' .env.production 2>/dev/null | xargs) && npm run setup-dirs && NODE_ENV=production NODE_OPTIONS=\"--require ./xff-guard.cjs ${NODE_OPTIONS:-}\" next start",
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",

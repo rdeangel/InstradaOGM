@@ -5,6 +5,7 @@ import { logAuditEvent } from '../../../../lib/auditLog';
 import { authenticateAndTrackRequest } from '@/lib/auth-middleware';
 import { GlobalSettings, ValidLocalNetwork, CustomLucideIcon, CustomEmoji, CustomFlag } from '@/types/settings'; // Import new types
 import { getGlobalSettings } from '@/lib/server/global-settings';
+import { getClientIp } from '@/lib/network-utils';
 
 import { Role } from '@/types/opnsense'; // Import Role enum
 import { Prisma } from '@prisma/client'; // Import Prisma namespace
@@ -61,7 +62,7 @@ export async function GET(request: Request) {
     }
 
     try {
-      const ipAddress = request.headers.get('x-forwarded-for') || null;
+      const ipAddress = getClientIp(request);
       const globalSettings = await getGlobalSettings(ipAddress);
       return NextResponse.json(globalSettings);
     } catch (error) {
@@ -79,7 +80,7 @@ export async function POST(request: Request) {
       }
 
       const userId = auth.user.id || null;
-      const ipAddress = request.headers.get('x-forwarded-for') || null;
+      const ipAddress = getClientIp(request);
       const userAgent = request.headers.get('user-agent') || null;
 
       const body = await request.json();
