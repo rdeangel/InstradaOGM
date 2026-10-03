@@ -27,6 +27,14 @@ SMTP_PORT=""
 SMTP_USER=""
 SMTP_PASSWORD=""
 
+# Expand DEST_DIR: a leading ~ and $HOME only. Other $VAR is left literal.
+expand_dest_dir() {
+    local dest="${1:-$DEST_DIR}"
+    dest="${dest/#\~/$HOME}"
+    dest="${dest//\$HOME/$HOME}"
+    printf '%s' "$dest"
+}
+
 # Load environment variables from .backup_instrada_vars file if it exists
 load_env_file() {
     # Check for .backup_instrada_vars file
@@ -241,23 +249,18 @@ EOF
 
     log_info "Email content created"
 
-    # Determine protocol and build curl command
-    local curl_cmd="curl -s --max-time 30"
     local protocol="smtp"
+    local curl_args=(-s --max-time 30)
 
-    # Check if authentication is required
     if [ -n "$SMTP_USER" ] && [ -n "$SMTP_PASSWORD" ]; then
         log_info "SMTP authentication enabled"
-        curl_cmd="$curl_cmd --user \"$SMTP_USER:$SMTP_PASSWORD\""
+        curl_args+=(--user "$SMTP_USER:$SMTP_PASSWORD")
 
-        # Determine encryption based on port
         if [ "$smtp_port" = "465" ]; then
-            # Port 465 uses implicit SSL/TLS
             protocol="smtps"
             log_info "Using implicit SSL/TLS (port 465)"
         elif [ "$smtp_port" = "587" ]; then
-            # Port 587 uses STARTTLS
-            curl_cmd="$curl_cmd --ssl-reqd"
+            curl_args+=(--ssl-reqd)
             log_info "Using STARTTLS encryption (port 587)"
         else
             log_warning "Authentication enabled but non-standard port $smtp_port - using plain SMTP"
@@ -266,20 +269,24 @@ EOF
         log_info "No SMTP authentication (plain SMTP on port $smtp_port)"
     fi
 
-    # Build final curl command
-    curl_cmd="$curl_cmd --url \"$protocol://$smtp_server:$smtp_port\" --mail-from \"$EMAIL_FROM\" --mail-rcpt \"$EMAIL_TO\" --upload-file \"$email_file\""
+    curl_args+=(--url "$protocol://$smtp_server:$smtp_port" --mail-from "$EMAIL_FROM" --mail-rcpt "$EMAIL_TO" --upload-file "$email_file")
 
-    # Send email using curl with SMTP
     log_info "Sending email via curl SMTP..."
     if [ "$VERBOSE" = true ]; then
-        log_info "Command: $curl_cmd"
+        local log_args=("${curl_args[@]}")
+        local i
+        for i in "${!log_args[@]}"; do
+            if [ "${log_args[$i]}" = "--user" ]; then
+                log_args[$((i + 1))]="***"
+            fi
+        done
+        log_info "Command: curl ${log_args[*]}"
     fi
 
     local curl_output
     local curl_exit_code
 
-    # Execute curl command
-    curl_output=$(eval "$curl_cmd" 2>&1)
+    curl_output=$(curl "${curl_args[@]}" 2>&1)
     curl_exit_code=$?
 
     # Clean up temp file
@@ -636,15 +643,21 @@ create_backup() {
         api_filename="$BACKUP_PREFIX"
     fi
 
-    # Prepare curl command
-    local curl_cmd="curl -s -w '%{http_code}' -o '$response_file' -X POST '$SERVER_URL/api/settings/backup' -H 'Authorization: Bearer $API_KEY' -F 'action=backup'"
+    local curl_args=(-s -w '%{http_code}' -o "$response_file" -X POST "$SERVER_URL/api/settings/backup" -H "Authorization: Bearer $API_KEY" -F 'action=backup')
 
     if [ -n "$api_filename" ]; then
-        curl_cmd="$curl_cmd -F 'filename=$api_filename'"
+        curl_args+=(-F "filename=$api_filename")
     fi
 
     if [ "$DRY_RUN" = true ]; then
-        log_info "[DRY RUN] Would execute: $curl_cmd"
+        local log_args=("${curl_args[@]}")
+        local i
+        for i in "${!log_args[@]}"; do
+            if [[ "${log_args[$i]}" == Authorization:\ Bearer\ * ]]; then
+                log_args[$i]="Authorization: Bearer ***"
+            fi
+        done
+        log_info "[DRY RUN] Would execute: curl ${log_args[*]}"
         # API will add timestamp if no extension is present
         if [ -n "$api_filename" ] && [[ ! "$api_filename" =~ \.aes$ ]]; then
             backup_filename="${api_filename}_$(date +%Y%m%dT%H%M%S_%3NZ)"
@@ -658,9 +671,8 @@ create_backup() {
 
     log_info "Creating backup..."
 
-    # Execute curl command
     local http_code
-    http_code=$(eval "$curl_cmd")
+    http_code=$(curl "${curl_args[@]}")
 
     log_info "HTTP response code: $http_code"
 
@@ -716,7 +728,7 @@ download_backup() {
     local filename="$1"
     # Expand tilde and create absolute path
     local expanded_dest_dir
-    expanded_dest_dir=$(eval echo "$DEST_DIR")
+    expanded_dest_dir=$(expand_dest_dir)
     local local_path="$expanded_dest_dir/$filename"
 
     log_info "Downloading backup: $filename"
@@ -915,7 +927,7 @@ main() {
 
     # Construct local path for verification
     local expanded_dest_dir
-    expanded_dest_dir=$(eval echo "$DEST_DIR")
+    expanded_dest_dir=$(expand_dest_dir)
     local local_path="$expanded_dest_dir/$backup_filename"
 
     while [ $retry_count -lt $max_retries ] && [ "$download_success" = false ]; do
@@ -961,7 +973,7 @@ main() {
     # Get file size for email notification
     local file_size="Unknown"
     local expanded_dest_dir
-    expanded_dest_dir=$(eval echo "$DEST_DIR")
+    expanded_dest_dir=$(expand_dest_dir)
     local local_path="$expanded_dest_dir/$backup_filename"
     
     if [ -f "$local_path" ]; then
