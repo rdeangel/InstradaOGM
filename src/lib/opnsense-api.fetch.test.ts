@@ -1,10 +1,13 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import fs from 'fs';
 
 vi.hoisted(() => {
   process.env.OPNSENSE_URL = 'https://opnsense.test';
   process.env.OPNSENSE_API_KEY = 'test-key';
   process.env.OPNSENSE_API_SECRET = 'test-secret';
 });
+
+const opnsenseHttpsRequest = vi.hoisted(() => vi.fn());
 
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/prisma', () => ({
@@ -20,21 +23,17 @@ vi.mock('@/lib/logger', () => ({
     error: vi.fn(),
   },
 }));
+vi.mock('@/lib/opnsense-https', () => ({
+  opnsenseHttpsRequest,
+}));
 
 import { createHostAliasFromHostname, deleteAliasItem, fetchFromOpnsense, getBestHostAliasName, setAliasItem } from '@/lib/opnsense-api';
 import { InvalidOpnsenseIdError, InvalidOpnsensePathError } from '@/lib/opnsense-id';
 import { InvalidIpAddressError } from '@/lib/network-utils';
 
 describe('fetchFromOpnsense path guard', () => {
-  const fetchMock = vi.fn();
-
   beforeEach(() => {
-    fetchMock.mockReset();
-    vi.stubGlobal('fetch', fetchMock);
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
+    opnsenseHttpsRequest.mockReset();
   });
 
   it.each([
@@ -48,19 +47,26 @@ describe('fetchFromOpnsense path guard', () => {
     '@evil.com/api',
   ])('rejects %j without fetching', async (endpoint) => {
     await expect(fetchFromOpnsense(endpoint, 'POST', {})).rejects.toBeInstanceOf(InvalidOpnsensePathError);
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(opnsenseHttpsRequest).not.toHaveBeenCalled();
   });
 
   it('fetches a safe endpoint', async () => {
-    fetchMock.mockResolvedValue({
+    opnsenseHttpsRequest.mockResolvedValue({
       ok: true,
       status: 200,
+      statusText: 'OK',
       headers: { get: () => 'application/json' },
       json: async () => ({ result: 'ok' }),
+      text: async () => '{"result":"ok"}',
     });
 
     await expect(fetchFromOpnsense('/api/firewall/alias/export')).resolves.toEqual({ result: 'ok' });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(opnsenseHttpsRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not reference NODE_TLS_REJECT_UNAUTHORIZED', () => {
+    const src = fs.readFileSync(new URL('./opnsense-api.ts', import.meta.url), 'utf8');
+    expect(src).not.toContain('NODE_TLS_REJECT_UNAUTHORIZED');
   });
 });
 
@@ -71,15 +77,8 @@ describe('getBestHostAliasName', () => {
 });
 
 describe('createHostAliasFromHostname', () => {
-  const fetchMock = vi.fn();
-
   beforeEach(() => {
-    fetchMock.mockReset();
-    vi.stubGlobal('fetch', fetchMock);
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
+    opnsenseHttpsRequest.mockReset();
   });
 
   it.each([
@@ -91,7 +90,7 @@ describe('createHostAliasFromHostname', () => {
     await expect(createHostAliasFromHostname('evil', ipAddress as string)).rejects.toBeInstanceOf(
       InvalidIpAddressError
     );
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(opnsenseHttpsRequest).not.toHaveBeenCalled();
   });
 });
 
@@ -105,25 +104,18 @@ const aliasPayload = {
 };
 
 describe('setAliasItem / deleteAliasItem id guards', () => {
-  const fetchMock = vi.fn();
-
   beforeEach(() => {
-    fetchMock.mockReset();
-    vi.stubGlobal('fetch', fetchMock);
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
+    opnsenseHttpsRequest.mockReset();
   });
 
   it('setAliasItem rejects an id with slashes without fetching', async () => {
     const result = await setAliasItem('1/stopService/2', aliasPayload);
     expect(result.result).toBe('failed');
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(opnsenseHttpsRequest).not.toHaveBeenCalled();
   });
 
   it('deleteAliasItem throws InvalidOpnsenseIdError for an id with slashes without fetching', async () => {
     await expect(deleteAliasItem('1/stopService/2')).rejects.toBeInstanceOf(InvalidOpnsenseIdError);
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(opnsenseHttpsRequest).not.toHaveBeenCalled();
   });
 });

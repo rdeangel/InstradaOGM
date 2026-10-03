@@ -9,16 +9,13 @@ import { prisma } from '@/lib/prisma'; // Import Prisma client
 import { logger } from '@/lib/logger'; // Import logger
 import { VpnClientType } from '@prisma/client';
 import { handleSSLError } from './opnsense-ssl-config';
+import { opnsenseHttpsRequest } from './opnsense-https';
 import { assertOpnsenseId, assertSafeOpnsenseEndpoint } from '@/lib/opnsense-id';
 import { assertValidHostIpAddress, InvalidIpAddressError } from '@/lib/network-utils';
-
-// Module-level flag to track SSL bypass warning display (resets on application restart)
-let sslWarningShown = false;
 
 const OPNSENSE_URL = process.env.OPNSENSE_URL;
 const API_KEY = process.env.OPNSENSE_API_KEY;
 const API_SECRET = process.env.OPNSENSE_API_SECRET;
-// SKIP_SSL_VERIFICATION is now handled in opnsense-ssl-config.ts
 
 /**
  * Helper function to get the best host alias name for an IP address
@@ -172,13 +169,8 @@ function sanitizeHostAliasName(hostname: string): string {
     .replace(/^$/, 'HOST');
 }
 
-// SSL configuration is now handled per-request via createOPNsenseHttpsAgent()
-// This eliminates the security risk of global SSL bypass affecting all HTTPS connections
-
-// Helper function for making authenticated API requests
-// The credential check is now primarily within this function,
-// as this module might be inadvertently imported client-side,
-// but this function should only be executed server-side.
+// Helper function for making authenticated API requests.
+// TLS is owned by opnsenseHttpsRequest (https.request + the OPNsense agent).
 export async function fetchFromOpnsense<T = OpnsenseApiResponse>(endpoint: string, method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET', body?: unknown): Promise<T> {
   assertSafeOpnsenseEndpoint(endpoint);
 
@@ -217,54 +209,17 @@ export async function fetchFromOpnsense<T = OpnsenseApiResponse>(endpoint: strin
     logger.debug(`Request body:`, JSON.stringify(body));
   }
 
-  // Handle SSL verification bypass for OPNsense API calls only
-  const skipSslVerification = process.env.SKIP_SSL_VERIFICATION === 'true';
-  let originalTlsRejectUnauthorized: string | undefined;
-
-  if (skipSslVerification && OPNSENSE_URL?.startsWith('https://')) {
-    // Temporarily disable SSL verification for this request only
-    originalTlsRejectUnauthorized = process.env.NODE_TLS_REJECT_UNAUTHORIZED;
-    process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-
-    // Display warning only once per application lifecycle to reduce log noise
-    if (!sslWarningShown) {
-      logger.warn(
-        'WARNING: SSL certificate verification is DISABLED for all OPNsense API calls (SKIP_SSL_VERIFICATION="true"). ' +
-        'This bypasses critical security checks and should ONLY be used in development/testing environments. ' +
-        'You acknowledge the security risks associated with this configuration. ' +
-        'For proper SSL validation, set SKIP_SSL_VERIFICATION="false" or remove it from your .env file.'
-      );
-      sslWarningShown = true;
-    }
-  }
-
-  let response: Response;
+  let response: Awaited<ReturnType<typeof opnsenseHttpsRequest>>;
   try {
-    response = await fetch(`${OPNSENSE_URL}${endpoint}`, config);
+    response = await opnsenseHttpsRequest(`${OPNSENSE_URL}${endpoint}`, {
+      method,
+      headers: headers as Record<string, string>,
+      body: typeof config.body === 'string' ? config.body : undefined,
+    });
   } catch (error: unknown) {
-    // Handle SSL-specific errors with helpful messages
-    if (skipSslVerification) {
-      // When SSL verification is disabled, log SSL errors as warnings instead of errors
-      const errorCode = (error as { code?: string }).code;
-      if (errorCode && ['ERR_TLS_CERT_ALTNAME_INVALID', 'CERT_HAS_EXPIRED', 'SELF_SIGNED_CERT_IN_CHAIN', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE', 'CERT_UNTRUSTED'].includes(errorCode)) {
-        logger.warn(`OPNsense API SSL warning (bypassed): ${(error as Error).message || String(error)}`);
-        // Still throw the error as SSL bypass didn't work as expected
-        throw error;
-      }
-    }
-
     const enhancedError = handleSSLError(error);
     logger.error(`OPNsense API connection error: ${enhancedError.message}`);
     throw enhancedError;
-  } finally {
-    // Always restore the original SSL verification setting
-    if (skipSslVerification && OPNSENSE_URL?.startsWith('https://')) {
-      if (originalTlsRejectUnauthorized !== undefined) {
-        process.env.NODE_TLS_REJECT_UNAUTHORIZED = originalTlsRejectUnauthorized;
-      } else {
-        delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
-      }
-    }
   }
 
   if (!response.ok) {
