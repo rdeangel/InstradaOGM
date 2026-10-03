@@ -134,6 +134,7 @@
   "overrides": {
     "rimraf": "5.0.7",
     "glob": "10.4.5",
-    "nodemailer": "^10.0.13"
+    "nodemailer": "^10.0.13",
+    "deepmerge-ts": "^8.0.2"
   }
 }
