@@ -517,9 +517,11 @@ INTERNAL_APP_URL="http://192.168.1.151:9002"
 - `NEXTAUTH_URL` - Application URL with protocol (required)
 - `DOMAIN` - Domain for reverse proxy routing, no protocol (required for Traefik)
 - `INTERNAL_APP_URL` - Internal server URL (optional)
+- `CSRF_PROTECTION` - Cookie-session CSRF check for `/api` writes (default: true). Set `false` only if a reverse proxy rewrites `Host` and you cannot send `X-Forwarded-Host` or match `NEXTAUTH_URL`.
 
 ### Authentication & Security
 - `NEXTAUTH_SECRET` - JWT signing secret (required)
+- `AUTH_ALLOW_PRIVATE_REDIRECTS` - After login, allow redirects to localhost and private IPv4 addresses (default: true; set `false` to land only on `NEXTAUTH_URL`)
 - `AUTH_ALLOW_LOCAL_LOGIN` - Enable local login (default: true)
 - `AUTH_REQUIRE_VERIFIED_EMAIL_LOCAL` - Require email verification for local login (default: false)
   - Requires AUTH_SMTP_* configuration for email sending

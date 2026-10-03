@@ -93,8 +93,10 @@ location / {
 | **`X-Real-IP $remote_addr`** | Passes the actual client IP address from NGINX's connection | **SECURITY**: Prevents IP spoofing attacks; enables accurate self-service access control based on real client IP |
 | **`X-Forwarded-For $remote_addr`** | Sets the client IP to the address nginx actually connected from | **SECURITY**: At the edge, replace the header. Appending client-supplied values lets a visitor pick an IP |
 | **`X-Forwarded-Proto $scheme`** | Indicates whether client used http or https | Allows InstradaOGM to generate correct URLs (http vs https) for links and redirects |
-| **`X-Forwarded-Host $host`** | Passes the original host header for URL generation | **CRITICAL**: Enables InstradaOGM to generate correct absolute URLs for email verification, password resets, and API endpoints |
+| **`X-Forwarded-Host $host`** | Passes the original host header for URL generation | **CRITICAL**: Enables InstradaOGM to generate correct absolute URLs for email verification, password resets, and API endpoints. Cookie-session API writes also allow this host as `Origin` when the proxy is in `TRUSTED_PROXY_CIDRS` |
 | **`Upgrade` / `Connection`** | Forwards WebSocket upgrade | Needed for live UI connections through the proxy |
+
+**Host / X-Forwarded-Host and CSRF:** cookie-session writes to `/api/*` are rejected unless `Sec-Fetch-Site` is `same-origin`/`none`, or `Origin` matches `Host`, a trusted `X-Forwarded-Host`, or the host in `NEXTAUTH_URL`. If nginx rewrites `Host` (the default `$proxy_host` is the upstream name) and does not send `X-Forwarded-Host`, those writes return HTTP 403 `Cross-site request blocked`. Use the snippet above (`Host $host` plus `X-Forwarded-Host $host`) and set `TRUSTED_PROXY_CIDRS` when nginx is not on the automatic trust list. You can also set `NEXTAUTH_URL` to the URL users type. As a last resort, set `CSRF_PROTECTION=false` and report it.
 
 **Behind another trusted proxy only** (that proxy already replaced the client IP): you may append instead of replace. Most deployments are the edge snippet above.
 

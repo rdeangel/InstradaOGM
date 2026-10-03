@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `/api/admin/provider-display-names` requires an ADMIN or SUPER_ADMIN session or API key (HTTP 401 anonymous, HTTP 403 other signed-in roles).
 - `/api/health` no longer includes a `version` field. When the database is down it returns HTTP 503 with `error: "database unavailable"` and does not include driver text.
 - Missing, weak, or example `NEXTAUTH_SECRET` and `BACKUP_ENCRYPTION_SECRET_KEY` values log a `SECURITY:` warning at startup and show an alert on the System Summary tab. Example env files use non-working `REPLACE_ME_…` placeholders. Generate real values with `openssl rand -base64 32` and `openssl rand -hex 32`.
+- Browser writes from other sites are now rejected. Cookie-session `POST`/`PUT`/`PATCH`/`DELETE` to `/api/*` must be same-origin (`Sec-Fetch-Site`) or send an `Origin` that matches `Host`, a trusted `X-Forwarded-Host`, or the host in `NEXTAUTH_URL`. If a reverse proxy rewrites the `Host` header, also send `X-Forwarded-Host` (and set `TRUSTED_PROXY_CIDRS`), or set `NEXTAUTH_URL` to the URL users type. As a last resort, set `CSRF_PROTECTION=false` and report it. `X-Forwarded-Host` from untrusted peers is ignored.
 
 ### Fixed
 - The first admin is created from `INITIAL_ADMIN_PASSWORD`, or a random password printed once in the logs. **The container now exits if database seeding fails** (for example a DB blip at startup, or two replicas seeding an empty DB at once); check the logs and restart. On the next start the seed is skipped because the admin already exists.
@@ -28,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - New local and SSO accounts are never made super-admin automatically. Use the seeded `admin` account (`INITIAL_ADMIN_PASSWORD`, or the generated password printed once in the logs). If the user table is empty, re-run `npm run prisma:seed` or restart the container.
 - `scripts/backup_manager.sh` destination paths expand a leading `~` and `$HOME` only. Other `$VAR` in the destination is no longer expanded. Verbose and dry-run logs no longer print SMTP passwords or API bearer tokens.
 - GitHub Actions workflow steps are pinned to commit SHAs. The Docker runner installs `prisma`/`tsx`/`bcryptjs`/`dotenv` with `npm ci` from `docker/runtime/`.
+- Cookie-session API writes are CSRF-checked (`Sec-Fetch-Site` when present, otherwise `Origin`). Unset `CSRF_PROTECTION` is on; only the literal `false` disables it.
 
 ## [1.2.3] - 2026-05-19
 
