@@ -42,6 +42,7 @@ interface ApiKey {
   monthlyLimit: number | null;
   burstLimit: number | null;
   enabled: boolean;
+  keyPrefix?: string | null;
 }
 
 interface ApiKeyUsageStats {
@@ -779,11 +780,18 @@ export default function ApiKeyManagement() {
                           <CardTitle className="flex items-center gap-2">
                             {apiKey.name}
                             {getStatusBadge(apiKey)}
+                            {apiKey.keyPrefix == null && <Badge variant="outline">Legacy</Badge>}
                           </CardTitle>
                           <CardDescription>
                             Created {formatDate(apiKey.createdAt)}
                             {apiKey.lastUsed && ` • Last used ${formatDate(apiKey.lastUsed)}`}
+                            {apiKey.keyPrefix != null && ` • Prefix ${apiKey.keyPrefix}`}
                           </CardDescription>
+                          {apiKey.keyPrefix == null && (
+                            <p className="text-sm text-amber-700 dark:text-amber-400 mt-1">
+                              Legacy key: create a new key and delete this one
+                            </p>
+                          )}
                         </div>
                         <div className="flex items-center gap-2">
                           <Switch checked={apiKey.enabled} onCheckedChange={checked => handleToggleEnabled(apiKey.id, checked)} />

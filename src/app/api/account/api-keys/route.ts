@@ -4,7 +4,7 @@ import { logger } from '@/lib/logger';
 import { logAuditEvent } from '@/lib/auditLog';
 import { authenticateAndTrackRequest } from '@/lib/auth-middleware';
 import bcrypt from 'bcryptjs';
-import crypto from 'crypto';
+import { generateApiKey } from '@/lib/api-key-format';
 
 // GET /api/account/api-keys - List all API keys for the current user
 export async function GET(request: Request) {
@@ -28,6 +28,7 @@ export async function GET(request: Request) {
           monthlyLimit: true,
           burstLimit: true,
           enabled: true,
+          keyPrefix: true,
         },
         orderBy: { createdAt: 'desc' },
       });
@@ -87,15 +88,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: 'An API key with this name already exists' }, { status: 409 });
     }
 
-    // Generate new API key
-    const apiKeyValue = crypto.randomBytes(32).toString('hex');
-    const hashedKey = await bcrypt.hash(apiKeyValue, 10);
+    // Generate new API key. ponytail: prefix collision is ~2^-71; unique index turns it into a 500 rather than a retry
+    const { prefix, plaintext } = generateApiKey();
+    const hashedKey = await bcrypt.hash(plaintext, 10);
 
     const newApiKey = await prisma.apiKey.create({
       data: {
         userId: auth.user.id,
         name: name.trim(),
         keyHash: hashedKey,
+        keyPrefix: prefix,
         hourlyLimit: hourlyLimit !== undefined ? hourlyLimit : 1000,
         dailyLimit: dailyLimit !== undefined ? dailyLimit : 10000,
         monthlyLimit: monthlyLimit !== undefined ? monthlyLimit : 100000,
@@ -124,7 +126,7 @@ export async function POST(request: Request) {
     // Return the API key value only once (for security)
     return NextResponse.json({
       ...newApiKey,
-      apiKey: apiKeyValue, // This should only be returned once
+      apiKey: plaintext, // This should only be returned once
     });
   } catch (error) {
     logger.error(`Error creating API key for user ${auth.user.id}:`, error);
