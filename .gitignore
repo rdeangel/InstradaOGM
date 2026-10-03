@@ -63,6 +63,8 @@ data/db/dev.db-journal
 
 
 # MCP / development-only files
+.worktrees
+.worktrees/
 workspace/
 servers/
 README_MCP_IMPLEMENTATION.md
