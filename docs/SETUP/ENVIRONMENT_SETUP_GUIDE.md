@@ -528,6 +528,19 @@ INTERNAL_APP_URL="http://192.168.1.151:9002"
   - Only applies to local email/password authentication, not OIDC/SSO
 - `AUTH_ALLOW_LOCAL_2FA` - Enable 2FA (default: true)
 - `AUTH_PASSWORD_MIN_LENGTH` - Min password length (default: 8)
+- `AUTH_THROTTLE_ENABLED` - Login and password-reset throttling (default: true). Set `false` only during an incident. Restarting the app also clears the counters.
+- `AUTH_LOGIN_MAX_FAILURES` - Failed local-login secrets per account before a temporary lock (default: 5)
+- `AUTH_LOGIN_WINDOW_SEC` - Account failure window in seconds (default: 900)
+- `AUTH_LOGIN_LOCK_SEC` - How long the account stays locked in seconds (default: 900)
+- `AUTH_LOGIN_IP_MAX_FAILURES` - Failed local-login secrets per client address before a temporary lock (default: 30)
+- `AUTH_LOGIN_IP_WINDOW_SEC` - Per-address failure window in seconds (default: 900)
+- `AUTH_LOGIN_IP_LOCK_SEC` - Per-address lock length in seconds (default: 900)
+- `AUTH_RESET_EMAIL_MAX` - Password-reset requests per email per window (default: 3)
+- `AUTH_RESET_EMAIL_WINDOW_SEC` - Reset-per-email window in seconds (default: 3600)
+- `AUTH_RESET_IP_MAX` - Password-reset requests per client address per window (default: 10)
+- `AUTH_RESET_IP_WINDOW_SEC` - Reset-per-address window in seconds (default: 3600)
+
+  The account is what gets locked after five wrong secrets. A misconfigured reverse proxy can make many people share one address; the higher per-address ceiling (30) limits how far that blast radius goes. The address used here is the same client address the server already uses for self-service. Counters live in the Node process: they reset on restart and are not shared across replicas.
 - `INITIAL_ADMIN_PASSWORD` - Password for the first seeded admin when the user table is empty. If unset, seed generates a random password and prints it once. The seed admin is created only on an empty user table.
 - `AUTH_ALLOW_OIDC_LOGIN` - Enable OIDC/SSO (default: false)
   - The identity provider is trusted for email ownership. InstradaOGM does not require a verified-email claim from SSO. Keep IdP self-service email changes locked down. Admin accounts are not auto-linked to a new SSO identity by email. See [SSO Provider Config](../CONFIGURATION/SSO_PROVIDER_CONFIG.md).

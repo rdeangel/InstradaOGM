@@ -615,13 +615,15 @@ curl -X GET "{{SERVER_URL}}/api/vpn/status" \
 
 ### 429 Too Many Requests
 
-**Rate Limit Exceeded**:
+**Auth routes (login password-check and password-reset request)**:
 ```json
 {
-  "error": "Rate limit exceeded",
-  "retryAfter": 60
+  "message": "Too many attempts. Try again later.",
+  "retryAfterSeconds": 900
 }
 ```
+
+Password-reset request uses the same generic `message` as the success path (`If an account with that email exists, a password reset link has been sent.`) plus `retryAfterSeconds`. The `Retry-After` header is the same integer in seconds. API-key 429 responses are documented with `checkRateLimit` on account endpoints.
 
 ### 500 Internal Server Error
 

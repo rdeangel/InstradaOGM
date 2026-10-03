@@ -1428,7 +1428,7 @@ curl -X GET "{{SERVER_URL}}/api/user/profile" \
 1. **Consistent Format**: All errors follow standard JSON error response format
 2. **Security Considerations**: Some endpoints return generic messages to prevent information disclosure
 3. **Status Codes**: Appropriate HTTP status codes for different error scenarios
-4. **Rate Limit Headers**: Rate limit information included in all responses for monitoring
+4. **Throttled login and reset**: Over-limit login check and password-reset request responses include `Retry-After` (seconds) and `retryAfterSeconds` in the JSON body
 
 ### Account States
 
@@ -1439,205 +1439,31 @@ curl -X GET "{{SERVER_URL}}/api/user/profile" \
 
 ## Rate Limiting
 
-**Rate Limit Strategy:** Mixed (IP-based for public, User-based for authenticated)
+Local login and password-reset **request** are throttled in the application process. Other auth routes listed below are not limited by this change. API-key limits are separate (`checkRateLimit`) and are documented on account endpoints.
 
-**Default Rate Limits:**
-- **Public Endpoints**:
-  - Registration: 5 requests per minute per IP
-  - Password Reset Request: 3 requests per minute per IP
-  - Password Reset Confirm: 5 requests per hour per IP
-  - Email Verification: 10 requests per minute per IP
-  - Verification Resend: 3 requests per minute per IP
-- **Authenticated Endpoints**: 1000 requests per hour per user
-- **API Key Endpoints**: Configurable per key (default: 1000/hour)
+- Local login: five wrong attempts per account in 15 minutes are answered as a normal failure. The next attempt is rejected for 15 minutes. A wrong password and a wrong authenticator code count. A correct password does not. The sign-in page’s extra password check counts as the same attempt.
+- The same client address is rejected after 30 wrong attempts in 15 minutes, even when those attempts use different accounts.
+- Password reset request: three requests per email per hour are accepted, and the fourth is rejected. Ten requests per client address per hour are accepted, and the eleventh is rejected. Over the limit the server answers 429 with the same sentence it uses when the email is unknown, and it does not send mail.
+- These limits are per server process. Restarting the app clears them. They are off only when `AUTH_THROTTLE_ENABLED=false`.
+- Registration, verification resend, reset confirm, and signed-in authenticator checks are not limited by this change.
 
-**Rate Limit Identification:**
-- **Public Endpoints**: Identified by IP address
-- **Authenticated Endpoints**: Identified by user ID
-- **API Key Endpoints**: Identified by API key ID
+Credentials sign-in does not return HTTP 429 (NextAuth surfaces `TOO_MANY_ATTEMPTS`). The password-change check and password-reset request return 429 with `Retry-After` and `retryAfterSeconds`.
 
-**Rate Limit Headers:**
-All rate limited responses include the following headers:
-- `X-RateLimit-Limit`: Maximum requests allowed in current window
-- `X-RateLimit-Remaining`: Remaining requests in current window
-- `X-RateLimit-Reset`: Unix timestamp when rate limit window resets
-- `X-RateLimit-Retry-After`: Seconds until client can retry (only on 429 responses)
-
-**Rate Limit Exceeded Response (429):**
+**Password-change check (429):**
 ```json
 {
-  "error": "Rate limit exceeded",
-  "rateLimitInfo": {
-    "limit": 5,
-    "remaining": 0,
-    "resetTime": 1640995200,
-    "windowType": "minute",
-    "retryAfter": 60
-  }
+  "message": "Too many attempts. Try again later.",
+  "retryAfterSeconds": 900
 }
 ```
 
-**Endpoint-Specific Rate Limits:**
-
-### Public Endpoints
-- **POST /api/auth/register**: 5 requests per minute per IP
-  - Prevents automated account creation attacks
-  - Window: 1 minute sliding window
-  
-- **POST /api/auth/password-reset/request**: 3 requests per minute per IP
-  - Prevents password reset spam and email enumeration
-  - Window: 1 minute sliding window
-  
-- **POST /api/auth/password-reset/confirm**: 5 requests per hour per IP
-  - Prevents brute force password reset attempts
-  - Window: 1 hour fixed window
-  
-- **GET /api/auth/verify-email/[token]**: 10 requests per minute per IP
-  - Prevents verification token abuse
-  - Window: 1 minute sliding window
-  
-- **POST /api/auth/resend-verification**: 3 requests per minute per IP
-  - Prevents verification email spam
-  - Window: 1 minute sliding window
-
-### Authenticated Endpoints
-- **GET /api/auth/check-status**: 1000 requests per hour per user
-  - Standard authenticated endpoint rate limit
-  - Window: 1 hour sliding window
-  
-- **GET /api/auth/2fa-status**: 1000 requests per hour per user
-  - Standard authenticated endpoint rate limit
-  - Window: 1 hour sliding window
-  
-- **GET /api/auth/2fa**: 1000 requests per hour per user
-  - Standard authenticated endpoint rate limit
-  - Window: 1 hour sliding window
-  
-- **POST /api/auth/2fa/setup**: 10 requests per hour per user
-  - Limited to prevent 2FA setup abuse
-  - Window: 1 hour sliding window
-  
-- **POST /api/auth/2fa/verify**: 20 requests per minute per user
-  - Higher limit for legitimate 2FA verification attempts
-  - Window: 1 minute sliding window
-  
-- **GET /api/auth/2fa/backup-codes**: 10 requests per hour per user
-  - Limited to prevent backup code enumeration
-  - Window: 1 hour sliding window
-  
-- **POST /api/auth/2fa/backup-codes**: 5 requests per hour per user
-  - Limited to prevent backup code regeneration abuse
-  - Window: 1 hour sliding window
-  
-- **POST /api/auth/2fa/disable**: 10 requests per hour per user
-  - Limited to prevent 2FA disable abuse
-  - Window: 1 hour sliding window
-
-### Admin Endpoints
-- **GET /api/admin/auth-config**: 100 requests per hour per user
-  - Admin endpoint with stricter rate limit
-  - Window: 1 hour sliding window
-  - Requires ADMIN or SUPER_ADMIN role
-
-**Best Practices for Handling Rate Limits:**
-
-1. **Monitor Headers**: Always check rate limit headers in API responses
-   ```bash
-   curl -I -X POST "https://example.com/api/auth/register" \
-     -H "Content-Type: application/json"
-   ```
-   Look for: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`
-
-2. **Exponential Backoff**: Implement exponential backoff when receiving 429 responses
-   ```javascript
-   async function makeRequestWithRetry(url, options, maxRetries = 3) {
-     for (let i = 0; i < maxRetries; i++) {
-       const response = await fetch(url, options);
-       
-       if (response.status === 429) {
-         const retryAfter = response.headers.get('X-RateLimit-Retry-After');
-         const delay = Math.pow(2, i) * 1000; // Exponential backoff
-         
-         await new Promise(resolve => setTimeout(resolve, delay));
-         continue;
-       }
-       
-       return response;
-     }
-     throw new Error('Max retries exceeded');
-   }
-   ```
-
-3. **Respect Retry-After**: Use the `Retry-After` header to determine when to retry
-   ```javascript
-   const retryAfter = parseInt(response.headers.get('X-RateLimit-Retry-After'));
-   setTimeout(() => makeRequest(), retryAfter * 1000);
-   ```
-
-4. **Cache Responses**: Cache non-sensitive responses to reduce API calls
-   - Cache successful authentication status for short periods
-   - Cache 2FA status during user sessions
-   - Avoid repeated calls to the same endpoints
-
-5. **Batch Operations**: Use batch endpoints when available to reduce request count
-   - While authentication endpoints don't have batch operations, consider combining related operations
-   - For example, check 2FA status only once per session
-
-6. **User Feedback**: Provide clear feedback to users about rate limits
-   ```javascript
-   if (response.status === 429) {
-     const rateLimitInfo = await response.json();
-     const resetTime = new Date(rateLimitInfo.rateLimitInfo.resetTime * 1000);
-     
-     showNotification(`Rate limit exceeded. Please try again after ${resetTime.toLocaleString()}`);
-   }
-   ```
-
-7. **Progressive Delays**: For operations that might hit limits (like 2FA verification)
-   ```javascript
-   async function verify2FACode(code) {
-     // Add small delay before verification to avoid hitting rate limits
-     await new Promise(resolve => setTimeout(resolve, 500));
-     return makeRequest('/api/auth/2fa/verify', { code });
-   }
-   ```
-
-8. **Error Handling**: Differentiate between rate limit errors and other errors
-   ```javascript
-   if (response.status === 429) {
-     // Handle rate limit specifically
-     handleRateLimitError(response);
-   } else if (response.status >= 400) {
-     // Handle other API errors
-     handleAPIError(response);
-   }
-   ```
-
-**Security Considerations:**
-
-1. **Public Endpoint Protection**: Stricter limits on public endpoints to prevent abuse
-2. **Authentication Bypass Prevention**: Rate limits apply regardless of authentication method
-3. **Brute Force Protection**: Lower limits for sensitive operations like password reset
-4. **Enumeration Prevention**: Generic error messages combined with rate limiting
-5. **Audit Logging**: All rate limit violations are logged for security monitoring
-
-**Rate Limit Reset Behavior:**
-
-1. **Sliding Windows**: Most endpoints use sliding windows for better user experience
-2. **Fixed Windows**: Some sensitive operations use fixed windows (password reset)
-3. **Independent Counters**: Different endpoint types have independent rate limit counters
-4. **Immediate Reset**: Counters reset immediately when window expires
-5. **Cumulative Limits**: Multiple rate limit types can apply simultaneously
-
-**Testing Rate Limits:**
-
-Use the `/api/test-rate-limit` endpoint to test current rate limit status:
-```bash
-curl -X GET "https://example.com/api/test-rate-limit" \
-  -H "Authorization: Bearer YOUR_API_KEY"
+**Password-reset request (429):**
+```json
+{
+  "message": "If an account with that email exists, a password reset link has been sent.",
+  "retryAfterSeconds": 3600
+}
 ```
-
-This will return current rate limit information without consuming significant quota.
 
 ---
 
