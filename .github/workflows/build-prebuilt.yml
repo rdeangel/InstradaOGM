@@ -30,13 +30,17 @@ permissions:
 
 # Define the jobs to run
 jobs:
-  # Build matrix for native amd64 builds
-  build-amd64:
-    name: Build ${{ matrix.db_type }} (amd64)
-    runs-on: ubuntu-latest
+  # Native builds: amd64 on ubuntu-latest, arm64 on ubuntu-24.04-arm.
+  # Do not emulate arm64 with QEMU on ubuntu-latest — Node 24 / npm under
+  # QEMU is ~10× slower and can SIGILL.
+  build:
+    name: Build ${{ matrix.db_type }} (${{ matrix.arch }})
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     strategy:
+      fail-fast: false
       matrix:
         db_type: [sqlite, postgres]
+        arch: [amd64, arm64]
     
     steps:
       - name: Checkout code
@@ -66,58 +70,12 @@ jobs:
         # This ensures the packaging script can include all necessary assets.
         run: |
           chmod +x scripts/create-prebuilt-package.sh
-          ./scripts/create-prebuilt-package.sh amd64 ${{ matrix.db_type }}
+          ./scripts/create-prebuilt-package.sh ${{ matrix.arch }} ${{ matrix.db_type }}
       
       - name: Upload build artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: package-${{ matrix.db_type }}-amd64
-          path: dist/*.tar.gz
-          retention-days: 14
-
-  # Build matrix for arm64 builds via QEMU emulation
-  build-arm64:
-    name: Build ${{ matrix.db_type }} (arm64)
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        db_type: [sqlite, postgres]
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          ref: ${{ github.event.inputs.version || github.ref }}
-      
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
-        with:
-          platforms: arm64
-      
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
-      
-      - name: Build and Package (arm64)
-        # We build and package in the same step while all files are present on the runner.
-        run: |
-          docker run --rm --platform linux/arm64 \
-            -v ${{ github.workspace }}:/app \
-            -w /app \
-            node:24-slim \
-            bash -c "
-              apt-get update && apt-get install -y python3 make g++ git && \
-              npm run db:switch:${{ matrix.db_type }} && \
-              npm install && \
-              npx prisma generate && \
-              npm run build && \
-              chmod +x scripts/create-prebuilt-package.sh && \
-              ./scripts/create-prebuilt-package.sh arm64 ${{ matrix.db_type }}
-            "
-      
-      - name: Upload build artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: package-${{ matrix.db_type }}-arm64
+          name: package-${{ matrix.db_type }}-${{ matrix.arch }}
           path: dist/*.tar.gz
           retention-days: 14
 
@@ -125,7 +83,7 @@ jobs:
   publish-release:
     name: Publish to Release
     runs-on: ubuntu-latest
-    needs: [build-amd64, build-arm64]
+    needs: [build]
     if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.version != '')
     permissions:
       contents: write
