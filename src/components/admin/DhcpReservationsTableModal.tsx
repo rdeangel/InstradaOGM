@@ -2,6 +2,16 @@
 // This component uses bracket notation with typed keys from objects. All uses are safe.
 import React, { useState, useEffect, useCallback } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -44,6 +54,7 @@ export function DhcpReservationsTableModal({ isOpen, onClose, onReservationsDele
   const [isButtonRefreshing, setIsButtonRefreshing] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [sortColumn, setSortColumn] = useState<keyof OpnsenseDhcpReservation | null>('ip_address'); // Default sort by IP address
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc'); // Default sort direction
   const [subnets, setSubnets] = useState<SubnetInfo[]>([]);
@@ -114,6 +125,7 @@ export function DhcpReservationsTableModal({ isOpen, onClose, onReservationsDele
       fetchReservations();
       setSearchTerm('');
       setSelectedReservationUuids(new Set());
+      setIsDeleteConfirmOpen(false);
     }
   }, [isOpen, fetchSubnets, fetchReservations]);
 
@@ -233,6 +245,18 @@ export function DhcpReservationsTableModal({ isOpen, onClose, onReservationsDele
     setCurrentPage(1);
   }, [setPageSize, filteredReservations.length]);
 
+  const handleRequestDeleteSelected = useCallback(() => {
+    if (selectedReservationUuids.size === 0) {
+      toast({
+        title: "No Reservations Selected",
+        description: "Please select at least one reservation to delete.",
+        variant: "default",
+      });
+      return;
+    }
+    setIsDeleteConfirmOpen(true);
+  }, [selectedReservationUuids, toast]);
+
   const handleDeleteSelected = useCallback(async () => {
     if (selectedReservationUuids.size === 0) {
       toast({
@@ -240,6 +264,7 @@ export function DhcpReservationsTableModal({ isOpen, onClose, onReservationsDele
         description: "Please select at least one reservation to delete.",
         variant: "default",
       });
+      setIsDeleteConfirmOpen(false);
       return;
     }
 
@@ -276,6 +301,7 @@ export function DhcpReservationsTableModal({ isOpen, onClose, onReservationsDele
           variant: "success",
         });
         setSelectedReservationUuids(new Set());
+        setIsDeleteConfirmOpen(false);
         fetchReservations(); // Refresh the list
         onReservationsDeleted(); // Notify parent to refresh its state
       } else {
@@ -297,9 +323,20 @@ export function DhcpReservationsTableModal({ isOpen, onClose, onReservationsDele
   }, [selectedReservationUuids, toast, fetchReservations, onReservationsDeleted, reservations]);
 
   const allSelected = filteredReservations.length > 0 && selectedReservationUuids.size === filteredReservations.length;
+  const selectedCount = selectedReservationUuids.size;
+  const selectedReservationLabel = selectedCount === 1 ? 'reservation' : 'reservations';
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <>
+    <Dialog
+      open={isOpen}
+      onOpenChange={(open) => {
+        if (open || isDeleteConfirmOpen || isDeleting) {
+          return;
+        }
+        onClose();
+      }}
+    >
       <DialogContent className="max-w-[95vw] h-[95vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>Configured DHCP Reservations</DialogTitle>
@@ -333,7 +370,7 @@ export function DhcpReservationsTableModal({ isOpen, onClose, onReservationsDele
             )}
           </Button>
           <Button
-            onClick={handleDeleteSelected}
+            onClick={handleRequestDeleteSelected}
             variant="destructive"
             disabled={selectedReservationUuids.size === 0 || isDeleting}
             size={isMobile ? 'default' : 'default'}
@@ -613,5 +650,48 @@ export function DhcpReservationsTableModal({ isOpen, onClose, onReservationsDele
         )}
       </DialogContent>
     </Dialog>
+
+    <AlertDialog
+      open={isDeleteConfirmOpen}
+      onOpenChange={(open) => {
+        if (!isDeleting) {
+          setIsDeleteConfirmOpen(open);
+        }
+      }}
+    >
+      <AlertDialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-xl">
+        <AlertDialogHeader>
+          <AlertDialogTitle>Confirm Deletion</AlertDialogTitle>
+          <AlertDialogDescription>
+            Are you sure you want to delete{' '}
+            <span className="font-semibold text-foreground">{selectedCount}</span>{' '}
+            DHCP {selectedReservationLabel}? This action cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter className="gap-2">
+          <AlertDialogCancel disabled={isDeleting} className="mt-0">Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={(event) => {
+              event.preventDefault();
+              void handleDeleteSelected();
+            }}
+            disabled={isDeleting || selectedCount === 0}
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90 whitespace-normal sm:whitespace-nowrap"
+          >
+            {isDeleting ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Trash2 className="mr-2 h-4 w-4" />
+            )}
+            {isDeleting
+              ? 'Deleting...'
+              : selectedCount === 1
+                ? 'Delete Reservation'
+                : `Delete ${selectedCount} Reservations`}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   );
 }
