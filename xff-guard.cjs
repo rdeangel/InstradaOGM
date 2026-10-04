@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-require-imports, security/detect-object-injection -- CommonJS preload; stdlib only */
+/* eslint-disable @typescript-eslint/no-require-imports, security/detect-object-injection, security/detect-non-literal-fs-filename -- CommonJS preload; stdlib only */
 'use strict';
 
 // ponytail: http only. Next prod/standalone uses http.createServer; next dev --experimental-https is not covered, add https.Server if anyone needs it.
@@ -8,6 +8,7 @@ const http = require('http');
 const net = require('net');
 const os = require('os');
 const fs = require('fs');
+const path = require('path');
 
 const WARN_PEER_CAP = 64;
 const warnedPeers = new Set();
@@ -327,8 +328,44 @@ function readRouteText() {
   }
 }
 
+function readDotEnvValue(key) {
+  const candidateDirs = [process.cwd(), __dirname];
+  for (const dir of candidateDirs) {
+    if (!dir) continue;
+    try {
+      const envPath = path.join(dir, '.env');
+      if (fs.existsSync(envPath)) {
+        const content = fs.readFileSync(envPath, 'utf8');
+        const lines = content.split(/\r?\n/);
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith('#')) continue;
+          const eqIdx = trimmed.indexOf('=');
+          if (eqIdx !== -1 && trimmed.slice(0, eqIdx).trim() === key) {
+            let val = trimmed.slice(eqIdx + 1).trim();
+            if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+              val = val.slice(1, -1);
+            }
+            return val;
+          }
+        }
+      }
+    } catch {
+      // Ignore read errors
+    }
+  }
+  return undefined;
+}
+
 function initTrust() {
-  const parsed = parseTrustedCidrs(process.env.TRUSTED_PROXY_CIDRS);
+  let envVal = process.env.TRUSTED_PROXY_CIDRS;
+  if (envVal == null || String(envVal).trim() === '') {
+    const fallback = readDotEnvValue('TRUSTED_PROXY_CIDRS');
+    if (fallback != null && String(fallback).trim() !== '') {
+      envVal = fallback;
+    }
+  }
+  const parsed = parseTrustedCidrs(envVal);
   let allow = [];
   let deny = [];
   if (parsed.mode === 'none') {

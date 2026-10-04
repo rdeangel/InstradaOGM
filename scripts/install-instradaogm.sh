@@ -1055,6 +1055,7 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=${INSTALL_DIR}
+EnvironmentFile=${INSTALL_DIR}/.env
 ExecStart=${node_path} -r ${INSTALL_DIR}/xff-guard.cjs server.js
 Restart=always
 RestartSec=10
@@ -1208,6 +1209,19 @@ show_post_install_info() {
     echo "  Installation: ${LOG_FILE}"
     echo "  Service logs: journalctl -u ${SERVICE_NAME} -f"
     echo ""
+    local admin_password=""
+    if [[ -f "$LOG_FILE" ]]; then
+        admin_password=$(grep "Generated password (shown once):" "$LOG_FILE" 2>/dev/null | tail -n 1 | sed 's/.*Generated password (shown once): //')
+    fi
+    echo "Initial Admin Account:"
+    echo "  Username: admin (or admin@example.com)"
+    if [[ -n "$admin_password" ]]; then
+        echo -e "  Password: ${YELLOW}${admin_password}${NC}"
+        echo "  (You will be required to change this password upon first login)"
+    else
+        echo "  Password: (configured via INITIAL_ADMIN_PASSWORD, or previously initialized)"
+    fi
+    echo ""
     echo "Useful Commands:"
     echo "  View logs:     journalctl -u ${SERVICE_NAME} -f"
     echo "  Restart:       systemctl restart ${SERVICE_NAME}"
@@ -1216,7 +1230,7 @@ show_post_install_info() {
     echo ""
     echo "Next Steps:"
     echo "  1. Access the application at http://${server_ip}:3000"
-    echo "  2. Create an admin account"
+    echo "  2. Log in using the admin account above"
     echo "  3. Configure OPNsense connection"
     echo ""
     echo "============================================"

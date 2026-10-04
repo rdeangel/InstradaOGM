@@ -291,6 +291,17 @@ The application will:
 
 **Access the application**: Open your browser to the URL you set in `NEXTAUTH_URL` (e.g., `http://localhost:3000`)
 
+> [!IMPORTANT]
+> **Initial Admin Credentials**:
+> The first admin account (`admin` or `admin@example.com`) is created during the initial database seed.
+> - If `INITIAL_ADMIN_PASSWORD` was set in your `.env` file, use that password.
+> - Otherwise, a cryptographically secure random password was generated and printed once in the container logs. Retrieve it with:
+>   ```bash
+>   docker logs <container-name> | grep -i "Admin user"
+>   # Or: npm run docker:logs:sqlite | grep -i "Admin user"
+>   ```
+> - You will be prompted to change this password upon first login.
+
 ---
 
 ### Step 6: Stop the Application
@@ -727,7 +738,7 @@ npm run prisma:generate
 
 After successful installation:
 
-1. **Create Admin Account**: Register your first user (will be admin by default)
+1. **Log in as Admin**: Log in using the admin account created during database seed (use `INITIAL_ADMIN_PASSWORD` if configured, or the generated password from the container/install logs)
 2. **Configure OPNsense**: Verify API connectivity in Settings
 3. **Set Up Network Groups**: Create network groups in OPNsense
 4. **Test Device Management**: Try device search and group assignments
