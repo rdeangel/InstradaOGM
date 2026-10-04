@@ -296,6 +296,7 @@ compare_versions() {
 update_instradaogm() {
     local version="$1"
     local arch="$2"
+    local custom_package_path="${3:-}"
     
     # Normalize version - ensure it has 'v' prefix
     [[ "$version" != v* ]] && version="v$version"
@@ -355,10 +356,15 @@ update_instradaogm() {
     fi
     
     # Download new version FIRST (before stopping service or removing files)
-    msg_info "Downloading new version..."
     local package_path
-    package_path=$(download_prebuilt_package "$version" "$arch")
-    msg_ok "Package downloaded: $(basename "$package_path")"
+    if [[ -n "$custom_package_path" && -f "$custom_package_path" ]]; then
+        package_path="$custom_package_path"
+        msg_ok "Using local package: $(basename "$package_path")"
+    else
+        msg_info "Downloading new version..."
+        package_path=$(download_prebuilt_package "$version" "$arch")
+        msg_ok "Package downloaded: $(basename "$package_path")"
+    fi
     
     # Now that we have the package, proceed with update
     # Stop the service
@@ -442,7 +448,9 @@ update_instradaogm() {
     create_systemd_service
     
     # Clean up downloaded package
-    rm -f "$package_path" >> "$LOG_FILE" 2>&1
+    if [[ -z "$custom_package_path" ]]; then
+        rm -f "$package_path" >> "$LOG_FILE" 2>&1
+    fi
     
     msg_ok "Update completed successfully!"
     echo ""
@@ -1091,6 +1099,8 @@ Usage:
 Options:
     --latest            Install the latest version (default)
     --version <version> Install a specific version (e.g., v1.0.1)
+    --package <path>    Install from a local package archive (.tar.gz) instead of downloading from GitHub
+                        (can also be set via PACKAGE_PATH environment variable)
     --update            Update existing installation to latest or specified version
     --reinstall         Reinstall the current version (useful for fixing corrupted installations)
     --clean-backups     Remove all backup directories created during installations
@@ -1223,12 +1233,18 @@ main() {
     local reinstall_mode=false
     local clean_backups=false
     local uninstall_mode=false
+    local custom_package="${PACKAGE_PATH:-}"
     
     # Parse command-line arguments
     while [[ $# -gt 0 ]]; do
         case $1 in
             --version)
                 version_to_install="$2"
+                install_latest=false
+                shift 2
+                ;;
+            --package|--local-package)
+                custom_package="$2"
                 install_latest=false
                 shift 2
                 ;;
@@ -1263,6 +1279,22 @@ main() {
                 ;;
         esac
     done
+    
+    local is_local_package=false
+    local package_path=""
+    if [[ -n "$custom_package" ]]; then
+        if [[ ! -f "$custom_package" ]]; then
+            msg_error "Package file not found: $custom_package"
+        fi
+        # Resolve to absolute path
+        package_path="$(cd "$(dirname "$custom_package")" && pwd)/$(basename "$custom_package")"
+        is_local_package=true
+        install_latest=false
+        if [[ -z "$version_to_install" ]]; then
+            version_to_install=$(basename "$package_path" | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+[^-_]*' | head -1 || true)
+            [[ -z "$version_to_install" ]] && version_to_install="local-build"
+        fi
+    fi
     
     # If clean-backups mode, run cleanup and exit
     if [[ "$clean_backups" == true ]]; then
@@ -1364,7 +1396,9 @@ main() {
     setup_nodejs
     
     # Determine version to install
-    if [[ "$install_latest" == true ]]; then
+    if [[ "$is_local_package" == true ]]; then
+        msg_ok "Using local package: $(basename "$package_path") (version: $version_to_install)"
+    elif [[ "$install_latest" == true ]]; then
         version_to_install=$(get_latest_version)
         msg_ok "Latest version: $version_to_install"
     else
@@ -1388,7 +1422,7 @@ main() {
             msg_error "Update cancelled by user"
         fi
         
-        update_instradaogm "$version_to_install" "$ARCH"
+        update_instradaogm "$version_to_install" "$ARCH" "$package_path"
         exit 0
     fi
     
@@ -1463,11 +1497,14 @@ main() {
         fi
     fi
     
-    # Download package
-    msg_info "Downloading package from GitHub..."
-    local package_path
-    package_path=$(download_prebuilt_package "$version_to_install" "$ARCH")
-    msg_ok "Package downloaded: $(basename "$package_path")"
+    # Obtain package (local or download from GitHub)
+    if [[ "$is_local_package" == true ]]; then
+        msg_ok "Using local package: $(basename "$package_path")"
+    else
+        msg_info "Downloading package from GitHub..."
+        package_path=$(download_prebuilt_package "$version_to_install" "$ARCH")
+        msg_ok "Package downloaded: $(basename "$package_path")"
+    fi
     
     # Prepare installation directory (skip confirmation if reinstalling)
     if [[ "$reinstall_mode" == true ]]; then
@@ -1492,8 +1529,10 @@ main() {
     create_systemd_service
     
     # Clean up downloaded package
-    msg_info "Cleaning up temporary files..."
-    rm -f "$package_path"
+    if [[ "$is_local_package" != true ]]; then
+        msg_info "Cleaning up temporary files..."
+        rm -f "$package_path"
+    fi
     
     # Display post-installation information
     show_post_install_info
