@@ -21,13 +21,24 @@ on:
 env:
   REGISTRY: docker.io
 
-jobs:
-  build-and-push:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
+# Node 24 / npm ci under QEMU user-mode (x86_64→aarch64) dies with
+# SIGILL (exit 132: "Illegal instruction (core dumped)"). Build each
+# platform on a native runner and join the tagged images into a
+# manifest list. build-push-action v5 requires an explicit image:tag
+# when pushing; digest-only push is not used.
 
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.package-version.outputs.VERSION }}
+      is_prod: ${{ steps.tags.outputs.is_prod }}
+      app_version: ${{ steps.tags.outputs.app_version }}
+      arch_tag: ${{ steps.tags.outputs.arch_tag }}
+      postgres_image: ${{ steps.tags.outputs.postgres_image }}
+      sqlite_image: ${{ steps.tags.outputs.sqlite_image }}
+      postgres_tags: ${{ steps.tags.outputs.postgres }}
+      sqlite_tags: ${{ steps.tags.outputs.sqlite }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -47,6 +58,9 @@ jobs:
         env:
           GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
 
+      # Do not reference secrets here. GitHub drops job outputs from a
+      # step whose env includes a secret ("Skip output ... since it may
+      # contain secret"), which emptied the tag lists on branch builds.
       - name: Determine Docker tags and registries
         id: tags
         env:
@@ -54,40 +68,47 @@ jobs:
           OWNER: ${{ steps.repo-owner.outputs.OWNER }}
           RAW_REF: ${{ github.event.inputs.tag_name || github.ref_name }}
           EVENT_NAME: ${{ github.event_name }}
-          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+          RELEASE_TARGET: ${{ github.event.release.target_commitish || '' }}
         run: |
           SHORT_SHA=$(git rev-parse --short HEAD)
-          
-          # Clean branch name for tag (e.g. security/v2.0.1 -> security-v2.0.1)
           SLUG_REF=$(echo "${RAW_REF}" | tr '/' '-' | tr -cd '[:alnum:]-_.')
-          
-          POSTGRES_TAGS=""
-          SQLITE_TAGS=""
-          
-          if [[ "${EVENT_NAME}" == "release" ]]; then
-            # Official Release: publish to both GHCR and Docker Hub
-            POSTGRES_TAGS="ghcr.io/${OWNER}/instrada-ogm-postgres:${VERSION}
-          ghcr.io/${OWNER}/instrada-ogm-postgres:latest"
-            SQLITE_TAGS="ghcr.io/${OWNER}/instrada-ogm-sqlite:${VERSION}
-          ghcr.io/${OWNER}/instrada-ogm-sqlite:latest"
-            
-            if [[ -n "${DOCKER_USERNAME}" ]]; then
-              POSTGRES_TAGS="${POSTGRES_TAGS}
-          ${DOCKER_USERNAME}/instrada-ogm-postgres:${VERSION}
-          ${DOCKER_USERNAME}/instrada-ogm-postgres:latest"
-              SQLITE_TAGS="${SQLITE_TAGS}
-          ${DOCKER_USERNAME}/instrada-ogm-sqlite:${VERSION}
-          ${DOCKER_USERNAME}/instrada-ogm-sqlite:latest"
-            fi
-          else
-            # Branch / test build: Push ONLY to GHCR under -dev package name, NO Docker Hub
-            POSTGRES_TAGS="ghcr.io/${OWNER}/instrada-ogm-postgres-dev:${SLUG_REF}
-          ghcr.io/${OWNER}/instrada-ogm-postgres-dev:${SLUG_REF}-${SHORT_SHA}"
-            SQLITE_TAGS="ghcr.io/${OWNER}/instrada-ogm-sqlite-dev:${SLUG_REF}
-          ghcr.io/${OWNER}/instrada-ogm-sqlite-dev:${SLUG_REF}-${SHORT_SHA}"
+
+          # Prod tags (package.json version + latest, Docker Hub, non-dev
+          # GHCR) only for a GitHub Release whose target branch is main.
+          # security/v2.0.0 and every other non-main ref stay on -dev and
+          # are tagged from the branch (or dispatch) slug so they cannot
+          # overwrite 1.2.3 / latest currently running in production.
+          IS_PROD=false
+          if [[ "${EVENT_NAME}" == "release" && "${RELEASE_TARGET}" == "main" ]]; then
+            IS_PROD=true
           fi
-          
+
+          if [[ "${IS_PROD}" == "true" ]]; then
+            POSTGRES_IMAGE="ghcr.io/${OWNER}/instrada-ogm-postgres"
+            SQLITE_IMAGE="ghcr.io/${OWNER}/instrada-ogm-sqlite"
+            ARCH_TAG="${VERSION}"
+            APP_VERSION="${VERSION}"
+            POSTGRES_TAGS="${POSTGRES_IMAGE}:${VERSION}
+          ${POSTGRES_IMAGE}:latest"
+            SQLITE_TAGS="${SQLITE_IMAGE}:${VERSION}
+          ${SQLITE_IMAGE}:latest"
+          else
+            POSTGRES_IMAGE="ghcr.io/${OWNER}/instrada-ogm-postgres-dev"
+            SQLITE_IMAGE="ghcr.io/${OWNER}/instrada-ogm-sqlite-dev"
+            ARCH_TAG="${SLUG_REF}"
+            APP_VERSION="${SLUG_REF}"
+            POSTGRES_TAGS="${POSTGRES_IMAGE}:${SLUG_REF}
+          ${POSTGRES_IMAGE}:${SLUG_REF}-${SHORT_SHA}"
+            SQLITE_TAGS="${SQLITE_IMAGE}:${SLUG_REF}
+          ${SQLITE_IMAGE}:${SLUG_REF}-${SHORT_SHA}"
+          fi
+
           {
+            echo "is_prod=${IS_PROD}"
+            echo "app_version=${APP_VERSION}"
+            echo "arch_tag=${ARCH_TAG}"
+            echo "postgres_image=${POSTGRES_IMAGE}"
+            echo "sqlite_image=${SQLITE_IMAGE}"
             echo "postgres<<EOF"
             echo "${POSTGRES_TAGS}"
             echo "EOF"
@@ -96,21 +117,50 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
+  build:
+    name: Build ${{ matrix.variant }} (${{ matrix.platform }})
+    needs: prepare
+    runs-on: ${{ matrix.platform == 'linux/arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [postgres, sqlite]
+        platform: [linux/amd64, linux/arm64]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Prepare
+        id: prep
+        env:
+          VARIANT: ${{ matrix.variant }}
+          PLATFORM: ${{ matrix.platform }}
+          ARCH_TAG: ${{ needs.prepare.outputs.arch_tag }}
+          POSTGRES_IMAGE: ${{ needs.prepare.outputs.postgres_image }}
+          SQLITE_IMAGE: ${{ needs.prepare.outputs.sqlite_image }}
+        run: |
+          PLATFORM_PAIR="${PLATFORM//\//-}"
+          echo "PLATFORM_PAIR=${PLATFORM_PAIR}" >> "$GITHUB_ENV"
+          if [[ "${VARIANT}" == "postgres" ]]; then
+            IMAGE="${POSTGRES_IMAGE}"
+            echo "schema=schema.postgres.prisma" >> "$GITHUB_OUTPUT"
+            echo "migrations=migrations-postgres" >> "$GITHUB_OUTPUT"
+            echo "database_url=postgresql://user:password@localhost:5432/InstradaOGM_build?schema=public" >> "$GITHUB_OUTPUT"
+          else
+            IMAGE="${SQLITE_IMAGE}"
+            echo "schema=schema.sqlite.prisma" >> "$GITHUB_OUTPUT"
+            echo "migrations=migrations-sqlite" >> "$GITHUB_OUTPUT"
+            echo "database_url=file:/app/data/db/dev.db" >> "$GITHUB_OUTPUT"
+          fi
+          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "tag=${IMAGE}:${ARCH_TAG}-${PLATFORM_PAIR}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
-      # Only log into Docker Hub for official published releases
-      - name: Log into Docker Hub
-        if: github.event_name == 'release'
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
-      # Always log into GitHub Container Registry (ghcr.io)
       - name: Log into GitHub Container Registry
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
@@ -118,38 +168,96 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Build and push Postgres Image
-      - name: Build and push Postgres Docker image
+      - name: Build and push
         uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
         with:
           context: .
           file: Dockerfile
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ matrix.platform }}
           push: true
-          tags: ${{ steps.tags.outputs.postgres }}
+          provenance: false
+          tags: ${{ steps.prep.outputs.tag }}
           build-args: |
-            PRISMA_SCHEMA_FILE=schema.postgres.prisma
-            PRISMA_MIGRATIONS_DIR=migrations-postgres
-            DATABASE_URL=postgresql://user:password@localhost:5432/InstradaOGM_build?schema=public
+            PRISMA_SCHEMA_FILE=${{ steps.prep.outputs.schema }}
+            PRISMA_MIGRATIONS_DIR=${{ steps.prep.outputs.migrations }}
+            DATABASE_URL=${{ steps.prep.outputs.database_url }}
             APP_DEBUG_LEVEL=SILENT
-            NEXT_PUBLIC_APP_VERSION=${{ steps.package-version.outputs.VERSION }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+            NEXT_PUBLIC_APP_VERSION=${{ needs.prepare.outputs.app_version }}
+          cache-from: type=gha,scope=${{ matrix.variant }}-${{ matrix.platform }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.variant }}-${{ matrix.platform }}
 
-      # Build and push SQLite Image
-      - name: Build and push SQLite Docker image
-        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
+  merge:
+    name: Merge ${{ matrix.variant }} manifest
+    needs: [prepare, build]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [postgres, sqlite]
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Log into GitHub Container Registry
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
-          context: .
-          file: Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.tags.outputs.sqlite }}
-          build-args: |
-            PRISMA_SCHEMA_FILE=schema.sqlite.prisma
-            PRISMA_MIGRATIONS_DIR=migrations-sqlite
-            DATABASE_URL=file:/app/data/db/dev.db
-            APP_DEBUG_LEVEL=SILENT
-            NEXT_PUBLIC_APP_VERSION=${{ steps.package-version.outputs.VERSION }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log into Docker Hub
+        if: needs.prepare.outputs.is_prod == 'true'
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Create manifest list and push
+        env:
+          VARIANT: ${{ matrix.variant }}
+          IS_PROD: ${{ needs.prepare.outputs.is_prod }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          ARCH_TAG: ${{ needs.prepare.outputs.arch_tag }}
+          POSTGRES_TAGS: ${{ needs.prepare.outputs.postgres_tags }}
+          SQLITE_TAGS: ${{ needs.prepare.outputs.sqlite_tags }}
+          POSTGRES_IMAGE: ${{ needs.prepare.outputs.postgres_image }}
+          SQLITE_IMAGE: ${{ needs.prepare.outputs.sqlite_image }}
+          DOCKER_USERNAME: ${{ needs.prepare.outputs.is_prod == 'true' && secrets.DOCKER_USERNAME || '' }}
+        run: |
+          set -euo pipefail
+          if [[ "${VARIANT}" == "postgres" ]]; then
+            TAGS="${POSTGRES_TAGS}"
+            IMAGE="${POSTGRES_IMAGE}"
+            HUB_NAME="instrada-ogm-postgres"
+          else
+            TAGS="${SQLITE_TAGS}"
+            IMAGE="${SQLITE_IMAGE}"
+            HUB_NAME="instrada-ogm-sqlite"
+          fi
+
+          tag_args=()
+          while IFS= read -r tag; do
+            [[ -n "${tag}" ]] && tag_args+=(-t "${tag}")
+          done <<< "${TAGS}"
+
+          if [[ "${IS_PROD}" == "true" && -n "${DOCKER_USERNAME}" ]]; then
+            tag_args+=(-t "${DOCKER_USERNAME}/${HUB_NAME}:${VERSION}")
+            tag_args+=(-t "${DOCKER_USERNAME}/${HUB_NAME}:latest")
+          fi
+
+          if [[ ${#tag_args[@]} -lt 2 ]]; then
+            echo "No destination tags to publish" >&2
+            exit 1
+          fi
+
+          refs=(
+            "${IMAGE}:${ARCH_TAG}-linux-amd64"
+            "${IMAGE}:${ARCH_TAG}-linux-arm64"
+          )
+
+          docker buildx imagetools create "${tag_args[@]}" "${refs[@]}"
+          docker buildx imagetools inspect "${tag_args[1]}"

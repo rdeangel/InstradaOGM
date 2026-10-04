@@ -18,6 +18,11 @@ Multi-platform builds allow you to create Docker images that can run on differen
 - **PostgreSQL builds**: Support `linux/amd64` and `linux/arm64` due to Prisma compatibility
 - **SQLite builds**: Support `linux/amd64` and `linux/arm64` due to Prisma compatibility
 
+### **CI (GitHub Actions)**
+The `Docker Build and Publish` workflow builds each architecture on a **native** runner (`ubuntu-latest` for amd64, `ubuntu-24.04-arm` for arm64) and then joins the two digests into one multi-arch tag.
+
+Do not build both platforms on one amd64 runner with QEMU. Node 24 / `npm ci` under QEMU user-mode hits `SIGILL` (`qemu: uncaught target signal 4`, exit 132).
+
 ## Prerequisites
 
 1. **Docker Buildx**: Ensure you have Docker Buildx available
