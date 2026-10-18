@@ -74,6 +74,7 @@ describe('POST /api/auth/password-reset/request', () => {
     vi.clearAllMocks();
     resetAuthThrottleForTests();
     process.env.NEXTAUTH_URL = 'http://localhost';
+    process.env.AUTH_ALLOW_LOCAL_LOGIN = 'true';
     prismaMock.user.findUnique.mockResolvedValue({
       id: 'user-a',
       email: 'a@example.com',
@@ -102,6 +103,34 @@ describe('POST /api/auth/password-reset/request', () => {
     expect(Object.keys(updateArg.data).sort()).toEqual(
       ['passwordResetExpires', 'passwordResetTokenHash'].sort(),
     );
+  });
+
+  it('sends nothing when local login is disabled', async () => {
+    process.env.AUTH_ALLOW_LOCAL_LOGIN = 'false';
+    const response = await requestReset(jsonRequest(
+      'http://localhost/api/auth/password-reset/request',
+      { email: 'a@example.com' },
+    ));
+    expect(response.status).toBe(200);
+    expect(prismaMock.user.findUnique).not.toHaveBeenCalled();
+    expect(prismaMock.user.update).not.toHaveBeenCalled();
+    expect(sendPasswordResetEmail).not.toHaveBeenCalled();
+  });
+
+  it('sends nothing to an SSO-only user', async () => {
+    prismaMock.user.findUnique.mockResolvedValue({
+      id: 'user-sso',
+      email: 'sso@example.com',
+      password: null,
+      accounts: [{ provider: 'authentik' }],
+    });
+    const response = await requestReset(jsonRequest(
+      'http://localhost/api/auth/password-reset/request',
+      { email: 'sso@example.com' },
+    ));
+    expect(response.status).toBe(200);
+    expect(prismaMock.user.update).not.toHaveBeenCalled();
+    expect(sendPasswordResetEmail).not.toHaveBeenCalled();
   });
 });
 

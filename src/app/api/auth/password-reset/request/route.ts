@@ -18,6 +18,12 @@ export async function POST(request: Request) {
     // Always return the same generic message for security (prevents user enumeration)
     const genericMessage = 'If an account with that email exists, a password reset link has been sent.';
 
+    // Local passwords are unusable when local login is off; same body so the flag isn't probeable.
+    if (process.env.AUTH_ALLOW_LOCAL_LOGIN !== 'true') {
+      logger.info('Password reset requested while local login is disabled');
+      return NextResponse.json({ message: genericMessage }, { status: 200 });
+    }
+
     const ip = getClientIp(request);
     const decision = noteResetRequest(email, ip);
     if (decision.limited) {

@@ -49,7 +49,7 @@ export default function LoginPage() {
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [isRedirecting, setIsRedirecting] = useState(false);
   const [providers, setProviders] = useState<Awaited<ReturnType<typeof getProviders>>>(null);
-  const [isLocalLoginAllowed, setIsLocalLoginAllowed] = useState(true); // State for local login status
+  const [isLocalLoginAllowed, setIsLocalLoginAllowed] = useState(false); // State for local login status; false until config confirms, so links don't flash
   const [showRegistrationLink, setShowRegistrationLink] = useState(true); // State to control registration link visibility
   const [showTwoFactorModal, setShowTwoFactorModal] = useState(false); // State for 2FA modal visibility
   const [twoFactorCode, setTwoFactorCode] = useState(''); // State for 2FA code input
@@ -227,9 +227,9 @@ export default function LoginPage() {
 
       } catch (error) {
         logger.error("Error fetching auth config:", error);
-        // Default to true if fetch fails, or handle as needed
-        setIsLocalLoginAllowed(true);
-        setShowRegistrationLink(true);
+        // Fail closed: hide local-login-only links (register, forgot password) when config is unknown
+        setIsLocalLoginAllowed(false);
+        setShowRegistrationLink(false);
       }
     };
     fetchAuthConfig();

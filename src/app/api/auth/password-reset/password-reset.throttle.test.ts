@@ -40,6 +40,7 @@ describe('POST /api/auth/password-reset/request throttle', () => {
     delete process.env.AUTH_RESET_EMAIL_MAX;
     delete process.env.AUTH_RESET_IP_MAX;
     process.env.NEXTAUTH_URL = 'http://localhost';
+    process.env.AUTH_ALLOW_LOCAL_LOGIN = 'true';
     (globalThis as { __ogmXffGuard?: boolean }).__ogmXffGuard = true;
     prismaMock.user.findUnique.mockResolvedValue({
       id: 'user-a',
