@@ -260,10 +260,10 @@ export async function DELETE(request: Request) {
       } catch (reconfigureError) {
         logger.error(`Host alias ${uuid} was deleted, but failed to reconfigure:`, reconfigureError);
         return NextResponse.json({
-          success: true, // Deletion was successful
-          message: `Host alias ${uuid} deleted, but an error occurred during reconfiguration.` + (reconfigureError instanceof Error ? ` ${reconfigureError.message}` : ''),
+          success: false,
+          message: 'Alias saved but firewall reconfigure failed',
           reconfigureError: reconfigureError instanceof Error ? reconfigureError.message : String(reconfigureError)
-        }, { status: 207 }); // Multi-Status
+        }, { status: 500 });
       }
     } else {
       // Log failed deletion
@@ -500,9 +500,10 @@ export async function PUT(request: Request) {
         }, request);
 
         return NextResponse.json({
-          message: `Host alias ${uuid} updated, but an error occurred during reconfiguration.` + (reconfigureError instanceof Error ? ` ${reconfigureError.message}` : ''),
+          success: false,
+          message: 'Alias saved but firewall reconfigure failed',
           reconfigureError: reconfigureError instanceof Error ? reconfigureError.message : String(reconfigureError)
-        }, { status: 207 }); // Multi-Status
+        }, { status: 500 });
       }
     } else {
       logger.error("Failed to update host alias or unexpected response format from OPNsense API:", result);
@@ -670,10 +671,10 @@ export async function POST(request: Request) {
       } catch (reconfigureError) {
         logger.error(`Host alias ${result.uuid} was created, but failed to reconfigure:`, reconfigureError);
         return NextResponse.json({
-          message: `Host alias created, but an error occurred during reconfiguration.`,
-          uuid: result.uuid,
+          success: false,
+          message: 'Alias saved but firewall reconfigure failed',
           reconfigureError: reconfigureError instanceof Error ? reconfigureError.message : String(reconfigureError)
-        }, { status: 207 }); // Multi-Status
+        }, { status: 500 });
       }
     } else {
       logger.error("Failed to create host alias or unexpected response format from OPNsense API:", result);
