@@ -10,8 +10,14 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ClientOnly } from '@/components/util/ClientOnly';
-import { ScheduleForm, type ScheduleFormValues } from '@/components/admin/schedules/ScheduleForm';
+import { ScheduleForm } from '@/components/admin/schedules/ScheduleForm';
 import { ExecutionHistory } from '@/components/admin/schedules/ExecutionHistory';
+import {
+  mapToDays,
+  mapToFormValues,
+  scheduleFormResetKey,
+  type ScheduleDetailForForm,
+} from '@/components/admin/schedules/schedule-form-mapping';
 import {
   Sheet,
   SheetContent,
@@ -19,118 +25,11 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import type { ScheduleDayFormData } from '@/components/admin/schedules/ScheduleTimelineGrid';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, LogIn, Ban, AlertCircle, ChevronLeft, CalendarClock, History } from 'lucide-react';
 
 // Module-level cache — keyed by schedule ID, survives back-navigation
-const _detailCache: Record<string, ScheduleDetail> = {};
-
-// Shape returned by GET /api/admin/schedules/[id]
-interface ScheduleDetail {
-  id: string;
-  name: string;
-  description: string | null;
-  enabled: boolean;
-  priority: number;
-  scheduleType: 'COMPLEX_WEEKLY' | 'ONCE' | 'RECURRING';
-  timezone: string;
-  executeAt: string | null;
-  cronExpression: string | null;
-  targetType: string;
-  targetSelector: unknown;
-  days?: Array<{
-    dayOfWeek: number;
-    windows: Array<{
-      startTime: string;
-      endTime: string;
-      label?: string | null;
-      actions: Array<{
-        operation: string;
-        boundaryType: 'START' | 'END';
-        targetGroupUuid?: string | null;
-        sortOrder: number;
-      }>;
-    }>;
-  }>;
-  onceActions?: Array<{
-    operation: string;
-    targetGroupUuid?: string | null;
-    sortOrder: number;
-  }>;
-  recurringActions?: Array<{
-    operation: string;
-    targetGroupUuid?: string | null;
-    sortOrder: number;
-  }>;
-}
-
-// Normalize legacy operation names to current ones
-function normalizeOp(op: string): 'ASSIGN' | 'UNASSIGN' | 'CLEAR_ALL' {
-  if (op === 'REMOVE') return 'UNASSIGN';
-  if (op === 'MOVE') return 'ASSIGN'; // ASSIGN now handles move semantics automatically
-  if (op === 'ASSIGN' || op === 'UNASSIGN' || op === 'CLEAR_ALL') return op;
-  return 'ASSIGN';
-}
-
-function mapToFormValues(schedule: ScheduleDetail): Partial<ScheduleFormValues> {
-  const selector = schedule.targetSelector as Record<string, unknown>;
-  return {
-    name: schedule.name,
-    description: schedule.description ?? '',
-    enabled: schedule.enabled,
-    priority: schedule.priority,
-    scheduleType: schedule.scheduleType,
-    timezone: schedule.timezone,
-    executeAt: schedule.executeAt ? new Date(schedule.executeAt) : undefined,
-    onceActions: (schedule.onceActions ?? []).map(a => ({
-      operation: normalizeOp(a.operation),
-      targetGroupUuid: a.targetGroupUuid ?? undefined,
-      sortOrder: a.sortOrder,
-    })),
-    cronExpression: schedule.cronExpression ?? '',
-    recurringActions: (schedule.recurringActions ?? []).map(a => ({
-      operation: normalizeOp(a.operation),
-      targetGroupUuid: a.targetGroupUuid ?? undefined,
-      sortOrder: a.sortOrder,
-    })),
-    targetType: (schedule.targetType === 'NETWORK_ALIAS' ? 'NETWORK_ALIAS' : 'HOST_ALIAS') as 'HOST_ALIAS' | 'NETWORK_ALIAS',
-    hostAliasUuids: (selector?.hostAliasUuids as string[]) ?? [],
-    networkAliasUuids: (selector?.networkAliasUuids as string[]) ?? [],
-  };
-}
-
-function mapToDays(schedule: ScheduleDetail): ScheduleDayFormData[] {
-  const allDays: ScheduleDayFormData[] = Array.from({ length: 7 }, (_, i) => ({
-    dayOfWeek: i,
-    windows: [],
-  }));
-
-  if (schedule.days) {
-    for (const day of schedule.days) {
-      const idx = allDays.findIndex(d => d.dayOfWeek === day.dayOfWeek);
-      if (idx !== -1) {
-        // eslint-disable-next-line security/detect-object-injection -- idx is from findIndex on a controlled array, not user input
-        allDays[idx] = {
-          dayOfWeek: day.dayOfWeek,
-          windows: day.windows.map(w => ({
-            startTime: w.startTime,
-            endTime: w.endTime,
-            label: w.label ?? undefined,
-            actions: w.actions.map(a => ({
-              operation: normalizeOp(a.operation),
-              boundaryType: a.boundaryType,
-              targetGroupUuid: a.targetGroupUuid ?? undefined,
-              sortOrder: a.sortOrder,
-            })),
-          })),
-        };
-      }
-    }
-  }
-
-  return allDays;
-}
+const _detailCache: Record<string, ScheduleDetailForForm> = {};
 
 export default function EditSchedulePage() {
   const { data: session, status: authStatus } = useAuth();
@@ -144,11 +43,11 @@ export default function EditSchedulePage() {
 
   // eslint-disable-next-line security/detect-object-injection -- scheduleId comes from Next.js route params, not user input
   const cached = scheduleId ? (_detailCache[scheduleId] ?? null) : null;
-  const [schedule, setSchedule] = useState<ScheduleDetail | null>(cached);
+  const [schedule, setSchedule] = useState<ScheduleDetailForForm | null>(cached);
   const [isLoadingSchedule, setIsLoadingSchedule] = useState(cached === null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const hasFetched = useRef(false);
+  const lastFetchedId = useRef<string | null>(null);
 
   const fetchSchedule = useCallback(async () => {
     if (!scheduleId) return;
@@ -173,14 +72,14 @@ export default function EditSchedulePage() {
 
   useEffect(() => {
     if (
-      !hasFetched.current &&
+      lastFetchedId.current !== scheduleId &&
       authStatus === 'authenticated' &&
       (session?.user?.role === Role.ADMIN || session?.user?.role === Role.SUPER_ADMIN)
     ) {
-      hasFetched.current = true;
+      lastFetchedId.current = scheduleId;
       fetchSchedule();
     }
-  }, [authStatus, session, fetchSchedule]);
+  }, [authStatus, session, fetchSchedule, scheduleId]);
 
   useEffect(() => {
     if (authStatus === 'unauthenticated') {
@@ -256,6 +155,13 @@ export default function EditSchedulePage() {
       return;
     }
 
+    const saved = await res.json().catch(() => null);
+    if (saved && typeof saved === 'object') {
+      // eslint-disable-next-line security/detect-object-injection -- scheduleId comes from Next.js route params, not user input
+      _detailCache[scheduleId] = saved;
+      setSchedule(saved);
+    }
+
     toast({ title: 'Schedule updated', description: 'The schedule has been updated successfully.' });
     router.push('/admin?tab=scheduling');
   }
@@ -325,6 +231,7 @@ export default function EditSchedulePage() {
             {/* Form — show immediately from cache, stays visible during background refresh */}
             {schedule && (
               <ScheduleForm
+                key={scheduleFormResetKey(schedule)}
                 initialValues={mapToFormValues(schedule)}
                 initialDays={schedule.scheduleType === 'COMPLEX_WEEKLY' ? mapToDays(schedule) : undefined}
                 onSubmit={handleSubmit}
