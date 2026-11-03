@@ -23,7 +23,7 @@ export async function POST(req: Request) {
     }
 
     // Call OPNsense API to stop the VPN service
-    const opnsenseResponse = await fetchFromOpnsense(`/api/openvpn/service/stopService/${assertOpnsenseId(vpnUuid)}`, 'POST', {});
+    const opnsenseResponse = await fetchFromOpnsense(`/api/openvpn/service/stop_service/${assertOpnsenseId(vpnUuid)}`, 'POST', {});
 
     return NextResponse.json({ message: 'VPN stop initiated successfully', opnsenseResponse });
     } catch (error) {

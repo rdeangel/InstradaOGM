@@ -183,7 +183,7 @@ export async function POST(req: Request) {
 
     if (vpnType === VpnClientType.OpenVPN) {
       // Verify OpenVPN status
-      const opnsenseVpnSessionsResponse: { rows: OpnsenseVpnSession[] } = await fetchFromOpnsense('/api/openvpn/service/searchSessions');
+      const opnsenseVpnSessionsResponse: { rows: OpnsenseVpnSession[] } = await fetchFromOpnsense('/api/openvpn/service/search_sessions');
       const opnsenseVpns = opnsenseVpnSessionsResponse.rows;
       const targetVpn = opnsenseVpns.find(vpn => vpn.id === vpnUuid);
 
@@ -193,11 +193,11 @@ export async function POST(req: Request) {
       }
 
       logger.info(`Attempting to restart OpenVPN service for UUID: ${vpnUuid} via safe-restart endpoint.`);
-      opnsenseResponse = await fetchFromOpnsense(`/api/openvpn/service/restartService/${vpnId}`, 'POST', {});
+      opnsenseResponse = await fetchFromOpnsense(`/api/openvpn/service/restart_service/${vpnId}`, 'POST', {});
 
     } else if (vpnType === VpnClientType.WireGuard) {
       // Verify WireGuard status
-      const wireguardConfigResponse: OpnsenseWireguardClientResponse = await fetchFromOpnsense('/api/opnsense/wireguard/client/searchClient', 'POST', {});
+      const wireguardConfigResponse: OpnsenseWireguardClientResponse = await fetchFromOpnsense('/api/wireguard/client/search_client', 'POST', {});
       const wireguardClients = wireguardConfigResponse.rows;
       const targetWg = wireguardClients.find((client: OpnsenseWireguardClient) => client.uuid === vpnUuid);
 
@@ -221,13 +221,13 @@ export async function POST(req: Request) {
       logger.info(`Attempting to restart WireGuard service for UUID: ${vpnUuid} via safe-restart endpoint (toggle twice).`);
 
       // 1. Disable the client
-      await fetchFromOpnsense(`/api/opnsense/wireguard/client/toggleClient/${vpnId}`, 'POST', {});
-      await fetchFromOpnsense('/api/opnsense/wireguard/service/reconfigure', 'POST', {});
+      await fetchFromOpnsense(`/api/wireguard/client/toggle_client/${vpnId}`, 'POST', {});
+      await fetchFromOpnsense('/api/wireguard/service/reconfigure', 'POST', {});
       logger.info(`WireGuard VPN ${vpnUuid} temporarily disabled.`);
 
       // 2. Re-enable the client
-      opnsenseResponse = await fetchFromOpnsense(`/api/opnsense/wireguard/client/toggleClient/${vpnId}`, 'POST', {});
-      await fetchFromOpnsense('/api/opnsense/wireguard/service/reconfigure', 'POST', {});
+      opnsenseResponse = await fetchFromOpnsense(`/api/wireguard/client/toggle_client/${vpnId}`, 'POST', {});
+      await fetchFromOpnsense('/api/wireguard/service/reconfigure', 'POST', {});
       logger.info(`WireGuard VPN ${vpnUuid} re-enabled.`);
 
     } else if (vpnType === VpnClientType.IPsec) {

@@ -30,7 +30,7 @@ export async function POST(req: Request) {
     const vpnId = assertOpnsenseId(vpnUuid);
 
     // 1. Get current status of the WireGuard client
-    const searchResponse: OpnsenseWireguardClientResponse = await fetchFromOpnsense('/api/wireguard/client/searchClient', 'POST', {});
+    const searchResponse: OpnsenseWireguardClientResponse = await fetchFromOpnsense('/api/wireguard/client/search_client', 'POST', {});
     const client = searchResponse.rows.find((c: OpnsenseWireguardClient) => c.uuid === vpnId);
 
     if (!client) {
@@ -42,7 +42,7 @@ export async function POST(req: Request) {
     // Only stop if the VPN is currently enabled
     if (client.enabled === '1') {
       logger.info(`WireGuard VPN ${vpnUuid} is enabled. Toggling to disable for stop...`);
-      opnsenseResponse = await fetchFromOpnsense<ToggleClientResponse>(`/api/wireguard/client/toggleClient/${vpnId}`, 'POST', {});
+      opnsenseResponse = await fetchFromOpnsense<ToggleClientResponse>(`/api/wireguard/client/toggle_client/${vpnId}`, 'POST', {});
       await fetchFromOpnsense('/api/wireguard/service/reconfigure', 'POST', {});
       logger.info(`WireGuard VPN ${vpnUuid} disabled.`);
     } else {

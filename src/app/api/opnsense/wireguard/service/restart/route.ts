@@ -30,7 +30,7 @@ export async function POST(req: Request) {
     const vpnId = assertOpnsenseId(vpnUuid);
 
     // 1. Get current status of the WireGuard client
-    const searchResponse: OpnsenseWireguardClientResponse = await fetchFromOpnsense('/api/wireguard/client/searchClient', 'POST', {});
+    const searchResponse: OpnsenseWireguardClientResponse = await fetchFromOpnsense('/api/wireguard/client/search_client', 'POST', {});
     const client = searchResponse.rows.find((c: OpnsenseWireguardClient) => c.uuid === vpnId);
 
     if (!client) {
@@ -42,16 +42,16 @@ export async function POST(req: Request) {
     if (client.enabled === '1') {
       // VPN is currently enabled, so toggle twice to restart
       logger.info(`WireGuard VPN ${vpnUuid} is enabled. Toggling to disable for restart...`);
-      await fetchFromOpnsense<ToggleClientResponse>(`/api/wireguard/client/toggleClient/${vpnId}`, 'POST', {});
+      await fetchFromOpnsense<ToggleClientResponse>(`/api/wireguard/client/toggle_client/${vpnId}`, 'POST', {});
       await fetchFromOpnsense('/api/wireguard/service/reconfigure', 'POST', {});
       logger.info(`WireGuard VPN ${vpnId} disabled. Toggling to enable for restart...`);
-      opnsenseResponse = await fetchFromOpnsense<ToggleClientResponse>(`/api/wireguard/client/toggleClient/${vpnId}`, 'POST', {});
+      opnsenseResponse = await fetchFromOpnsense<ToggleClientResponse>(`/api/wireguard/client/toggle_client/${vpnId}`, 'POST', {});
       await fetchFromOpnsense('/api/wireguard/service/reconfigure', 'POST', {});
       logger.info(`WireGuard VPN ${vpnUuid} re-enabled.`);
     } else {
       // VPN is currently disabled, so toggle once to enable
       logger.info(`WireGuard VPN ${vpnUuid} is disabled. Toggling to enable for restart...`);
-      opnsenseResponse = await fetchFromOpnsense<ToggleClientResponse>(`/api/wireguard/client/toggleClient/${vpnId}`, 'POST', {});
+      opnsenseResponse = await fetchFromOpnsense<ToggleClientResponse>(`/api/wireguard/client/toggle_client/${vpnId}`, 'POST', {});
       await fetchFromOpnsense('/api/wireguard/service/reconfigure', 'POST', {});
       logger.info(`WireGuard VPN ${vpnId} enabled.`);
     }

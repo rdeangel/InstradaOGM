@@ -283,7 +283,7 @@ export async function fetchFromOpnsense<T = OpnsenseApiResponse>(endpoint: strin
 
 // --- Real API Functions ---
 
-// Interface for the response from /api/firewall/alias/listNetworkAliases
+// Interface for the response from /api/firewall/alias/list_network_aliases
 // Based on user description: "A json list of Aliases with name and description values"
 // This might be an array of objects.
 export interface OpnsenseListedAlias {
@@ -296,7 +296,7 @@ export type OpnsenseListNetworkAliasesResponse = OpnsenseListedAlias[];
 
 export async function listNetworkAliases(): Promise<OpnsenseListNetworkAliasesResponse> {
   // Assuming it returns an array directly, adjust if it's an object with a property containing the array
-  return fetchFromOpnsense<OpnsenseListNetworkAliasesResponse>('/api/firewall/alias/listNetworkAliases');
+  return fetchFromOpnsense<OpnsenseListNetworkAliasesResponse>('/api/firewall/alias/list_network_aliases');
 }
 
 // Interfaces for /api/firewall/alias/export
@@ -345,7 +345,7 @@ interface OpnsenseAliasTableSizeResponse {
 }
 
 export async function getAliasTableSize(): Promise<OpnsenseAliasTableSizeResponse> {
-  return fetchFromOpnsense<OpnsenseAliasTableSizeResponse>('/api/firewall/alias/getTableSize');
+  return fetchFromOpnsense<OpnsenseAliasTableSizeResponse>('/api/firewall/alias/get_table_size');
 }
 
 export function sanitizeOpnsenseDescription(value: unknown): string {
@@ -450,7 +450,7 @@ export async function setAliasItem(uuid: string, payload: OpnsenseSetAliasItemPa
     }
 
     // Call the OPNsense API
-    const response = await fetchFromOpnsense<OpnsenseSetItemResponse>(`/api/firewall/alias/setItem/${assertOpnsenseId(uuid)}`, 'POST', normalizedPayload);
+    const response = await fetchFromOpnsense<OpnsenseSetItemResponse>(`/api/firewall/alias/set_item/${assertOpnsenseId(uuid)}`, 'POST', normalizedPayload);
     logger.debug(`Raw response from OPNsense setAliasItem for UUID ${uuid}: Status - ${response.result}.`);
     return response;
   } catch (error) {
@@ -493,7 +493,7 @@ export async function addAliasItem(payload: OpnsenseAddAliasItemPayload): Promis
         },
       }
     : payload;
-  const response = await fetchFromOpnsense<OpnsenseAddItemResponse>('/api/firewall/alias/addItem', 'POST', body);
+  const response = await fetchFromOpnsense<OpnsenseAddItemResponse>('/api/firewall/alias/add_item', 'POST', body);
   logger.debug(`addAliasItem: OPNsense response:`, response);
   return response;
 }
@@ -566,7 +566,7 @@ export interface OpnsenseFindReferencesResponse {
 }
 
 export async function findAliasReferences(payload: OpnsenseFindReferencesPayload): Promise<OpnsenseFindReferencesResponse> {
-  return fetchFromOpnsense<OpnsenseFindReferencesResponse>('/api/firewall/alias_util/findReferences', 'POST', payload);
+  return fetchFromOpnsense<OpnsenseFindReferencesResponse>('/api/firewall/alias_util/find_references', 'POST', payload);
 }
 
 // Interface for reconfigure response (likely simple status)
@@ -617,7 +617,7 @@ export async function deleteAliasItem(uuid: string): Promise<OpnsenseDeleteItemR
   // Let's stick to POST as per OPNsense documentation examples for `delItem`.
   // If DELETE method is preferred, ensure fetchFromOpnsense handles it correctly (it should send '{}' body).
   // Using POST based on typical OPNsense API patterns for delete actions.
-  return fetchFromOpnsense<OpnsenseDeleteItemResponse>(`/api/firewall/alias/delItem/${assertOpnsenseId(uuid)}`, 'POST', {});
+  return fetchFromOpnsense<OpnsenseDeleteItemResponse>(`/api/firewall/alias/del_item/${assertOpnsenseId(uuid)}`, 'POST', {});
 }
 
 
@@ -1196,7 +1196,7 @@ export async function getOpnsenseMacAddresses(): Promise<string[]> {
 }
 
 export async function getOpenVpnSessions(): Promise<OpnsenseVpnEntry[]> {
-  const opnsenseVpnSessionsResponse: { rows: OpnsenseVpnSession[] } = await fetchFromOpnsense('/api/openvpn/service/searchSessions');
+  const opnsenseVpnSessionsResponse: { rows: OpnsenseVpnSession[] } = await fetchFromOpnsense('/api/openvpn/service/search_sessions');
   return opnsenseVpnSessionsResponse.rows.map((session: OpnsenseVpnSession) => ({
     ...session, // Include all original properties
     id: session.id ?? '',
@@ -1239,6 +1239,16 @@ export async function getWireguardClients(): Promise<OpnsenseVpnEntry[]> {
       status: status, // Add the determined status
     };
   });
+}
+
+export async function restartWireguardClient(uuid: string): Promise<{ ok: boolean; result: string }> {
+  const id = assertOpnsenseId(uuid);
+  await fetchFromOpnsense(`/api/wireguard/client/toggle_client/${id}`, 'POST', {});
+  await reconfigureWireguard();
+  const second = await fetchFromOpnsense<{ result: string }>(`/api/wireguard/client/toggle_client/${id}`, 'POST', {});
+  await reconfigureWireguard();
+  const result = second.result;
+  return { ok: result.toLowerCase() === 'enabled', result };
 }
 
 export async function getIpsecConnections(): Promise<OpnsenseVpnEntry[]> {

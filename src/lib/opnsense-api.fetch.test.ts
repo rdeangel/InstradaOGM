@@ -37,6 +37,7 @@ import {
   reconfigureAliases,
   reconfigureKea,
   reconfigureWireguard,
+  restartWireguardClient,
   sanitizeOpnsenseDescription,
   setAliasItem,
 } from '@/lib/opnsense-api';
@@ -169,6 +170,17 @@ function mockOpnsenseJson(body: unknown) {
   });
 }
 
+function mockOpnsenseJsonOnce(body: unknown) {
+  opnsenseHttpsRequest.mockResolvedValueOnce({
+    ok: true,
+    status: 200,
+    statusText: 'OK',
+    headers: { get: () => 'application/json' },
+    json: async () => body,
+    text: async () => JSON.stringify(body),
+  });
+}
+
 describe('sanitizeOpnsenseDescription', () => {
   it.each([
     ['a\nb', 'a b'],
@@ -285,5 +297,44 @@ describe('alias description sanitizing', () => {
       description: 'a\r\nb',
     });
     expect(JSON.parse(opnsenseHttpsRequest.mock.calls[0][1].body).alias.description).toBe('a b');
+  });
+});
+
+const WG_CLIENT_ID = '5a52d24a-4d2b-4955-b8ad-1f49efa08f76';
+
+describe('restartWireguardClient', () => {
+  beforeEach(() => {
+    opnsenseHttpsRequest.mockReset();
+  });
+
+  it('restartWireguardClient toggles twice with reconfigure between, ok when re-enabled', async () => {
+    mockOpnsenseJsonOnce({ result: 'Disabled', changed: true });
+    mockOpnsenseJsonOnce({ status: 'ok' });
+    mockOpnsenseJsonOnce({ result: 'Enabled', changed: true });
+    mockOpnsenseJsonOnce({ status: 'ok' });
+
+    await expect(restartWireguardClient(WG_CLIENT_ID)).resolves.toEqual({ ok: true, result: 'Enabled' });
+    expect(opnsenseHttpsRequest.mock.calls.map(c => c[0])).toEqual([
+      `https://opnsense.test/api/wireguard/client/toggle_client/${WG_CLIENT_ID}`,
+      'https://opnsense.test/api/wireguard/service/reconfigure',
+      `https://opnsense.test/api/wireguard/client/toggle_client/${WG_CLIENT_ID}`,
+      'https://opnsense.test/api/wireguard/service/reconfigure',
+    ]);
+  });
+
+  it('restartWireguardClient is not ok when second toggle leaves it Disabled', async () => {
+    mockOpnsenseJsonOnce({ result: 'Disabled', changed: true });
+    mockOpnsenseJsonOnce({ status: 'ok' });
+    mockOpnsenseJsonOnce({ result: 'Disabled', changed: true });
+    mockOpnsenseJsonOnce({ status: 'ok' });
+
+    await expect(restartWireguardClient(WG_CLIENT_ID)).resolves.toEqual({ ok: false, result: 'Disabled' });
+  });
+
+  it('restartWireguardClient rejects when reconfigure reports failed', async () => {
+    mockOpnsenseJsonOnce({ result: 'Disabled', changed: true });
+    mockOpnsenseJsonOnce({ status: 'failed' });
+
+    await expect(restartWireguardClient(WG_CLIENT_ID)).rejects.toThrow(/wireguard reconfigure failed/);
   });
 });

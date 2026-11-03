@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { logger } from '@/lib/logger';
 import { authenticateAndTrackRequest } from '@/lib/auth-middleware';
 import { Role, OpnsenseApiResponse } from '@/types/opnsense';
-import { fetchFromOpnsense } from '@/lib/opnsense-api';
+import { fetchFromOpnsense, restartWireguardClient } from '@/lib/opnsense-api';
 import { assertOpnsenseId, isOpnsenseId } from '@/lib/opnsense-id';
 
 export async function POST(req: Request) {
@@ -34,9 +34,16 @@ export async function POST(req: Request) {
     let opnsenseResponse: OpnsenseApiResponse;
 
     if (vpnType === 'OpenVPN') {
-      opnsenseResponse = await fetchFromOpnsense(`/api/openvpn/service/restartService/${vpnId}`, 'POST', {});
+      opnsenseResponse = await fetchFromOpnsense(`/api/openvpn/service/restart_service/${vpnId}`, 'POST', {});
+      if (opnsenseResponse.result !== 'ok') {
+        return NextResponse.json({ error: 'Failed to restart OpenVPN VPN' }, { status: 500 });
+      }
     } else if (vpnType === 'WireGuard') {
-      opnsenseResponse = await fetchFromOpnsense(`/api/opnsense/wireguard/service/restartService/${vpnId}`, 'POST', {});
+      const wg = await restartWireguardClient(vpnId);
+      if (!wg.ok) {
+        return NextResponse.json({ error: 'Failed to restart WireGuard VPN' }, { status: 500 });
+      }
+      return NextResponse.json({ message: 'VPN restart initiated successfully', opnsenseResponse: wg });
     } else {
       return NextResponse.json({ error: 'Unsupported VPN type for restart.' }, { status: 400 });
     }

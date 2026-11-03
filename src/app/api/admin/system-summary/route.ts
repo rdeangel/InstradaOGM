@@ -537,7 +537,7 @@ export async function GET(req: Request) {
           // Get data transfer information from OPNsense API
           try {
             if (mapping && mapping.vpnClient === 'OpenVPN') {
-              const sessionsResponse = await fetchFromOpnsense('/api/openvpn/service/searchSessions', 'GET');
+              const sessionsResponse = await fetchFromOpnsense('/api/openvpn/service/search_sessions', 'GET');
               if (sessionsResponse && (sessionsResponse as OpenVpnSessionApiRowsResponse).rows) {
                 const session = (sessionsResponse as OpenVpnSessionApiRowsResponse).rows.find((s) => s.description === mapping.vpnName);
                 if (session) {

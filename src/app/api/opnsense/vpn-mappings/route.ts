@@ -27,7 +27,7 @@ export async function GET(request: Request) {
 
     // Fetch all active VPN sessions from OPNsense
     logger.debug("Fetching OPNsense OpenVPN sessions...");
-    const opnsenseOpenVpnSessionsResponse: { rows: OpnsenseVpnSession[] } = await fetchFromOpnsense('/api/openvpn/service/searchSessions');
+    const opnsenseOpenVpnSessionsResponse: { rows: OpnsenseVpnSession[] } = await fetchFromOpnsense('/api/openvpn/service/search_sessions');
     const openVpns = opnsenseOpenVpnSessionsResponse.rows.map(session => ({
       ...session,
       id: session.id, // Ensure 'id' is present and correctly mapped
