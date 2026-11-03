@@ -48,6 +48,7 @@ export function resolveOpnsenseCaPem(raw: string | undefined): string | undefine
   } else {
     let stat: fs.Stats;
     try {
+      // eslint-disable-next-line security/detect-non-literal-fs-filename -- OPNSENSE_CA_CERT is operator env, not request input
       stat = fs.statSync(trimmed);
     } catch {
       throw new Error(`OPNSENSE_CA_CERT is set to "${trimmed}" but that file is not readable.`);
@@ -56,6 +57,7 @@ export function resolveOpnsenseCaPem(raw: string | undefined): string | undefine
       throw new Error(`OPNSENSE_CA_CERT is set to "${trimmed}" but that file is not readable.`);
     }
     try {
+      // eslint-disable-next-line security/detect-non-literal-fs-filename -- OPNSENSE_CA_CERT is operator env, not request input
       pem = fs.readFileSync(trimmed, 'utf8');
     } catch {
       throw new Error(`OPNSENSE_CA_CERT is set to "${trimmed}" but that file is not readable.`);

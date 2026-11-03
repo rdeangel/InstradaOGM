@@ -61,6 +61,15 @@ const eslintConfig = [
     "next/core-web-vitals",
     "next/typescript"
   ),
+
+  // Tests use temp dirs/fixtures; these rules flag any non-literal path.
+  {
+    files: ["**/*.{test,spec}.ts", "**/*.{test,spec}.tsx"],
+    rules: {
+      "security/detect-non-literal-fs-filename": "off",
+      "security/detect-unsafe-regex": "off",
+    },
+  },
 ];
 
 export default eslintConfig;

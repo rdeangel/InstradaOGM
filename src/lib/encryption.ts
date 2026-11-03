@@ -43,6 +43,7 @@ export async function encryptFile(inputPath: string, outputPath: string): Promis
   const iv = crypto.randomBytes(ivLength);
   const cipher = crypto.createCipheriv(algorithm, key, iv);
 
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- caller-supplied backup path, not request input
   const out = createWriteStream(outputPath);
 
   try {
@@ -53,6 +54,7 @@ export async function encryptFile(inputPath: string, outputPath: string): Promis
 
     // Stream plaintext → cipher → output. Don't let pipeline close `out` because
     // we still need to append the auth tag after the ciphertext finishes.
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- caller-supplied backup path, not request input
     const input = createReadStream(inputPath);
     let sourceError: unknown = null;
     await new Promise<void>((resolve, reject) => {
@@ -109,6 +111,7 @@ export async function decryptFile(inputPath: string, outputPath: string): Promis
   // This avoids constructing ~2x-sized hex strings in JS heap.
   // For typical backups (hundreds of MB) this single buffer is acceptable;
   // the previously materialized hex string was the actual OOM trigger.
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- caller-supplied backup path, not request input
   const rawFile = await fsPromises.readFile(inputPath);
 
   if (rawFile.length < ivLength + authTagLength) {
@@ -142,6 +145,7 @@ export async function decryptFile(inputPath: string, outputPath: string): Promis
   const decipher = crypto.createDecipheriv(algorithm, key, iv);
   decipher.setAuthTag(authTag);
 
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- caller-supplied backup path, not request input
   const out = createWriteStream(outputPath);
   try {
     await new Promise<void>((resolve, reject) => {
@@ -159,6 +163,7 @@ export async function decryptFile(inputPath: string, outputPath: string): Promis
   } catch (error) {
     out.destroy();
     try {
+      // eslint-disable-next-line security/detect-non-literal-fs-filename -- cleanup of the same caller-supplied output path
       await fsPromises.unlink(outputPath);
     } catch {
       // ignore — best-effort cleanup of partial output
