@@ -348,6 +348,14 @@ export async function getAliasTableSize(): Promise<OpnsenseAliasTableSizeRespons
   return fetchFromOpnsense<OpnsenseAliasTableSizeResponse>('/api/firewall/alias/getTableSize');
 }
 
+export function sanitizeOpnsenseDescription(value: unknown): string {
+  return String(value ?? '')
+    .replace(/[\r\n\v\f]+/g, ' ')
+    .replace(/\0/g, '')
+    .trim()
+    .slice(0, 255);
+}
+
 // Interface for the payload to update an alias
 export interface OpnsenseSetAliasItemPayload {
   alias: {
@@ -437,6 +445,9 @@ export async function setAliasItem(uuid: string, payload: OpnsenseSetAliasItemPa
     if (alias.updatefreq && typeof alias.updatefreq !== 'string') alias.updatefreq = String(alias.updatefreq);
     if (alias.categories && typeof alias.categories !== 'string') alias.categories = String(alias.categories);
     if (alias.description && typeof alias.description !== 'string') alias.description = String(alias.description);
+    if (alias.description !== undefined) {
+      alias.description = sanitizeOpnsenseDescription(alias.description);
+    }
 
     // Call the OPNsense API
     const response = await fetchFromOpnsense<OpnsenseSetItemResponse>(`/api/firewall/alias/setItem/${assertOpnsenseId(uuid)}`, 'POST', normalizedPayload);
@@ -473,7 +484,16 @@ export interface OpnsenseAddItemResponse {
 
 export async function addAliasItem(payload: OpnsenseAddAliasItemPayload): Promise<OpnsenseAddItemResponse> {
   logger.debug(`addAliasItem: Creating alias with payload:`, payload);
-  const response = await fetchFromOpnsense<OpnsenseAddItemResponse>('/api/firewall/alias/addItem', 'POST', payload);
+  const body: OpnsenseAddAliasItemPayload = payload.alias.description !== undefined
+    ? {
+        ...payload,
+        alias: {
+          ...payload.alias,
+          description: sanitizeOpnsenseDescription(payload.alias.description),
+        },
+      }
+    : payload;
+  const response = await fetchFromOpnsense<OpnsenseAddItemResponse>('/api/firewall/alias/addItem', 'POST', body);
   logger.debug(`addAliasItem: OPNsense response:`, response);
   return response;
 }
@@ -555,10 +575,35 @@ export interface OpnsenseReconfigureResponse {
   // Potentially other fields
 }
 
+export function assertReconfigureOk(service: string, response: unknown): void {
+  if (!response || typeof response !== 'object') return;
+  const record = response as { status?: unknown; result?: unknown };
+  const failed = [record.status, record.result].some(
+    (field) => typeof field === 'string' && field.toLowerCase().trim() === 'failed',
+  );
+  if (failed) {
+    throw new Error(`OPNsense ${service} reconfigure failed: ${JSON.stringify(response)}`);
+  }
+}
+
 export async function reconfigureAliases(): Promise<OpnsenseReconfigureResponse> {
   // This endpoint typically doesn't require a body, but OPNsense might expect an empty JSON object for POST.
   // Our fetchFromOpnsense handles sending {} for POST if body is undefined.
-  return fetchFromOpnsense<OpnsenseReconfigureResponse>('/api/firewall/alias/reconfigure', 'POST');
+  const res = await fetchFromOpnsense<OpnsenseReconfigureResponse>('/api/firewall/alias/reconfigure', 'POST');
+  assertReconfigureOk('alias', res);
+  return res;
+}
+
+export async function reconfigureKea(): Promise<OpnsenseReconfigureResponse> {
+  const res = await fetchFromOpnsense<OpnsenseReconfigureResponse>('/api/kea/service/reconfigure', 'POST');
+  assertReconfigureOk('kea', res);
+  return res;
+}
+
+export async function reconfigureWireguard(): Promise<OpnsenseReconfigureResponse> {
+  const res = await fetchFromOpnsense<OpnsenseReconfigureResponse>('/api/wireguard/service/reconfigure', 'POST');
+  assertReconfigureOk('wireguard', res);
+  return res;
 }
 // Interface for the response of delItem (usually simple like {"result":"deleted"})
 export interface OpnsenseDeleteItemResponse {

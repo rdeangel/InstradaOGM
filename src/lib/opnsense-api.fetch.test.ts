@@ -27,7 +27,19 @@ vi.mock('@/lib/opnsense-https', () => ({
   opnsenseHttpsRequest,
 }));
 
-import { createHostAliasFromHostname, deleteAliasItem, fetchFromOpnsense, getBestHostAliasName, setAliasItem } from '@/lib/opnsense-api';
+import {
+  addAliasItem,
+  assertReconfigureOk,
+  createHostAliasFromHostname,
+  deleteAliasItem,
+  fetchFromOpnsense,
+  getBestHostAliasName,
+  reconfigureAliases,
+  reconfigureKea,
+  reconfigureWireguard,
+  sanitizeOpnsenseDescription,
+  setAliasItem,
+} from '@/lib/opnsense-api';
 import { InvalidOpnsenseIdError, InvalidOpnsensePathError } from '@/lib/opnsense-id';
 import { InvalidIpAddressError } from '@/lib/network-utils';
 
@@ -143,5 +155,135 @@ describe('setAliasItem / deleteAliasItem id guards', () => {
   it('deleteAliasItem throws InvalidOpnsenseIdError for an id with slashes without fetching', async () => {
     await expect(deleteAliasItem('1/stopService/2')).rejects.toBeInstanceOf(InvalidOpnsenseIdError);
     expect(opnsenseHttpsRequest).not.toHaveBeenCalled();
+  });
+});
+
+function mockOpnsenseJson(body: unknown) {
+  opnsenseHttpsRequest.mockResolvedValue({
+    ok: true,
+    status: 200,
+    statusText: 'OK',
+    headers: { get: () => 'application/json' },
+    json: async () => body,
+    text: async () => JSON.stringify(body),
+  });
+}
+
+describe('sanitizeOpnsenseDescription', () => {
+  it.each([
+    ['a\nb', 'a b'],
+    ['a\r\nb', 'a b'],
+    ['a\vb\fc', 'a b c'],
+    ['a\0b', 'ab'],
+    ['  x  ', 'x'],
+    [undefined, ''],
+  ])('%j -> %j', (input, out) => expect(sanitizeOpnsenseDescription(input)).toBe(out));
+
+  it('truncates to 255', () => expect(sanitizeOpnsenseDescription('x'.repeat(300))).toHaveLength(255));
+});
+
+describe('reconfigure helpers', () => {
+  beforeEach(() => {
+    opnsenseHttpsRequest.mockReset();
+  });
+
+  it('reconfigureKea posts to /api/kea/service/reconfigure', async () => {
+    mockOpnsenseJson({ status: 'ok' });
+    await reconfigureKea();
+    expect(opnsenseHttpsRequest).toHaveBeenCalledWith(
+      'https://opnsense.test/api/kea/service/reconfigure',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
+  it('reconfigureKea throws on {"status":"failed"}', async () => {
+    mockOpnsenseJson({ status: 'failed' });
+    await expect(reconfigureKea()).rejects.toThrow(/kea reconfigure failed/);
+  });
+
+  it('reconfigureKea throws when result is failed', async () => {
+    mockOpnsenseJson({ result: ' Failed ' });
+    await expect(reconfigureKea()).rejects.toThrow(/kea reconfigure failed/);
+  });
+
+  it('reconfigureAliases throws on {"status":"failed"}', async () => {
+    mockOpnsenseJson({ status: 'failed' });
+    await expect(reconfigureAliases()).rejects.toThrow(/alias reconfigure failed/);
+  });
+
+  it('reconfigureAliases resolves when status is not failed', async () => {
+    mockOpnsenseJson({ status: 'done' });
+    await expect(reconfigureAliases()).resolves.toEqual({ status: 'done' });
+  });
+
+  it('reconfigureAliases accepts an empty 2xx body', async () => {
+    opnsenseHttpsRequest.mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: () => 'text/plain' },
+      json: async () => { throw new Error('no'); },
+      text: async () => '',
+    });
+    await expect(reconfigureAliases()).resolves.toEqual({ result: 'ok', status: 200 });
+  });
+
+  it('reconfigureWireguard resolves on {"status":"ok"}', async () => {
+    mockOpnsenseJson({ status: 'ok' });
+    await expect(reconfigureWireguard()).resolves.toEqual({ status: 'ok' });
+    expect(opnsenseHttpsRequest).toHaveBeenCalledWith(
+      'https://opnsense.test/api/wireguard/service/reconfigure',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
+  it('assertReconfigureOk ignores non-failed shapes', () => {
+    expect(() => assertReconfigureOk('alias', { status: 'ok' })).not.toThrow();
+    expect(() => assertReconfigureOk('alias', { status: 'done' })).not.toThrow();
+    expect(() => assertReconfigureOk('alias', {})).not.toThrow();
+    expect(() => assertReconfigureOk('alias', null)).not.toThrow();
+    expect(() => assertReconfigureOk('alias', { result: 'ok', status: 200 })).not.toThrow();
+  });
+});
+
+describe('alias description sanitizing', () => {
+  beforeEach(() => {
+    opnsenseHttpsRequest.mockReset();
+  });
+
+  it('addAliasItem sends a sanitized description', async () => {
+    mockOpnsenseJson({ result: 'saved', uuid: 'u' });
+    await addAliasItem({
+      alias: { enabled: '1', name: 'H', type: 'host', content: '1.2.3.4', description: 'a\nb' },
+    });
+    expect(JSON.parse(opnsenseHttpsRequest.mock.calls[0][1].body).alias.description).toBe('a b');
+  });
+
+  it('addAliasItem omits description when it was not provided', async () => {
+    mockOpnsenseJson({ result: 'saved', uuid: 'u' });
+    await addAliasItem({
+      alias: { enabled: '1', name: 'H', type: 'host', content: '1.2.3.4' },
+    });
+    expect(JSON.parse(opnsenseHttpsRequest.mock.calls[0][1].body).alias).not.toHaveProperty('description');
+  });
+
+  it('setAliasItem sends a sanitized description', async () => {
+    mockOpnsenseJson({ result: 'saved' });
+    await setAliasItem('abc', {
+      alias: { enabled: '1', name: 'H', type: 'host', content: '1.2.3.4', description: 'a\nb' },
+    });
+    expect(JSON.parse(opnsenseHttpsRequest.mock.calls[0][1].body).alias.description).toBe('a b');
+  });
+
+  it('setAliasItem flat payload sends a sanitized description', async () => {
+    mockOpnsenseJson({ result: 'saved' });
+    await setAliasItem('abc', {
+      enabled: '1',
+      name: 'H',
+      type: 'host',
+      content: '1.2.3.4',
+      description: 'a\r\nb',
+    });
+    expect(JSON.parse(opnsenseHttpsRequest.mock.calls[0][1].body).alias.description).toBe('a b');
   });
 });
