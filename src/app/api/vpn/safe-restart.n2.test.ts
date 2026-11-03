@@ -114,7 +114,7 @@ describe('vpn/safe-restart unmanaged check fails closed (T8)', () => {
       userSpecificFilters: null,
     });
     fetchFromOpnsense.mockImplementation(async (path: string) => {
-      if (String(path).includes('searchSessions')) return { rows: [] };
+      if (String(path).includes('search_sessions')) return { rows: [] };
       return { result: 'ok' };
     });
   });
