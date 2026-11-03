@@ -70,6 +70,32 @@ describe('fetchFromOpnsense path guard', () => {
   });
 });
 
+describe('fetchFromOpnsense response parsing', () => {
+  beforeEach(() => {
+    opnsenseHttpsRequest.mockReset();
+  });
+
+  it('rejects non-JSON 2xx body', async () => {
+    opnsenseHttpsRequest.mockResolvedValue({
+      ok: true, status: 200, statusText: 'OK',
+      headers: { get: () => 'text/html' },
+      json: async () => { throw new Error('no'); },
+      text: async () => '<html>Login</html>',
+    });
+    await expect(fetchFromOpnsense('/api/firewall/alias/export'))
+      .rejects.toThrow(/non-JSON response/);
+  });
+
+  it('still parses JSON served with a wrong content-type', async () => {
+    opnsenseHttpsRequest.mockResolvedValue({
+      ok: true, status: 200, statusText: 'OK',
+      headers: { get: () => 'text/plain' },
+      json: async () => ({}), text: async () => '{"status":"ok"}',
+    });
+    await expect(fetchFromOpnsense('/api/firewall/alias/export')).resolves.toEqual({ status: 'ok' });
+  });
+});
+
 describe('getBestHostAliasName', () => {
   it('rejects an invalid IP before hostname lookup', async () => {
     await expect(getBestHostAliasName('1.2.3.4;id')).rejects.toBeInstanceOf(InvalidIpAddressError);

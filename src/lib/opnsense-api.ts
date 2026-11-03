@@ -268,11 +268,10 @@ export async function fetchFromOpnsense<T = OpnsenseApiResponse>(endpoint: strin
         //logger.debug(`Parsed JSON from text response:`, jsonResponse);
         return jsonResponse as T;
       } catch {
-        // If it's not JSON, and not empty, return a generic success or the text itself
-        logger.warn(`OPNSense API response was not JSON, but status was OK. Endpoint: ${endpoint}. Response: ${textResponse}`);
-        // Try parsing as JSON even if content-type header is missing or not application/json
-        // If it's not JSON, and not empty, return a generic "ok" result or the text itself
-        return { result: "ok", message: textResponse, status: response.status } as T;
+        // A 2xx HTML/text page (login, proxy, or error document) is not a successful API result.
+        const preview = textResponse.slice(0, 200);
+        logger.error(`OPNsense returned a non-JSON response (status ${response.status}) for ${endpoint}. Body: ${preview}`);
+        throw new Error(`OPNsense returned a non-JSON response (status ${response.status}) for ${endpoint}`);
       }
     } else {
       // If response is OK but no content, return a generic "ok" result
