@@ -37,6 +37,7 @@ import {
   reconfigureAliases,
   reconfigureKea,
   reconfigureWireguard,
+  getIpsecConnections,
   restartWireguardClient,
   sanitizeOpnsenseDescription,
   setAliasItem,
@@ -382,5 +383,26 @@ describe('restartWireguardClient', () => {
       `https://opnsense.test/api/wireguard/client/toggle_client/${WG_CLIENT_ID}`,
       'https://opnsense.test/api/wireguard/service/reconfigure',
     ]);
+  });
+});
+
+describe('getIpsecConnections', () => {
+  beforeEach(() => {
+    opnsenseHttpsRequest.mockReset();
+  });
+
+  it('getIpsecConnections uses ikeid, falls back to name when ikeid missing', async () => {
+    mockOpnsenseJson({
+      rows: [
+        { ikeid: 'b157c526-7fd7-40c4-b5a6-d90db7230192', name: 'b157c526-7fd7-40c4-b5a6-d90db7230192', phase1desc: 'angdea.duckdns.org', connected: true },
+        { name: 'con2', phase1desc: 'legacy', connected: false },
+        // ikeid and name differ so id precedence is proven, not coincident with name.
+        { ikeid: 'uuid-abc', name: 'legacy-name', phase1desc: 'Desc', connected: false },
+      ],
+    });
+
+    const rows = await getIpsecConnections();
+    expect(rows.map(r => r.id)).toEqual(['b157c526-7fd7-40c4-b5a6-d90db7230192', 'con2', 'uuid-abc']);
+    expect(rows.map(r => r.name)).toEqual(['angdea.duckdns.org', 'legacy', 'Desc']);
   });
 });

@@ -1266,8 +1266,8 @@ export async function getIpsecConnections(): Promise<OpnsenseVpnEntry[]> {
   const opnsenseIpsecSessionsResponse: OpnsenseIpsecConnectionResponse = await fetchFromOpnsense('/api/ipsec/sessions/search_phase1');
   return opnsenseIpsecSessionsResponse.rows.map((session: OpnsenseIpsecConnection) => ({
     ...session, // Include all original properties
-    id: session.ikeid ?? '', // Use ikeid as id for IPsec sessions
-    name: session.phase1desc ?? session.ikeid ?? '', // Use phase1desc as name, fallback to ikeid
+    id: session.ikeid || session.name || '', // Canonical id: ikeid, fallback to name
+    name: session.phase1desc || session.ikeid || session.name || '', // phase1desc, then ikeid, then name
     type: VpnClientType.IPsec,
     status: session.connected ? 'connected' : 'disconnected', // Derive status from 'connected' boolean
   }));

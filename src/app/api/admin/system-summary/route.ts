@@ -16,7 +16,7 @@ interface KeaLeases4Row { state: string; }
 interface OpenVpnSessionApiRow { description: string; bytes_received: string; bytes_sent: string; }
 interface WireguardClientApiRow { name: string; }
 interface WireguardPeerApiRow { type: string; name: string; 'transfer-rx'?: string; 'transfer-tx'?: string; }
-interface IpsecConnectionApiRow { name: string; 'bytes-in'?: string; 'bytes-out'?: string; }
+interface IpsecConnectionApiRow { name: string; ikeid?: string; 'bytes-in'?: string; 'bytes-out'?: string; }
 
 interface KeaDhcpv4ReservationResponse { rows: KeaDhcpv4ReservationRow[]; }
 interface KeaLeases4Response { rows: KeaLeases4Row[]; }
@@ -564,7 +564,7 @@ export async function GET(req: Request) {
             } else if (mapping && mapping.vpnClient === 'IPsec') {
               const connectionsResponse = await fetchFromOpnsense('/api/ipsec/sessions/search_phase1', 'GET');
               if (connectionsResponse && (connectionsResponse as IpsecConnectionApiRowsResponse).rows) {
-                const connection = (connectionsResponse as IpsecConnectionApiRowsResponse).rows.find((c) => c.name === mapping.vpnName);
+                const connection = (connectionsResponse as IpsecConnectionApiRowsResponse).rows.find((c) => (c.ikeid || c.name) === mapping.vpnUuid || c.name === mapping.vpnUuid);
                 if (connection) {
                   dataTransferredRx = formatBytes(parseInt(connection['bytes-in']?.toString() || '0'));
                   dataTransferredTx = formatBytes(parseInt(connection['bytes-out']?.toString() || '0'));

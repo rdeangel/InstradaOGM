@@ -66,8 +66,8 @@ export async function GET(request: Request) {
     const opnsenseIpsecConnectionsResponse: { rows: OpnsenseIpsecConnection[] } = await fetchFromOpnsense('/api/ipsec/sessions/search_phase1'); // Changed API endpoint
     const ipsecConnections = opnsenseIpsecConnectionsResponse.rows.map(connection => ({
       // Explicitly map properties from the API response to match the OpnsenseIpsecConnection interface
-      id: connection.name, // Use connection.name as id for IPsec as it contains the UUID
-      name: connection.name, // Keep original name (which is the UUID)
+      id: connection.ikeid || connection.name, // Canonical id: ikeid, fallback to name
+      name: connection.name, // Keep original name (raw API value)
       type: VpnClientType.IPsec,
       enabled: connection.connected ? '1' : '0', // Derive 'enabled' from 'connected' for IPsec
       connected: connection.connected,
