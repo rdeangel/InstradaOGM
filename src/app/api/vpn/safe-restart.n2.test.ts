@@ -7,6 +7,9 @@ const {
   prismaMock,
   isHostInUnmanagedGroups,
   fetchUnmanagedGroupFilterData,
+  getIpsecConnections,
+  getWireguardClients,
+  restartWireguardClient,
 } = vi.hoisted(() => ({
   fetchFromOpnsense: vi.fn(),
   isAnonSelfServiceAllowed: vi.fn(),
@@ -18,6 +21,9 @@ const {
   },
   isHostInUnmanagedGroups: vi.fn(),
   fetchUnmanagedGroupFilterData: vi.fn(),
+  getIpsecConnections: vi.fn(),
+  getWireguardClients: vi.fn(),
+  restartWireguardClient: vi.fn(),
 }));
 
 vi.mock('@/lib/logger', () => ({
@@ -29,8 +35,10 @@ vi.mock('@/lib/auth-middleware', () => ({
 }));
 vi.mock('@/lib/opnsense-api', () => ({
   fetchFromOpnsense,
-  getIpsecConnections: vi.fn(),
+  getIpsecConnections,
   exportAliases,
+  getWireguardClients,
+  restartWireguardClient,
 }));
 vi.mock('@/lib/unmanaged-group-utils', () => ({
   fetchUnmanagedGroupFilterData,
@@ -172,5 +180,133 @@ describe('vpn/safe-restart unmanaged check fails closed (T8)', () => {
 
     expect(response.status).not.toBe(503);
     expect(fetchFromOpnsense).toHaveBeenCalled();
+  });
+});
+
+describe('vpn/safe-restart per-branch success checks', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    isAnonSelfServiceAllowed.mockResolvedValue({
+      allowed: true,
+      clientIp: '192.168.1.10',
+      settings: {},
+      message: '',
+    });
+    prismaMock.vpnMapping.findFirst.mockResolvedValue(null);
+  });
+
+  function request(vpnType: string, vpnUuid = 'wg-client-1'): Request {
+    return new Request('http://localhost/api/vpn/safe-restart', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ vpnUuid, vpnType }),
+    });
+  }
+
+  it('returns the shared 500 message when OpenVPN restart result is not ok', async () => {
+    fetchFromOpnsense.mockImplementation(async (path: string) => {
+      if (String(path).includes('search_sessions')) return { rows: [] };
+      return { result: 'failed', message: 'boom' };
+    });
+
+    const response = await POST(request('OpenVPN', '1'));
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toEqual({
+      error: 'Failed to restart OpenVPN VPN service on OPNsense.',
+    });
+  });
+
+  it('returns 404 when the WireGuard client is missing and does not restart', async () => {
+    getWireguardClients.mockResolvedValue([]);
+
+    const response = await POST(request('WireGuard'));
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({ error: 'WireGuard client not found.' });
+    expect(getWireguardClients).toHaveBeenCalledOnce();
+    expect(restartWireguardClient).not.toHaveBeenCalled();
+  });
+
+  it('returns 403 when the WireGuard client is disabled', async () => {
+    getWireguardClients.mockResolvedValue([{ id: 'wg-client-1', enabled: '0', status: 'offline' }]);
+
+    const response = await POST(request('WireGuard'));
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({
+      error: 'WireGuard is disabled and cannot be restarted via this endpoint.',
+    });
+    expect(restartWireguardClient).not.toHaveBeenCalled();
+  });
+
+  it('returns 403 when the WireGuard peer is online', async () => {
+    getWireguardClients.mockResolvedValue([{ id: 'wg-client-1', enabled: '1', status: 'online' }]);
+
+    const response = await POST(request('WireGuard'));
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({
+      error: 'WireGuard is already connected. Cannot restart via this endpoint.',
+    });
+    expect(restartWireguardClient).not.toHaveBeenCalled();
+  });
+
+  it('succeeds when an offline WireGuard client restarts as enabled', async () => {
+    getWireguardClients.mockResolvedValue([{ id: 'wg-client-1', enabled: '1', status: 'offline' }]);
+    restartWireguardClient.mockResolvedValue({ ok: true, result: 'Enabled' });
+
+    const response = await POST(request('WireGuard'));
+
+    expect(response.status).toBe(200);
+    expect(restartWireguardClient).toHaveBeenCalledWith('wg-client-1');
+    expect(fetchFromOpnsense).not.toHaveBeenCalled();
+    await expect(response.json()).resolves.toMatchObject({
+      message: 'VPN restart initiated successfully',
+      opnsenseResponse: { ok: true, result: 'Enabled' },
+    });
+  });
+
+  it('returns the shared 500 message when the WireGuard helper is not ok', async () => {
+    getWireguardClients.mockResolvedValue([{ id: 'wg-client-1', enabled: '1', status: 'offline' }]);
+    restartWireguardClient.mockResolvedValue({ ok: false, result: 'Disabled' });
+
+    const response = await POST(request('WireGuard'));
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toEqual({
+      error: 'Failed to restart WireGuard VPN service on OPNsense.',
+    });
+  });
+
+  it('connects IPsec with the canonical connection id', async () => {
+    getIpsecConnections.mockResolvedValue([{ id: 'ike-1', type: 'IPsec', connected: false }]);
+    fetchFromOpnsense.mockResolvedValue({ result: 'ok' });
+
+    const response = await POST(request('IPsec', 'ike-1'));
+
+    expect(response.status).toBe(200);
+    expect(fetchFromOpnsense).toHaveBeenCalledWith('/api/ipsec/sessions/connect/ike-1', 'POST', {});
+  });
+
+  it('returns 403 and does not connect a connected IPsec session', async () => {
+    getIpsecConnections.mockResolvedValue([{ id: 'ike-1', type: 'IPsec', connected: true }]);
+
+    const response = await POST(request('IPsec', 'ike-1'));
+
+    expect(response.status).toBe(403);
+    expect(fetchFromOpnsense).not.toHaveBeenCalled();
+  });
+
+  it('returns the shared 500 message when IPsec connect result is not ok', async () => {
+    getIpsecConnections.mockResolvedValue([{ id: 'ike-1', type: 'IPsec', connected: false }]);
+    fetchFromOpnsense.mockResolvedValue({ result: 'failed', message: 'nope' });
+
+    const response = await POST(request('IPsec', 'ike-1'));
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toEqual({
+      error: 'Failed to restart IPsec VPN service on OPNsense.',
+    });
   });
 });

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { logger } from '@/lib/logger';
 import { authenticateAndTrackRequest } from '@/lib/auth-middleware';
 import { Role, OpnsenseWireguardClientResponse, OpnsenseWireguardClient } from '@/types/opnsense';
-import { fetchFromOpnsense } from '@/lib/opnsense-api';
+import { fetchFromOpnsense, reconfigureWireguard } from '@/lib/opnsense-api';
 import { assertOpnsenseId, isOpnsenseId } from '@/lib/opnsense-id';
 
 interface ToggleClientResponse {
@@ -43,7 +43,7 @@ export async function POST(req: Request) {
     if (client.enabled === '1') {
       logger.info(`WireGuard VPN ${vpnUuid} is enabled. Toggling to disable for stop...`);
       opnsenseResponse = await fetchFromOpnsense<ToggleClientResponse>(`/api/wireguard/client/toggle_client/${vpnId}`, 'POST', {});
-      await fetchFromOpnsense('/api/wireguard/service/reconfigure', 'POST', {});
+      await reconfigureWireguard();
       logger.info(`WireGuard VPN ${vpnUuid} disabled.`);
     } else {
       logger.info(`WireGuard VPN ${vpnUuid} is already disabled. No action needed for stop.`);

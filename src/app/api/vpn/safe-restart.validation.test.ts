@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { fetchFromOpnsense } = vi.hoisted(() => ({
+const { fetchFromOpnsense, getWireguardClients, restartWireguardClient } = vi.hoisted(() => ({
   fetchFromOpnsense: vi.fn(),
+  getWireguardClients: vi.fn(),
+  restartWireguardClient: vi.fn(),
 }));
 
 vi.mock('@/lib/logger', () => ({
@@ -15,6 +17,8 @@ vi.mock('@/lib/opnsense-api', () => ({
   fetchFromOpnsense,
   getIpsecConnections: vi.fn(),
   exportAliases: vi.fn(),
+  getWireguardClients,
+  restartWireguardClient,
 }));
 vi.mock('@/lib/unmanaged-group-utils', () => ({
   fetchUnmanagedGroupFilterData: vi.fn(),
@@ -49,5 +53,7 @@ describe('vpn/safe-restart identifier guard', () => {
       error: 'Invalid VPN identifier',
     });
     expect(fetchFromOpnsense).not.toHaveBeenCalled();
+    expect(getWireguardClients).not.toHaveBeenCalled();
+    expect(restartWireguardClient).not.toHaveBeenCalled();
   });
 });

@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 import { authenticateRequest, trackUsageByAuthMethod } from '@/lib/auth-middleware';
-import { Role, OpnsenseVpnSession, OpnsenseApiResponse, OpnsenseWireguardClient, OpnsenseWireguardClientResponse } from '@/types/opnsense';
+import { Role, OpnsenseVpnSession, OpnsenseApiResponse } from '@/types/opnsense';
 import type { NetworkGroup } from '@/types/opnsense';
-import { fetchFromOpnsense, getIpsecConnections, exportAliases } from '@/lib/opnsense-api';
+import { fetchFromOpnsense, getIpsecConnections, getWireguardClients, exportAliases, restartWireguardClient } from '@/lib/opnsense-api';
 import { assertOpnsenseId, isOpnsenseId } from '@/lib/opnsense-id';
 import { logger } from '@/lib/logger';
 import { isOpnsenseIpsecConnection } from '@/types/opnsense';
@@ -180,6 +180,7 @@ export async function POST(req: Request) {
     }
 
     let opnsenseResponse: OpnsenseApiResponse;
+    let ok = false;
 
     if (vpnType === VpnClientType.OpenVPN) {
       // Verify OpenVPN status
@@ -194,12 +195,12 @@ export async function POST(req: Request) {
 
       logger.info(`Attempting to restart OpenVPN service for UUID: ${vpnUuid} via safe-restart endpoint.`);
       opnsenseResponse = await fetchFromOpnsense(`/api/openvpn/service/restart_service/${vpnId}`, 'POST', {});
+      ok = opnsenseResponse.result === 'ok';
 
     } else if (vpnType === VpnClientType.WireGuard) {
-      // Verify WireGuard status
-      const wireguardConfigResponse: OpnsenseWireguardClientResponse = await fetchFromOpnsense('/api/wireguard/client/search_client', 'POST', {});
-      const wireguardClients = wireguardConfigResponse.rows;
-      const targetWg = wireguardClients.find((client: OpnsenseWireguardClient) => client.uuid === vpnUuid);
+      // Live peer-status (or the enabled fallback) comes from getWireguardClients.
+      const wireguardClients = await getWireguardClients();
+      const targetWg = wireguardClients.find((client) => client.id === vpnUuid);
 
       if (!targetWg) {
         logger.warn(`WireGuard client not found for UUID: ${vpnUuid}`);
@@ -217,18 +218,10 @@ export async function POST(req: Request) {
         return new NextResponse(JSON.stringify({ error: 'WireGuard is already connected. Cannot restart via this endpoint.' }), { status: 403 });
       }
 
-      // Implement the "toggle twice" logic for WireGuard restart
       logger.info(`Attempting to restart WireGuard service for UUID: ${vpnUuid} via safe-restart endpoint (toggle twice).`);
-
-      // 1. Disable the client
-      await fetchFromOpnsense(`/api/wireguard/client/toggle_client/${vpnId}`, 'POST', {});
-      await fetchFromOpnsense('/api/wireguard/service/reconfigure', 'POST', {});
-      logger.info(`WireGuard VPN ${vpnUuid} temporarily disabled.`);
-
-      // 2. Re-enable the client
-      opnsenseResponse = await fetchFromOpnsense(`/api/wireguard/client/toggle_client/${vpnId}`, 'POST', {});
-      await fetchFromOpnsense('/api/wireguard/service/reconfigure', 'POST', {});
-      logger.info(`WireGuard VPN ${vpnUuid} re-enabled.`);
+      const wg = await restartWireguardClient(vpnUuid);
+      ok = wg.ok;
+      opnsenseResponse = wg;
 
     } else if (vpnType === VpnClientType.IPsec) {
       // Verify IPsec status
@@ -253,22 +246,20 @@ export async function POST(req: Request) {
 
       logger.info(`Attempting to restart IPsec service for UUID: ${vpnUuid} via safe-restart endpoint (connect).`);
 
-      // Connect the IPsec session directly as the frontend ensures it's disconnected
-      opnsenseResponse = await fetchFromOpnsense(`/api/ipsec/sessions/connect/${vpnId}`, 'POST', {});
-      logger.info(`IPsec VPN ${vpnUuid} connected.`);
+      // Connect with the canonical id from getIpsecConnections, not the raw request value.
+      opnsenseResponse = await fetchFromOpnsense(`/api/ipsec/sessions/connect/${targetIpsec.id}`, 'POST', {});
+      ok = opnsenseResponse.result === 'ok';
+      if (ok) {
+        logger.info(`IPsec VPN ${vpnUuid} connected.`);
+      }
 
     } else {
       return new NextResponse(JSON.stringify({ error: 'Unsupported VPN type for safe restart.' }), { status: 400 });
     }
 
-    if (opnsenseResponse.result !== 'ok') {
+    if (!ok) {
       logger.error(`OPNsense API reported failure for ${vpnType} VPN restart: ${vpnUuid}`, opnsenseResponse);
-      return new NextResponse(JSON.stringify({ error: opnsenseResponse.message || `Failed to restart ${vpnType} VPN service on OPNsense.` }), { status: 500 });
-    }
-
-    if (opnsenseResponse.result !== 'ok') {
-      logger.error(`OPNsense API reported failure for VPN restart: ${vpnUuid}`, opnsenseResponse);
-      return new NextResponse(JSON.stringify({ error: opnsenseResponse.message || 'Failed to restart VPN service on OPNsense.' }), { status: 500 });
+      return new NextResponse(JSON.stringify({ error: `Failed to restart ${vpnType} VPN service on OPNsense.` }), { status: 500 });
     }
 
     // Track usage for authenticated requests

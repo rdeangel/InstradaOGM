@@ -1244,10 +1244,21 @@ export async function getWireguardClients(): Promise<OpnsenseVpnEntry[]> {
 export async function restartWireguardClient(uuid: string): Promise<{ ok: boolean; result: string }> {
   const id = assertOpnsenseId(uuid);
   await fetchFromOpnsense(`/api/wireguard/client/toggle_client/${id}`, 'POST', {});
+  try {
+    await reconfigureWireguard();
+  } catch (error) {
+    // The first toggle already saved the client disabled. Re-toggle to put the
+    // config back; a failed recovery must not hide the reconfigure error.
+    try {
+      await fetchFromOpnsense(`/api/wireguard/client/toggle_client/${id}`, 'POST', {});
+    } catch (recoveryError) {
+      logger.warn('WireGuard client stayed disabled: recovery toggle failed after reconfigure error', recoveryError);
+    }
+    throw error;
+  }
+  const second = await fetchFromOpnsense<{ result?: unknown }>(`/api/wireguard/client/toggle_client/${id}`, 'POST', {});
   await reconfigureWireguard();
-  const second = await fetchFromOpnsense<{ result: string }>(`/api/wireguard/client/toggle_client/${id}`, 'POST', {});
-  await reconfigureWireguard();
-  const result = second.result;
+  const result = String(second.result ?? '');
   return { ok: result.toLowerCase() === 'enabled', result };
 }
 

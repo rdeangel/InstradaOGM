@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { logger } from '@/lib/logger';
 import { authenticateAndTrackRequest } from '@/lib/auth-middleware';
-import { Role, OpnsenseApiResponse } from '@/types/opnsense';
+import { Role, OpnsenseApiResponse, OpnsenseWireguardClient, OpnsenseWireguardClientResponse } from '@/types/opnsense';
 import { fetchFromOpnsense, restartWireguardClient } from '@/lib/opnsense-api';
 import { assertOpnsenseId, isOpnsenseId } from '@/lib/opnsense-id';
 
@@ -39,6 +39,14 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: 'Failed to restart OpenVPN VPN' }, { status: 500 });
       }
     } else if (vpnType === 'WireGuard') {
+      const searchResponse: OpnsenseWireguardClientResponse = await fetchFromOpnsense('/api/wireguard/client/search_client', 'POST', {});
+      const client = searchResponse.rows.find((c: OpnsenseWireguardClient) => c.uuid === vpnId);
+      if (!client) {
+        return NextResponse.json({ error: `WireGuard client with UUID ${vpnUuid} not found.` }, { status: 404 });
+      }
+      if (client.enabled !== '1') {
+        return NextResponse.json({ error: 'WireGuard client is not enabled. Restart requires an enabled client.' }, { status: 400 });
+      }
       const wg = await restartWireguardClient(vpnId);
       if (!wg.ok) {
         return NextResponse.json({ error: 'Failed to restart WireGuard VPN' }, { status: 500 });
