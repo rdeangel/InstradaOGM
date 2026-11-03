@@ -308,6 +308,18 @@ describe('restartWireguardClient', () => {
     opnsenseHttpsRequest.mockReset();
   });
 
+  it('restartWireguardClient restores once and skips reconfigure when the first toggle is not Disabled', async () => {
+    mockOpnsenseJsonOnce({ result: 'Enabled', changed: true });
+    mockOpnsenseJsonOnce({ result: 'Disabled', changed: true });
+
+    await expect(restartWireguardClient(WG_CLIENT_ID)).resolves.toEqual({ ok: false, result: 'Enabled' });
+    expect(opnsenseHttpsRequest.mock.calls.map(c => c[0])).toEqual([
+      `https://opnsense.test/api/wireguard/client/toggle_client/${WG_CLIENT_ID}`,
+      `https://opnsense.test/api/wireguard/client/toggle_client/${WG_CLIENT_ID}`,
+    ]);
+    expect(opnsenseHttpsRequest.mock.calls.map(c => c[0]).some(url => String(url).includes('reconfigure'))).toBe(false);
+  });
+
   it('restartWireguardClient toggles twice with reconfigure between, ok when re-enabled', async () => {
     mockOpnsenseJsonOnce({ result: 'Disabled', changed: true });
     mockOpnsenseJsonOnce({ status: 'ok' });

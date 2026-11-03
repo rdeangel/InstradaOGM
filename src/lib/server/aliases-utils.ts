@@ -98,13 +98,22 @@ export async function createHostAliasServer(name: string, content: string, descr
     };
 
     const result = await addAliasItem(payload);
-    
-    if (result.result === 'saved') {
-      await reconfigureAliases();
-      return { success: true, data: { uuid: result.uuid } };
-    } else {
+
+    if (result.result !== 'saved') {
       return { success: false, error: 'Failed to create alias' };
     }
+
+    try {
+      await reconfigureAliases();
+    } catch (reconfigureError) {
+      logger.error('Host alias saved but firewall reconfigure failed:', reconfigureError);
+      return {
+        success: false,
+        error: 'Host alias saved but firewall reconfigure failed; apply it in OPNsense (Firewall > Aliases).',
+      };
+    }
+
+    return { success: true, data: { uuid: result.uuid } };
   } catch (error) {
     logger.error('Error creating host alias via server utility:', error);
     return { success: false, error: 'Failed to create host alias' };

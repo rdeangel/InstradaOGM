@@ -247,7 +247,8 @@ export async function POST(req: Request) {
       logger.info(`Attempting to restart IPsec service for UUID: ${vpnUuid} via safe-restart endpoint (connect).`);
 
       // Connect with the canonical id from getIpsecConnections, not the raw request value.
-      opnsenseResponse = await fetchFromOpnsense(`/api/ipsec/sessions/connect/${targetIpsec.id}`, 'POST', {});
+      const ipsecId = assertOpnsenseId(targetIpsec.id ?? '');
+      opnsenseResponse = await fetchFromOpnsense(`/api/ipsec/sessions/connect/${ipsecId}`, 'POST', {});
       ok = opnsenseResponse.result === 'ok';
       if (ok) {
         logger.info(`IPsec VPN ${vpnUuid} connected.`);

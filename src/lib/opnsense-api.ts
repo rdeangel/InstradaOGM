@@ -1243,7 +1243,14 @@ export async function getWireguardClients(): Promise<OpnsenseVpnEntry[]> {
 
 export async function restartWireguardClient(uuid: string): Promise<{ ok: boolean; result: string }> {
   const id = assertOpnsenseId(uuid);
-  await fetchFromOpnsense(`/api/wireguard/client/toggle_client/${id}`, 'POST', {});
+  const first = await fetchFromOpnsense<{ result?: unknown }>(`/api/wireguard/client/toggle_client/${id}`, 'POST', {});
+  const firstResult = String(first.result ?? '');
+  // An enabled client toggles to Disabled. Any other result means it was not
+  // enabled at entry (the route precheck raced); restore once and stop.
+  if (firstResult !== 'Disabled') {
+    await fetchFromOpnsense(`/api/wireguard/client/toggle_client/${id}`, 'POST', {});
+    return { ok: false, result: firstResult };
+  }
   try {
     await reconfigureWireguard();
   } catch (error) {

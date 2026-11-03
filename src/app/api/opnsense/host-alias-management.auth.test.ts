@@ -156,6 +156,24 @@ describe('host-alias-management auth and self-service gate', () => {
     expect(addAliasItem).toHaveBeenCalled();
   });
 
+  it('POST 500 includes uuid when reconfigure fails after the alias is saved', async () => {
+    authenticateRequest.mockResolvedValue({ user: { id: 'admin-1', role: 'ADMIN' }, method: 'session' });
+    getHostAliases.mockResolvedValue([]);
+    reconfigureAliases.mockRejectedValue(new Error('alias reconfigure failed'));
+
+    const response = await POST(jsonRequest('POST', 'http://localhost/api/opnsense/host-alias-management', {
+      alias: { name: 'X', type: 'host', content: '192.168.1.10' },
+    }));
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toEqual({
+      success: false,
+      message: 'Alias saved but firewall reconfigure failed',
+      uuid: 'new-alias',
+      reconfigureError: 'alias reconfigure failed',
+    });
+  });
+
   it('returns 401 for anonymous DELETE and never deletes', async () => {
     const response = await DELETE(jsonRequest('DELETE', `http://localhost/api/opnsense/host-alias-management?uuid=${ALIAS_UUID}`));
 
@@ -192,6 +210,21 @@ describe('host-alias-management auth and self-service gate', () => {
 
     expect(deleteAliasItem).toHaveBeenCalled();
     expect(response.status).not.toBe(403);
+  });
+
+  it('DELETE 500 says the alias was deleted when reconfigure fails', async () => {
+    authenticateRequest.mockResolvedValue({ user: { id: 'admin-1', role: 'ADMIN' }, method: 'session' });
+    resolveUserAliasPermissions.mockResolvedValue({ hasWildcard: true, permittedAliasUuids: new Set(), localGroupIds: [] });
+    reconfigureAliases.mockRejectedValue(new Error('alias reconfigure failed'));
+
+    const response = await DELETE(jsonRequest('DELETE', `http://localhost/api/opnsense/host-alias-management?uuid=${ALIAS_UUID}`));
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toEqual({
+      success: false,
+      message: 'Host alias deleted but firewall reconfigure failed; apply it in OPNsense (Firewall > Aliases).',
+      reconfigureError: 'alias reconfigure failed',
+    });
   });
 
   it('returns 403 for anonymous PUT when renaming is disabled, without fetching aliases', async () => {

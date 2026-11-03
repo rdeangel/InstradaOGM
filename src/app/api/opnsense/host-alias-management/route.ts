@@ -261,7 +261,7 @@ export async function DELETE(request: Request) {
         logger.error(`Host alias ${uuid} was deleted, but failed to reconfigure:`, reconfigureError);
         return NextResponse.json({
           success: false,
-          message: 'Alias saved but firewall reconfigure failed',
+          message: 'Host alias deleted but firewall reconfigure failed; apply it in OPNsense (Firewall > Aliases).',
           reconfigureError: reconfigureError instanceof Error ? reconfigureError.message : String(reconfigureError)
         }, { status: 500 });
       }
@@ -673,6 +673,7 @@ export async function POST(request: Request) {
         return NextResponse.json({
           success: false,
           message: 'Alias saved but firewall reconfigure failed',
+          uuid: result.uuid,
           reconfigureError: reconfigureError instanceof Error ? reconfigureError.message : String(reconfigureError)
         }, { status: 500 });
       }
