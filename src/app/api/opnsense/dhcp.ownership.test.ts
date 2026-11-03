@@ -42,6 +42,7 @@ vi.mock('@/lib/opnsense-api', () => ({
   fetchFromOpnsense,
   get_arpTable,
   exportAliases,
+  reconfigureKea: vi.fn(async () => ({ status: 'ok' })),
 }));
 vi.mock('@/lib/prisma', () => ({
   prisma: {

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { authenticateAndTrackRequest, authenticateRequest, handleAuthResponse, trackUsageByAuthMethod } from '@/lib/auth-middleware';
 import { logAuditEvent } from '@/lib/auditLog';
 import { logger } from '@/lib/logger';
-import { fetchFromOpnsense, get_arpTable, exportAliases, OpnsenseAliasDetailFromExport } from '@/lib/opnsense-api';
+import { fetchFromOpnsense, get_arpTable, exportAliases, OpnsenseAliasDetailFromExport, reconfigureKea, sanitizeOpnsenseDescription } from '@/lib/opnsense-api';
 import { assertOpnsenseId, isOpnsenseId } from '@/lib/opnsense-id';
 import { Role, OpnsenseDhcpReservation, OpnsenseKeaLease, NetworkGroup } from '@/types/opnsense';
 import { prisma } from '@/lib/prisma';
@@ -754,10 +754,14 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
 
-    // Normalize MAC address to lowercase to prevent Kea DHCP crashes
+    // Normalize MAC address to lowercase to prevent Kea DHCP crashes.
+    // Sanitize description only when the client sent one, so an omitted field stays omitted.
     const normalizedPayload = {
       ...payload,
-      hw_address: payload.hw_address.toLowerCase()
+      hw_address: payload.hw_address.toLowerCase(),
+      ...(payload.description !== undefined
+        ? { description: sanitizeOpnsenseDescription(payload.description) }
+        : {}),
     };
 
     // Check for MAC address randomization/privacy features
@@ -974,6 +978,25 @@ export async function POST(request: Request) {
           },
         });
 
+        try {
+          await reconfigureKea();
+        } catch (reconfigureError) {
+          const reason = reconfigureError instanceof Error ? reconfigureError.message : String(reconfigureError);
+          logger.error('DHCP reservation saved but Kea reconfigure failed:', reconfigureError);
+          await logAuditEvent({
+            action: 'DHCP_RESERVATION_APPLY_FAILURE',
+            userId,
+            ipAddress: ipAddressReq,
+            userAgent,
+            reason,
+            details: { ...normalizedPayload, uuid: response.uuid },
+          });
+          return NextResponse.json({
+            success: false,
+            message: 'DHCP reservation saved but Kea reconfigure failed; apply it in OPNsense (Services > Kea DHCP).',
+          }, { status: 500 });
+        }
+
         // Prepare response with MAC randomization warning if applicable
         const responseData: {
           success: boolean;
@@ -1104,6 +1127,24 @@ export async function POST(request: Request) {
           userAgent,
           details: getReservationLogDetails(reservationToDeleteDetails, { opnsense_response: response.message }),
         });
+        try {
+          await reconfigureKea();
+        } catch (reconfigureError) {
+          const reason = reconfigureError instanceof Error ? reconfigureError.message : String(reconfigureError);
+          logger.error('DHCP reservation deleted but Kea reconfigure failed:', reconfigureError);
+          await logAuditEvent({
+            action: 'DHCP_RESERVATION_APPLY_FAILURE',
+            userId,
+            ipAddress: ipAddressReq,
+            userAgent,
+            reason,
+            details: getReservationLogDetails(reservationToDeleteDetails, { uuid: reservationId }),
+          });
+          return NextResponse.json({
+            success: false,
+            message: 'DHCP reservation deleted but Kea reconfigure failed; apply it in OPNsense (Services > Kea DHCP).',
+          }, { status: 500 });
+        }
         return NextResponse.json({ success: true, message: 'DHCP reservation deleted successfully.' });
       } else {
         const errorMessage = parseOpnsenseError(response) || 'Failed to delete DHCP reservation.';
@@ -1169,6 +1210,7 @@ export async function POST(request: Request) {
     try {
       let allSuccess = true;
       const failedUuids: string[] = []; // Change to const
+      const deletedUuids: string[] = [];
       for (const uuid of reservationUuids) {
         if (!isOpnsenseId(uuid)) {
           allSuccess = false;
@@ -1182,6 +1224,7 @@ export async function POST(request: Request) {
         try {
           const response = await fetchFromOpnsense<OpnsenseDeleteReservationResponse>(`/api/kea/dhcpv4/del_reservation/${reservationId}`, 'POST', {});
           if (response.result === 'deleted') {
+            deletedUuids.push(reservationId);
             await logAuditEvent({
               action: 'DHCP_RESERVATION_DELETE_SUCCESS',
               userId,
@@ -1217,6 +1260,27 @@ export async function POST(request: Request) {
             reason: parsedErrorMessage,
             details: getReservationLogDetails(currentReservationDetails, { error_details: errorMessage, bulk_operation: true }),
           });
+        }
+      }
+
+      if (deletedUuids.length > 0) {
+        try {
+          await reconfigureKea();
+        } catch (reconfigureError) {
+          const reason = reconfigureError instanceof Error ? reconfigureError.message : String(reconfigureError);
+          logger.error('DHCP reservations deleted but Kea reconfigure failed:', reconfigureError);
+          await logAuditEvent({
+            action: 'DHCP_RESERVATION_APPLY_FAILURE',
+            userId,
+            ipAddress: ipAddressReq,
+            userAgent,
+            reason,
+            details: { uuid: deletedUuids },
+          });
+          return NextResponse.json({
+            success: false,
+            message: 'Deletions saved but Kea reconfigure failed; apply it in OPNsense (Services > Kea DHCP).',
+          }, { status: 500 });
         }
       }
 
