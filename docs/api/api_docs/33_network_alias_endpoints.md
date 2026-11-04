@@ -245,7 +245,7 @@ curl -X POST "{{SERVER_URL}}/api/opnsense/network-aliases" \
 |-----------|------|----------|-------------|
 | `name` | string | Yes | Network alias name (alphanumeric and underscores only, no spaces or hyphens) |
 | `content` | string | Yes | CIDR ranges, one per line (e.g., `192.168.1.0/24`) |
-| `description` | string | No | Human-readable description of the network alias |
+| `description` | string | No | Human-readable description of the network alias (sanitized: newlines and control characters collapsed to spaces, maximum length 255 characters) |
 | `enabled` | boolean | No | Whether the alias is enabled (default: `true`) |
 
 #### Name Validation Rules
@@ -453,7 +453,7 @@ curl -X PUT "{{SERVER_URL}}/api/opnsense/network-aliases/a1b2c3d4-e5f6-47a8-9b0c
 |-----------|------|----------|-------------|
 | `name` | string | Yes | Updated alias name (alphanumeric and underscores only) |
 | `content` | string | Yes | Updated CIDR ranges |
-| `description` | string | No | Updated description |
+| `description` | string | No | Updated description (sanitized: newlines and control characters collapsed to spaces, maximum length 255 characters) |
 | `enabled` | string | No | `"0"` for disabled, `"1"` for enabled |
 | `hidden` | boolean | No | `true` to hide from all management interfaces, `false` to show |
 

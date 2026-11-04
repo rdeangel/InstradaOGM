@@ -937,6 +937,16 @@ curl -X GET "{{SERVER_URL}}/api/admin/system-summary" \
         "vpnStatus": "connected",
         "dataTransferredRx": "0.0 B",
         "dataTransferredTx": "0.0 B"
+      },
+      {
+        "id": "b157c526-7fd7-40c4-b5a6-d90db7230192",
+        "vpnServer": "Branch Office IPsec",
+        "vpnName": "Branch Office IPsec",
+        "mappedNetworkGroup": "REMOTE_OFFICE_GROUP",
+        "vpnType": "IPsec",
+        "vpnStatus": "connected",
+        "dataTransferredRx": "1.2 MB",
+        "dataTransferredTx": "845.2 KB"
       }
     ]
   },

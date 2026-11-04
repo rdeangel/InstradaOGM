@@ -22,6 +22,8 @@ curl -X GET "${SERVER_URL}/api/opnsense/aliases" \
 
 This section covers all OPNsense-related API endpoints for managing firewall aliases, network groups, and OPNsense integration.
 
+> **OPNsense API Communication**: All requests to the OPNsense firewall strictly validate response bodies. Non-JSON 2xx responses (such as captive portal HTML or upstream proxy error pages returned with status 200) are rejected as errors (HTTP 500) rather than treated as successful operations. Empty 2xx responses are treated as `{ result: "ok" }`. All upstream OPNsense endpoints are normalized to snake_case.
+
 ## Role-Based Access Control
 
 **Authentication Required:** Mixed (Optional for self-service, Required for admin access)
@@ -472,7 +474,7 @@ curl -X GET "{{SERVER_URL}}/api/opnsense/host-alias-management" \
 | `alias.name` | string | Yes | Unique name for the host alias |
 | `alias.type` | string | Yes | Must be `host` for this endpoint |
 | `alias.content` | string | Yes | IP address for the host |
-| `alias.description` | string | No | Optional description |
+| `alias.description` | string | No | Optional description (sanitized: newlines and control characters collapsed to spaces, maximum length 255 characters) |
 | `alias.enabled` | string | No | "1" (default) or "0" |
 
 **Example Request**:
@@ -503,7 +505,15 @@ curl -X POST "{{SERVER_URL}}/api/opnsense/host-alias-management" \
 - `401 Unauthorized`: Not logged in
 - `403 Forbidden`: Logged in, but not ADMIN or SUPER_ADMIN
 - `409 Conflict`: A host alias already exists with the same IP address
-- `500 Internal Server Error`: Failed to create alias or reconfigure OPNsense
+- `500 Internal Server Error`: Failed to create alias or reconfigure OPNsense. If the alias was created in OPNsense but firewall reconfiguration failed, returns:
+  ```json
+  {
+    "success": false,
+    "message": "Alias saved but firewall reconfigure failed",
+    "uuid": "new-alias-uuid-here",
+    "reconfigureError": "..."
+  }
+  ```
 
 ### PUT /api/opnsense/host-alias-management
 
@@ -544,6 +554,14 @@ curl -X PUT "{{SERVER_URL}}/api/opnsense/host-alias-management?uuid=45653f16-70b
 - `400 Bad Request`: Missing `uuid`, or the identifier is not a valid OPNsense id (`[A-Za-z0-9_-]{1,64}`).
 - `403 Forbidden`: Self-service renaming is off, the caller is outside Allowed Networks, the alias is not the caller's own device, or the caller has no permission for this host alias. Also returned when renaming is rejected because the host is a member of one or more **unmanaged groups**.
 - `404 Not Found`: Host alias with provided UUID does not exist.
+- `500 Internal Server Error`: Alias was updated in OPNsense, but firewall reconfiguration failed:
+  ```json
+  {
+    "success": false,
+    "message": "Alias saved but firewall reconfigure failed",
+    "reconfigureError": "..."
+  }
+  ```
 - `503 Service Unavailable`: Could not verify group management status; nothing was changed.
 
 ### DELETE /api/opnsense/host-alias-management
@@ -571,19 +589,18 @@ curl -X DELETE "{{SERVER_URL}}/api/opnsense/host-alias-management?uuid=45653f16-
 }
 ```
 
-**Partial Success** `207 Multi-Status`:
-```json
-{
-  "success": true,
-  "message": "Host alias deleted, but an error occurred during reconfiguration.",
-  "reconfigureError": "..."
-}
-```
-
 **Error Responses**:
 - `400 Bad Request`: Missing `uuid`, or the identifier is not a valid OPNsense id (`[A-Za-z0-9_-]{1,64}`).
 - `401 Unauthorized`: Not logged in
 - `403 Forbidden`: Logged in, but no permission for this host alias and not ADMIN/SUPER_ADMIN
+- `500 Internal Server Error`: Failed to delete alias or reconfigure OPNsense. If the host alias was deleted from OPNsense but firewall reconfiguration failed, returns:
+  ```json
+  {
+    "success": false,
+    "message": "Host alias deleted but firewall reconfigure failed; apply it in OPNsense (Firewall > Aliases).",
+    "reconfigureError": "..."
+  }
+  ```
 
 ### GET /api/opnsense/host-alias-management-admin
 
@@ -1020,6 +1037,11 @@ curl -X POST "{{SERVER_URL}}/api/opnsense/dhcp" \
 - `hw_address`: MAC address of the device
 - `hostname`: Hostname for the reservation
 
+**Optional Parameters:**
+- `description`: Optional reservation description (sanitized: newlines and control characters collapsed to spaces, maximum length 255 characters)
+
+> **Note on Service Application**: Adding a reservation automatically invokes `/api/kea/service/reconfigure` to apply the reservation in Kea DHCP.
+
 **Success Response (Normal MAC)**:
 ```json
 {
@@ -1065,9 +1087,18 @@ curl -X POST "{{SERVER_URL}}/api/opnsense/dhcp" \
 }
 ```
 
+**Error Response (Kea Reconfigure Failure)**:
+```json
+{
+  "success": false,
+  "message": "DHCP reservation saved but Kea reconfigure failed; apply it in OPNsense (Services > Kea DHCP)."
+}
+```
+*HTTP 500 Internal Server Error. Logs audit action `DHCP_RESERVATION_APPLY_FAILURE`.*
+
 ### DELETE /api/opnsense/dhcp
 
-**Description**: Delete an existing DHCP reservation.
+**Description**: Delete an existing DHCP reservation. Automatically applies changes in OPNsense via `/api/kea/service/reconfigure`.
 
 **Authentication**: Required (session or API key)
 
@@ -1148,6 +1179,15 @@ curl -X DELETE "{{SERVER_URL}}/api/opnsense/dhcp" \
   "message": "DHCP reservation deleted successfully"
 }
 ```
+
+**Error Response (Kea Reconfigure Failure)**:
+```json
+{
+  "success": false,
+  "message": "DHCP reservation deleted but Kea reconfigure failed; apply it in OPNsense (Services > Kea DHCP)."
+}
+```
+*HTTP 500 Internal Server Error (or `"Deletions saved but Kea reconfigure failed; apply it in OPNsense (Services > Kea DHCP)."` for bulk operations). Logs audit action `DHCP_RESERVATION_APPLY_FAILURE`.*
 
 ## MAC Randomization Detection
 

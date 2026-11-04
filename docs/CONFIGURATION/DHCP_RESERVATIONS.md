@@ -58,8 +58,8 @@ All DHCP operations require authentication:
 | `all_reservations` | GET | None | Fetch all DHCP reservations (ADMIN+) |
 | `arp_entries` | GET | None | Fetch active ARP table entries |
 | `kea_leases` | GET | None | Fetch active Kea DHCP leases |
-| `add_reservation` | POST | `subnet`, `ip_address`, `hw_address`, `hostname`, `description` | Create new DHCP reservation |
-| `delete_reservation` | POST | `uuid` | Delete existing DHCP reservation |
+| `add_reservation` | POST | `subnet`, `ip_address`, `hw_address`, `hostname`, `description` | Create new DHCP reservation (description sanitized, auto-applies via Kea reconfigure) |
+| `delete_reservation` | POST | `uuid` | Delete existing DHCP reservation (auto-applies via Kea reconfigure) |
 
 #### Parameter Handling
 
@@ -92,9 +92,10 @@ POST /api/opnsense/dhcp?action=add_reservation
 Administrators can create DHCP reservations through the `ManageDhcpCard` interface:
 
 1. **Subnet Selection**: Choose from available DHCP subnets
-2. **Device Information**: Enter IP, MAC, hostname, and description
+2. **Device Information**: Enter IP, MAC, hostname, and description (descriptions are automatically sanitized: newlines and control characters collapsed to spaces, maximum length 255 characters)
 3. **Validation**: Automatic format validation and conflict detection
 4. **MAC Analysis**: Privacy MAC detection with warnings
+5. **Automatic Apply**: Reservations are automatically activated in Kea DHCP via service reconfigure
 
 #### Auto-Reservation Logic
 
@@ -267,6 +268,7 @@ The system provides several conflict resolution mechanisms:
 | `Invalid MAC address` | Malformed MAC address format | Ensure MAC follows XX:XX:XX:XX:XX:XX format |
 | `Device not online` | No ARP entry for IP | Ensure device is connected and responding |
 | `OPNsense API error` | Backend DHCP service issue | Check OPNsense DHCP service status |
+| `Kea reconfigure failed` | Reservation changed in Kea but service reconfigure failed | Check OPNsense Kea service status; apply manually in OPNsense (Services > Kea DHCP) |
 | `Subnet not found` | Invalid or missing subnet UUID | Verify subnet configuration in OPNsense |
 | `MAC conflict detected` | MAC address already reserved | Resolve existing reservation or use different MAC |
 
@@ -374,6 +376,7 @@ The system integrates with OPNsense's Kea DHCP server:
 - `/api/kea/dhcpv4/add_reservation`: Reservation creation
 - `/api/kea/dhcpv4/del_reservation`: Reservation deletion
 - `/api/kea/dhcpv4/search_lease`: Active lease lookup
+- `/api/kea/service/reconfigure`: Kea service reconfiguration (automatic apply)
 
 ## Troubleshooting
 

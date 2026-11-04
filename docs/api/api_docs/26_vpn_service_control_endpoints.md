@@ -20,74 +20,44 @@ VPN identifiers interpolated into OPNsense paths (`vpnUuid`) must match `[A-Za-z
 
 ## POST /api/opnsense/ipsec-service/restart
 
-Restart the IPsec VPN service on the OPNsense firewall. This operation will terminate all active IPsec tunnels and re-establish them according to the current configuration.
+Restart a specific IPsec VPN session on the OPNsense firewall. This operation disconnects the specified IPsec session, waits 5 seconds for OPNsense to process the disconnect, and reconnects it.
 
 ### HTTP Methods
-- `POST` - Restart IPsec service
+- `POST` - Restart specific IPsec session
 
 ### Role-Based Access Control
 
 **Authentication Required:** Yes
 
 **Role Requirements:**
-- **USER**: ❌ Cannot access endpoint (returns "Unauthorized")
+- **USER**: ❌ Cannot access endpoint (returns 401 "Unauthorized")
 - **ADMIN**: ✅ Can access endpoint
 - **SUPER_ADMIN**: ✅ Can access endpoint
 
 **Role Access:**
 - **USER**: ❌ Forbidden - insufficient permissions
-- **ADMIN**: ✅ Can restart IPsec service with administrative permissions
-- **SUPER_ADMIN**: ✅ Can restart IPsec service with full system permissions
+- **ADMIN**: ✅ Can restart IPsec session with administrative permissions
+- **SUPER_ADMIN**: ✅ Can restart IPsec session with full system permissions
 
 **Example Responses:**
 
 **ADMIN/SUPER_ADMIN Success:**
 ```json
 {
-  "success": true,
-  "data": {
-    "operationId": "ipsec-restart-12345",
-    "service": "ipsec",
-    "action": "restart",
-    "status": "completed",
-    "initiatedAt": "2024-01-15T10:30:00Z",
-    "completedAt": "2024-01-15T10:30:45Z",
-    "duration": 45,
-    "tunnelStatus": {
-      "before": {
-        "activeTunnels": 8,
-        "totalTunnels": 12,
-        "status": "running"
-      },
-      "after": {
-        "activeTunnels": 8,
-        "totalTunnels": 12,
-        "status": "running"
-      }
-    },
-    "affectedTunnels": [
-      {
-        "name": "branch-office-1",
-        "peer": "203.0.113.10",
-        "status": "reconnected",
-        "reconnectTime": "2024-01-15T10:30:25Z"
-      },
-      {
-        "name": "branch-office-2",
-        "peer": "203.0.113.20",
-        "status": "reconnected",
-        "reconnectTime": "2024-01-15T10:30:30Z"
-      }
-    ]
+  "message": "IPsec restart initiated successfully",
+  "disconnectResponse": {
+    "result": "ok"
+  },
+  "connectResponse": {
+    "result": "ok"
   }
 }
 ```
 
-**USER Role Failure:**
+**USER Role Failure (401 Unauthorized):**
 ```json
 {
-  "success": false,
-  "error": "Unauthorized: ADMIN or SUPER_ADMIN role required"
+  "error": "Unauthorized"
 }
 ```
 
@@ -95,10 +65,7 @@ Restart the IPsec VPN service on the OPNsense firewall. This operation will term
 
 | Parameter | Type | Required | Validation | Description |
 |-----------|------|----------|------------|-------------|
-| `force` | boolean | No | Must be true or false | Force restart without confirmation (default: false) |
-| `timeout` | number | No | Must be between 30 and 300 seconds | Maximum time to wait for restart (default: 120) |
-| `dryRun` | boolean | No | Must be true or false | Simulate restart without executing (default: false) |
-| `tunnelFilter` | array | No | Valid tunnel names | Restart specific tunnels only (default: all tunnels) |
+| `vpnUuid` | string | Yes | Valid OPNsense identifier (`[A-Za-z0-9_-]{1,64}`) | The OPNsense identifier of the IPsec session to restart |
 
 ### Example Request
 ```bash
@@ -106,19 +73,16 @@ curl -X POST "https://instrada-ogm.example.com/api/opnsense/ipsec-service/restar
   -H "Authorization: Bearer your-admin-api-key" \
   -H "Content-Type: application/json" \
   -d '{
-    "force": true,
-    "timeout": 120,
-    "dryRun": false
+    "vpnUuid": "b157c526-7fd7-40c4-b5a6-d90db7230192"
   }'
 ```
 
 ### Security Considerations
 - Requires ADMIN or SUPER_ADMIN role
 - `vpnUuid` must match `[A-Za-z0-9_-]{1,64}` or the request returns `400`
-- Service restart will temporarily terminate VPN connections
-- All operations are logged for audit purposes
+- Service restart will temporarily disconnect the target IPsec tunnel
+- All operations are tracked by auth middleware for audit purposes
 - Rate limiting applies to prevent service disruption
-- Consider impact on active users before restarting
 
 ### Rate Limiting
 
@@ -166,80 +130,66 @@ All rate limited responses include the following headers:
 
 ## POST /api/opnsense/openvpn-service/restart
 
-Restart the OpenVPN service on the OPNsense firewall. This operation will disconnect all active OpenVPN clients and restart the service according to the current configuration.
+Restart an individual OpenVPN instance or an enabled WireGuard client on the OPNsense firewall.
 
 ### HTTP Methods
-- `POST` - Restart OpenVPN service
+- `POST` - Restart OpenVPN or WireGuard connection
 
 ### Role-Based Access Control
 
 **Authentication Required:** Yes
 
 **Role Requirements:**
-- **USER**: ❌ Cannot access endpoint (returns "Unauthorized")
-- **ADMIN**: ✅ Can access endpoint
+- **USER**: ❌ Cannot access endpoint (returns 401 "Unauthorized")
+- **ADMIN**: ❌ Cannot access endpoint (returns 401 "Unauthorized")
 - **SUPER_ADMIN**: ✅ Can access endpoint
 
 **Role Access:**
 - **USER**: ❌ Forbidden - insufficient permissions
-- **ADMIN**: ✅ Can restart OpenVPN service with administrative permissions
-- **SUPER_ADMIN**: ✅ Can restart OpenVPN service with full system permissions
+- **ADMIN**: ❌ Forbidden - requires SUPER_ADMIN
+- **SUPER_ADMIN**: ✅ Can restart OpenVPN and WireGuard VPNs with full system permissions
 
 **Example Responses:**
 
-**ADMIN/SUPER_ADMIN Success:**
+**SUPER_ADMIN Success (OpenVPN):**
 ```json
 {
-  "success": true,
-  "data": {
-    "operationId": "openvpn-restart-12345",
-    "service": "openvpn",
-    "action": "restart",
-    "status": "completed",
-    "initiatedAt": "2024-01-15T10:30:00Z",
-    "completedAt": "2024-01-15T10:31:15Z",
-    "duration": 75,
-    "instanceStatus": {
-      "before": {
-        "activeInstances": 2,
-        "connectedClients": 45,
-        "status": "running"
-      },
-      "after": {
-        "activeInstances": 2,
-        "connectedClients": 42,
-        "status": "running"
-      }
-    },
-    "instances": [
-      {
-        "name": "vpn-server-1",
-        "port": 1194,
-        "protocol": "UDP",
-        "status": "restarted",
-        "clientsBefore": 25,
-        "clientsAfter": 23,
-        "restartTime": "2024-01-15T10:30:30Z"
-      },
-      {
-        "name": "vpn-server-2",
-        "port": 443,
-        "protocol": "TCP",
-        "status": "restarted",
-        "clientsBefore": 20,
-        "clientsAfter": 19,
-        "restartTime": "2024-01-15T10:30:45Z"
-      }
-    ]
+  "message": "VPN restart initiated successfully",
+  "opnsenseResponse": {
+    "result": "ok"
   }
 }
 ```
 
-**USER Role Failure:**
+**SUPER_ADMIN Success (WireGuard):**
 ```json
 {
-  "success": false,
-  "error": "Unauthorized: ADMIN or SUPER_ADMIN role required"
+  "message": "VPN restart initiated successfully",
+  "opnsenseResponse": {
+    "ok": true,
+    "result": "Enabled"
+  }
+}
+```
+
+**Unauthorized Role Failure (401 Unauthorized):**
+```json
+{
+  "error": "Unauthorized"
+}
+```
+
+**WireGuard Client Disabled (400 Bad Request):**
+```json
+{
+  "error": "WireGuard client is not enabled. Restart requires an enabled client."
+}
+```
+
+**WireGuard Client Not Found (404 Not Found):**
+```json
+{
+  "error": "WireGuard client with UUID wg-uuid-here not found."
 }
 ```
 
@@ -247,31 +197,26 @@ Restart the OpenVPN service on the OPNsense firewall. This operation will discon
 
 | Parameter | Type | Required | Validation | Description |
 |-----------|------|----------|------------|-------------|
-| `force` | boolean | No | Must be true or false | Force restart without confirmation (default: false) |
-| `timeout` | number | No | Must be between 30 and 300 seconds | Maximum time to wait for restart (default: 180) |
-| `dryRun` | boolean | No | Must be true or false | Simulate restart without executing (default: false) |
-| `instanceFilter` | array | No | Valid instance names | Restart specific instances only (default: all instances) |
-| `gracefulDisconnect` | boolean | No | Must be true or false | Gracefully disconnect clients before restart (default: true) |
+| `vpnUuid` | string | Yes | Valid OPNsense identifier (`[A-Za-z0-9_-]{1,64}`) | The OPNsense UUID or identifier of the VPN to restart |
+| `vpnType` | string | Yes | `OpenVPN` or `WireGuard` | Type of VPN to restart |
 
 ### Example Request
 ```bash
 curl -X POST "https://instrada-ogm.example.com/api/opnsense/openvpn-service/restart" \
-  -H "Authorization: Bearer your-admin-api-key" \
+  -H "Authorization: Bearer your-superadmin-api-key" \
   -H "Content-Type: application/json" \
   -d '{
-    "force": true,
-    "timeout": 180,
-    "dryRun": false,
-    "gracefulDisconnect": true
+    "vpnUuid": "c3d4e5f6-7a8b-9c0d-1e2f-3a4b5c6d7e8f",
+    "vpnType": "WireGuard"
   }'
 ```
 
 ### Security Considerations
-- Requires ADMIN or SUPER_ADMIN role
-- Service restart will disconnect all active VPN clients
-- All operations are logged for audit purposes
-- Rate limiting applies to prevent service disruption
-- Consider impact on active users before restarting
+- Requires SUPER_ADMIN role
+- WireGuard clients must be enabled prior to restart; disabled clients return 400
+- Missing WireGuard clients return 404
+- Upstream failure returns 500 without leaking sensitive internal details
+- All operations are tracked by auth middleware for audit purposes
 
 ### Rate Limiting
 
@@ -293,112 +238,46 @@ All rate limited responses include the following headers:
 - `X-RateLimit-Reset`: Unix timestamp when the rate limit window resets
 - `X-RateLimit-Retry-After`: Seconds until client can retry (only on 429 responses)
 
-**Rate Limit Exceeded Response (429):**
-```json
-{
-  "error": "Rate limit exceeded",
-  "rateLimitInfo": {
-    "limit": 10,
-    "remaining": 0,
-    "resetTime": 1640995200,
-    "windowType": "hourly",
-    "retryAfter": 3600
-  }
-}
-```
-
-**Best Practices for Handling Rate Limits:**
-1. **Monitor Headers**: Always check rate limit headers in API responses
-2. **Exponential Backoff**: Implement exponential backoff when receiving 429 responses
-3. **Respect Retry-After**: Use the `Retry-After` header to determine when to retry
-4. **Cache Responses**: Cache non-sensitive responses to reduce API calls
-5. **Batch Operations**: Use batch endpoints when available to reduce request count
-6. **API Key Limits**: Configure appropriate limits for your use case
-
 ---
 
 ## POST /api/opnsense/wireguard/service/restart
 
-Restart the WireGuard VPN service on the OPNsense firewall. This operation will disconnect all active WireGuard peers and restart the service according to the current configuration.
+Restart an individual WireGuard client on the OPNsense firewall. If the client is currently enabled, it is restarted via a toggle-twice operation (`restartWireguardClient`) with firewall reconfigure. If currently disabled, it is toggled once to enable and reconfigured.
 
 ### HTTP Methods
-- `POST` - Restart WireGuard service
+- `POST` - Restart WireGuard client
 
 ### Role-Based Access Control
 
 **Authentication Required:** Yes
 
 **Role Requirements:**
-- **USER**: ❌ Cannot access endpoint (returns "Unauthorized")
-- **ADMIN**: ✅ Can access endpoint
+- **USER**: ❌ Cannot access endpoint (returns 401 "Unauthorized")
+- **ADMIN**: ❌ Cannot access endpoint (returns 401 "Unauthorized")
 - **SUPER_ADMIN**: ✅ Can access endpoint
 
 **Role Access:**
 - **USER**: ❌ Forbidden - insufficient permissions
-- **ADMIN**: ✅ Can restart WireGuard service with administrative permissions
-- **SUPER_ADMIN**: ✅ Can restart WireGuard service with full system permissions
+- **ADMIN**: ❌ Forbidden - requires SUPER_ADMIN
+- **SUPER_ADMIN**: ✅ Can restart WireGuard client with full system permissions
 
 **Example Responses:**
 
-**ADMIN/SUPER_ADMIN Success:**
+**SUPER_ADMIN Success (Enabled Client Restart):**
 ```json
 {
-  "success": true,
-  "data": {
-    "operationId": "wireguard-restart-12345",
-    "service": "wireguard",
-    "action": "restart",
-    "status": "completed",
-    "initiatedAt": "2024-01-15T10:30:00Z",
-    "completedAt": "2024-01-15T10:30:30Z",
-    "duration": 30,
-    "interfaceStatus": {
-      "before": {
-        "activeInterfaces": 3,
-        "connectedPeers": 28,
-        "status": "running"
-      },
-      "after": {
-        "activeInterfaces": 3,
-        "connectedPeers": 27,
-        "status": "running"
-      }
-    },
-    "interfaces": [
-      {
-        "name": "wg0",
-        "listenPort": 51820,
-        "status": "restarted",
-        "peersBefore": 15,
-        "peersAfter": 14,
-        "restartTime": "2024-01-15T10:30:10Z"
-      },
-      {
-        "name": "wg1",
-        "listenPort": 51821,
-        "status": "restarted",
-        "peersBefore": 8,
-        "peersAfter": 8,
-        "restartTime": "2024-01-15T10:30:15Z"
-      },
-      {
-        "name": "wg2",
-        "listenPort": 51822,
-        "status": "restarted",
-        "peersBefore": 5,
-        "peersAfter": 5,
-        "restartTime": "2024-01-15T10:30:20Z"
-      }
-    ]
+  "message": "WireGuard VPN restart initiated successfully",
+  "opnsenseResponse": {
+    "result": "Enabled",
+    "uuid": "wg-client-uuid-here"
   }
 }
 ```
 
-**USER Role Failure:**
+**WireGuard Client Not Found (404 Not Found):**
 ```json
 {
-  "success": false,
-  "error": "Unauthorized: ADMIN or SUPER_ADMIN role required"
+  "error": "WireGuard client with UUID wg-client-uuid-here not found."
 }
 ```
 
@@ -406,31 +285,22 @@ Restart the WireGuard VPN service on the OPNsense firewall. This operation will 
 
 | Parameter | Type | Required | Validation | Description |
 |-----------|------|----------|------------|-------------|
-| `force` | boolean | No | Must be true or false | Force restart without confirmation (default: false) |
-| `timeout` | number | No | Must be between 30 and 300 seconds | Maximum time to wait for restart (default: 60) |
-| `dryRun` | boolean | No | Must be true or false | Simulate restart without executing (default: false) |
-| `interfaceFilter` | array | No | Valid interface names | Restart specific interfaces only (default: all interfaces) |
-| `preserveHandshakes` | boolean | No | Must be true or false | Attempt to preserve active handshakes (default: false) |
+| `vpnUuid` | string | Yes | Valid OPNsense identifier (`[A-Za-z0-9_-]{1,64}`) | WireGuard client UUID to restart |
 
 ### Example Request
 ```bash
 curl -X POST "https://instrada-ogm.example.com/api/opnsense/wireguard/service/restart" \
-  -H "Authorization: Bearer your-admin-api-key" \
+  -H "Authorization: Bearer your-superadmin-api-key" \
   -H "Content-Type: application/json" \
   -d '{
-    "force": true,
-    "timeout": 60,
-    "dryRun": false,
-    "preserveHandshakes": false
+    "vpnUuid": "c3d4e5f6-7a8b-9c0d-1e2f-3a4b5c6d7e8f"
   }'
 ```
 
 ### Security Considerations
-- Requires ADMIN or SUPER_ADMIN role
-- Service restart will disconnect all active WireGuard peers
-- All operations are logged for audit purposes
-- Rate limiting applies to prevent service disruption
-- Consider impact on active users before restarting
+- Requires SUPER_ADMIN role
+- Only restarts or enables the targeted client without restarting other clients or services
+- All operations are logged and tracked via middleware
 
 ### Rate Limiting
 
@@ -598,15 +468,11 @@ All rate limited responses include the following headers:
 ```javascript
 const axios = require('axios');
 
-async function restartIPSecService(force = false, timeout = 120) {
+async function restartIPSecSession(vpnUuid) {
   try {
     const response = await axios.post(
       'https://instrada-ogm.example.com/api/opnsense/ipsec-service/restart',
-      {
-        force: force,
-        timeout: timeout,
-        dryRun: false
-      },
+      { vpnUuid },
       {
         headers: {
           'Authorization': `Bearer ${process.env.ADMIN_API_KEY}`,
@@ -619,35 +485,25 @@ async function restartIPSecService(force = false, timeout = 120) {
     return response.data;
   } catch (error) {
     if (error.response && error.response.status === 429) {
-      const retryAfter = error.response.data.rateLimitInfo.retryAfter;
+      const retryAfter = error.response.data.rateLimitInfo?.retryAfter || 60;
       console.log(`Rate limited. Retry after ${retryAfter} seconds`);
-    } else if (error.response && error.response.status === 409) {
-      console.log('Operation already in progress:', error.response.data);
     } else {
-      console.error('Error restarting IPSec service:', error.message);
+      console.error('Error restarting IPSec session:', error.response?.data?.error || error.message);
     }
   }
 }
 
-async function restartOpenVPNService(instanceFilter = null) {
+async function restartOpenVPNSession(vpnUuid) {
   try {
-    const requestBody = {
-      force: true,
-      timeout: 180,
-      dryRun: false,
-      gracefulDisconnect: true
-    };
-    
-    if (instanceFilter) {
-      requestBody.instanceFilter = instanceFilter;
-    }
-    
     const response = await axios.post(
       'https://instrada-ogm.example.com/api/opnsense/openvpn-service/restart',
-      requestBody,
+      {
+        vpnUuid,
+        vpnType: 'OpenVPN'
+      },
       {
         headers: {
-          'Authorization': `Bearer ${process.env.ADMIN_API_KEY}`,
+          'Authorization': `Bearer ${process.env.SUPER_ADMIN_API_KEY}`,
           'Content-Type': 'application/json'
         }
       }
@@ -656,7 +512,7 @@ async function restartOpenVPNService(instanceFilter = null) {
     console.log('OpenVPN Restart Result:', response.data);
     return response.data;
   } catch (error) {
-    console.error('Error restarting OpenVPN service:', error.message);
+    console.error('Error restarting OpenVPN session:', error.response?.data?.error || error.message);
   }
 }
 ```
@@ -666,21 +522,15 @@ async function restartOpenVPNService(instanceFilter = null) {
 import requests
 import time
 
-def restart_wireguard_service(api_key, interface_filter=None, timeout=60):
+def restart_wireguard_client(api_key, vpn_uuid):
     url = "https://instrada-ogm.example.com/api/opnsense/wireguard/service/restart"
     headers = {
         'Authorization': f'Bearer {api_key}',
         'Content-Type': 'application/json'
     }
     data = {
-        'force': True,
-        'timeout': timeout,
-        'dryRun': False,
-        'preserveHandshakes': False
+        'vpnUuid': vpn_uuid
     }
-    
-    if interface_filter:
-        data['interfaceFilter'] = interface_filter
     
     try:
         response = requests.post(url, headers=headers, json=data)
@@ -691,42 +541,10 @@ def restart_wireguard_service(api_key, interface_filter=None, timeout=60):
             retry_after = e.response.json().get('rateLimitInfo', {}).get('retryAfter', 60)
             print(f"Rate limited. Retrying after {retry_after} seconds...")
             time.sleep(retry_after)
-            return restart_wireguard_service(api_key, interface_filter, timeout)
-        elif e.response.status_code == 409:
-            print("Operation already in progress")
-            return e.response.json()
+            return restart_wireguard_client(api_key, vpn_uuid)
         else:
-            print(f"Error: {e}")
+            print(f"Error: {e.response.json().get('error', e)}")
             return None
-
-def dry_run_restart(api_key, service_type):
-    """Perform a dry run of service restart"""
-    service_urls = {
-        'ipsec': 'https://instrada-ogm.example.com/api/opnsense/ipsec-service/restart',
-        'openvpn': 'https://instrada-ogm.example.com/api/opnsense/openvpn-service/restart',
-        'wireguard': 'https://instrada-ogm.example.com/api/opnsense/wireguard/service/restart'
-    }
-    
-    if service_type not in service_urls:
-        print(f"Invalid service type: {service_type}")
-        return None
-    
-    headers = {
-        'Authorization': f'Bearer {api_key}',
-        'Content-Type': 'application/json'
-    }
-    data = {
-        'dryRun': True,
-        'force': False
-    }
-    
-    try:
-        response = requests.post(service_urls[service_type], headers=headers, json=data)
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.HTTPError as e:
-        print(f"Error in dry run: {e}")
-        return None
 ```
 
 ---

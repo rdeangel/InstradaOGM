@@ -334,7 +334,8 @@ curl -X POST "https://instrada-ogm.example.com/api/vpn/safe-restart" \
 {
   "message": "VPN restart initiated successfully",
   "opnsenseResponse": {
-    "result": "ok"
+    "ok": true,
+    "result": "Enabled"
   }
 }
 ```
@@ -364,20 +365,47 @@ curl -X POST "https://instrada-ogm.example.com/api/vpn/safe-restart" \
 }
 ```
 
-#### Usage Case 4: Already Connected VPN Error
+#### Usage Case 4: Already Connected or Disabled VPN Error
 
 **Scenario**: User tries to restart an already connected OpenVPN
 
-**Error Response**:
+**Error Response** (403 Forbidden):
 ```json
 {
   "error": "OpenVPN is already connected. Cannot restart via this endpoint."
 }
 ```
 
+**Scenario**: User tries to restart an already connected WireGuard client
+
+**Error Response** (403 Forbidden):
+```json
+{
+  "error": "WireGuard is already connected. Cannot restart via this endpoint."
+}
+```
+
+**Scenario**: User tries to restart a disabled WireGuard client
+
+**Error Response** (403 Forbidden):
+```json
+{
+  "error": "WireGuard is disabled and cannot be restarted via this endpoint."
+}
+```
+
+**Scenario**: WireGuard client not found
+
+**Error Response** (404 Not Found):
+```json
+{
+  "error": "WireGuard client not found."
+}
+```
+
 **Scenario**: User tries to restart an already connected IPsec
 
-**Error Response**:
+**Error Response** (403 Forbidden):
 ```json
 {
   "error": "IPsec is already connected. Cannot restart via this endpoint."
@@ -406,16 +434,17 @@ curl -X POST "https://instrada-ogm.example.com/api/vpn/safe-restart" \
 }
 ```
 
-#### Usage Case 7: OPNsense API Error
+#### Usage Case 7: OPNsense API Failure
 
-**Scenario**: Error communicating with OPNsense
+**Scenario**: OPNsense API reports failure when restarting the VPN service
 
-**Error Response**:
+**Error Response** (500 Internal Server Error):
 ```json
 {
-  "error": "Failed to restart VPN"
+  "error": "Failed to restart <vpnType> VPN service on OPNsense."
 }
 ```
+*Note: `<vpnType>` is substituted with the requested type (`OpenVPN`, `WireGuard`, or `IPsec`). Upstream error details are kept in server logs and not leaked in the response.*
 
 #### Usage Case 8: Unmanaged Groups Restriction
 
@@ -445,9 +474,9 @@ curl -X POST "https://instrada-ogm.example.com/api/vpn/safe-restart" \
 - `400 Bad Request`: `vpnUuid` is missing or is not a valid OPNsense identifier.
 
 **VPN Type Behaviors**:
-- **OpenVPN**: Calls restart service API (only if disconnected)
-- **WireGuard**: Performs toggle-twice operation (disable then re-enable)
-- **IPsec**: Calls connect API (only if disconnected)
+- **OpenVPN**: Calls restart service API (only if disconnected; requires upstream `result === 'ok'`)
+- **WireGuard**: Requires an enabled client; executes a toggle-twice operation via `restartWireguardClient()` (only if disconnected/offline)
+- **IPsec**: Calls connect API using canonical `ikeid` with fallback to `name` (only if disconnected; requires upstream `result === 'ok'`)
 
 ## Context-Aware VPN Status Access
 
