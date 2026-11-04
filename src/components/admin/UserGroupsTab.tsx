@@ -739,13 +739,14 @@ export default function UserGroupsTab({
                         {
                           key: 'actions',
                           label: 'Actions',
-                          headerClassName: 'text-left',
+                          headerClassName: 'text-left min-w-[500px]',
+                          className: 'min-w-[500px] whitespace-nowrap',
                           render: (group: GroupWithCount) => {
                             const localMembersCount = allTooltipMembers[group.id]?.filter((member: UserForTooltip) => !member.isSso).length || 0;
                             const ssoMembersCount = allTooltipMembers[group.id]?.filter((member: UserForTooltip) => member.isSso).length || 0;
                             return (
-                              <div className="text-left space-x-2">
-                                <Button variant="outline" size="sm" onClick={() => handleEditGroup(group)} disabled={isProcessing}>
+                              <div className="flex items-center space-x-2 whitespace-nowrap">
+                                <Button variant="outline" size="sm" onClick={() => handleEditGroup(group)} disabled={isProcessing} className="shrink-0">
                                   <ClientOnly><Edit className="h-3 w-3 mr-1" /></ClientOnly> Edit
                                 </Button>
                                 <TooltipProvider>
@@ -856,7 +857,7 @@ export default function UserGroupsTab({
                                     </TooltipContent>
                                   </Tooltip>
                                 </TooltipProvider>
-                                <Button variant="destructive" size="sm" onClick={() => handleDeleteGroup(group)} disabled={isProcessing}>
+                                <Button variant="destructive" size="sm" onClick={() => handleDeleteGroup(group)} disabled={isProcessing} className="shrink-0">
                                   <ClientOnly><Trash2 className="h-3 w-3 mr-1" /></ClientOnly> Delete
                                 </Button>
                               </div>

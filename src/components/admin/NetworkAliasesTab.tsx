@@ -866,12 +866,14 @@ export function NetworkAliasesTab({
                         key: 'actions',
                         label: 'Actions',
                         sortable: false,
+                        headerClassName: 'min-w-[170px]',
+                        className: 'min-w-[170px] whitespace-nowrap',
                         render: (a: NetworkAlias) => (
-                          <div className="flex gap-1">
-                            <Button variant="outline" size="sm" onClick={() => handleOpenEdit(a)}>
+                          <div className="flex items-center gap-1 whitespace-nowrap">
+                            <Button variant="outline" size="sm" onClick={() => handleOpenEdit(a)} className="shrink-0">
                               <Edit className="h-3 w-3 mr-1" /> Edit
                             </Button>
-                            <Button variant="destructive" size="sm" onClick={() => handleOpenDelete(a)}>
+                            <Button variant="destructive" size="sm" onClick={() => handleOpenDelete(a)} className="shrink-0">
                               <Trash2 className="h-3 w-3 mr-1" /> Delete
                             </Button>
                           </div>

@@ -1089,16 +1089,18 @@ export function NetworkGroupsTab({
                       {
                         key: 'actions',
                         label: 'Actions',
+                        headerClassName: 'text-left min-w-[150px]',
+                        className: 'min-w-[150px] whitespace-nowrap',
                         render: (alias: EnrichedNetworkGroup) => {
                           const isDisabled = !alias.enabled;
                           return (
-                            <div className="text-left space-x-2">
+                            <div className="flex items-center space-x-2 whitespace-nowrap">
                               <Button
                                 variant="outline"
                                 size="sm"
                                 onClick={() => handleOpenEditDialog(alias)}
                                 disabled={isDisabled}
-                                className={isDisabled ? 'opacity-50' : ''}
+                                className={cn("shrink-0", isDisabled ? 'opacity-50' : '')}
                               >
                                 <ClientOnly><Edit className="h-3 w-3 mr-1" /></ClientOnly> Edit Members
                               </Button>

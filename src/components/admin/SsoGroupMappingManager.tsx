@@ -437,10 +437,12 @@ export default function SsoGroupMappingManager({
                     {
                       key: 'actions',
                       label: 'Actions',
+                      headerClassName: 'text-left min-w-[150px]',
+                      className: 'min-w-[150px] whitespace-nowrap',
                       render: (mapping: SsoGroupMappingWithLocalGroup) => (
-                        <div className="text-left space-x-2">
-                          <Button variant="outline" size="sm" onClick={() => handleEditSsoMapping(mapping)} disabled={isProcessing}>Edit</Button>
-                          <Button variant="destructive" size="sm" onClick={() => handleDeleteSsoMapping(mapping)} disabled={isProcessing}>Delete</Button>
+                        <div className="flex items-center space-x-2 whitespace-nowrap">
+                          <Button variant="outline" size="sm" onClick={() => handleEditSsoMapping(mapping)} disabled={isProcessing} className="shrink-0">Edit</Button>
+                          <Button variant="destructive" size="sm" onClick={() => handleDeleteSsoMapping(mapping)} disabled={isProcessing} className="shrink-0">Delete</Button>
                         </div>
                       ),
                     },

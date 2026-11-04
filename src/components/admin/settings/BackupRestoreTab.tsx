@@ -550,10 +550,11 @@ export function BackupRestoreTab({
                       key: 'actions',
                       label: 'Actions',
                       sortable: false,
-                      headerClassName: "text-right",
+                      headerClassName: "text-right min-w-[150px]",
+                      className: "min-w-[150px] whitespace-nowrap",
                       render: (backup) => (
-                        <div className="text-right space-x-2">
-                          <Button variant="outline" size="sm" asChild>
+                        <div className="flex items-center justify-end space-x-2 whitespace-nowrap">
+                          <Button variant="outline" size="sm" className="shrink-0" asChild>
                             <a href={`/api/settings/backup/versions/${backup.name}`} download>
                               <Download className="h-4 w-4" />
                             </a>
@@ -561,6 +562,7 @@ export function BackupRestoreTab({
                           <Button
                             variant="outline"
                             size="sm"
+                            className="shrink-0"
                             onClick={() => handleRenameBackup(backup.name)}
                             disabled={isRenamingBackup === backup.name}
                           >
@@ -568,7 +570,7 @@ export function BackupRestoreTab({
                           </Button>
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
-                              <Button variant="destructive" size="sm" disabled={isLoadingRestore === backup.name}>
+                              <Button variant="destructive" size="sm" className="shrink-0" disabled={isLoadingRestore === backup.name}>
                                 {isLoadingRestore === backup.name ? <Loader2 className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />}
                               </Button>
                             </AlertDialogTrigger>

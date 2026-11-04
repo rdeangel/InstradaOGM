@@ -250,20 +250,19 @@ export default function CardSchedulesButton(props: CardSchedulesButtonProps) {
                 <div
                   key={schedule.id}
                   className={cn(
-                    "flex items-center justify-between p-3 rounded-lg border bg-card text-card-foreground shadow-sm gap-3 transition-opacity",
+                    "p-3 rounded-lg border bg-card text-card-foreground shadow-sm space-y-2.5 transition-opacity",
                     !schedule.enabled && "opacity-80"
                   )}
                 >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-sm truncate">{schedule.name}</span>
-                      <Badge variant="outline" className="text-xs">
-                        {schedule.scheduleType}
-                      </Badge>
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="font-semibold text-sm text-foreground break-words leading-snug flex-1">
+                      {schedule.name}
+                    </span>
+                    <div className="flex items-center gap-1.5 shrink-0 pt-0.5">
                       <Badge
                         variant="outline"
                         className={cn(
-                          "text-[10px] h-4 px-1.5 py-0 font-medium",
+                          "text-xs font-medium",
                           schedule.enabled
                             ? "border-emerald-500/40 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10"
                             : "border-amber-500/40 text-amber-600 dark:text-amber-400 bg-amber-500/10"
@@ -271,50 +270,61 @@ export default function CardSchedulesButton(props: CardSchedulesButtonProps) {
                       >
                         {schedule.enabled ? 'On' : 'Off'}
                       </Badge>
+                      <Badge variant="outline" className="text-xs font-medium">
+                        {schedule.scheduleType}
+                      </Badge>
                     </div>
-                    {renderScheduleTiming(schedule)}
                   </div>
 
-                  <div className="flex items-center gap-2 shrink-0">
-                    <Switch
-                      checked={schedule.enabled}
-                      disabled={togglingId === schedule.id}
-                      onCheckedChange={(checked) => handleToggle(schedule, checked)}
-                      aria-label={`Toggle ${schedule.name}`}
-                    />
+                  {renderScheduleTiming(schedule)}
 
-                    {schedule.scheduleType === 'ONCE' && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8 gap-1.5"
-                        onClick={() => setRunInSchedule(schedule)}
-                      >
-                        <Timer className="h-3.5 w-3.5" />
-                        Run in
-                      </Button>
-                    )}
+                  <div className="flex items-center justify-between pt-1 border-t border-border/40 gap-2">
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        checked={schedule.enabled}
+                        disabled={togglingId === schedule.id}
+                        onCheckedChange={(checked) => handleToggle(schedule, checked)}
+                        aria-label={`Toggle ${schedule.name}`}
+                      />
+                      <span className="text-xs text-muted-foreground select-none">
+                        {schedule.enabled ? 'Enabled' : 'Disabled'}
+                      </span>
+                    </div>
 
-                    {(schedule.scheduleType === 'ONCE' || schedule.scheduleType === 'RECURRING') && (
-                      <Button variant="ghost" size="sm" asChild className="h-8 px-2">
-                        <Link href={`/admin/schedules/${schedule.id}/edit`} target="_blank" rel="noopener noreferrer">
-                          <ExternalLink className="h-3.5 w-3.5" />
-                          <span className="sr-only">Open in editor</span>
-                        </Link>
-                      </Button>
-                    )}
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {schedule.scheduleType === 'ONCE' && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 gap-1.5 text-xs"
+                          onClick={() => setRunInSchedule(schedule)}
+                        >
+                          <Timer className="h-3.5 w-3.5" />
+                          Run in
+                        </Button>
+                      )}
 
-                    {schedule.scheduleType === 'COMPLEX_WEEKLY' && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8 gap-1.5"
-                        onClick={() => setInfoSchedule(schedule)}
-                      >
-                        <Info className="h-3.5 w-3.5" />
-                        Summary
-                      </Button>
-                    )}
+                      {(schedule.scheduleType === 'ONCE' || schedule.scheduleType === 'RECURRING') && (
+                        <Button variant="ghost" size="sm" asChild className="h-8 px-2">
+                          <Link href={`/admin/schedules/${schedule.id}/edit`} target="_blank" rel="noopener noreferrer">
+                            <ExternalLink className="h-3.5 w-3.5" />
+                            <span className="sr-only">Open in editor</span>
+                          </Link>
+                        </Button>
+                      )}
+
+                      {schedule.scheduleType === 'COMPLEX_WEEKLY' && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 gap-1.5 text-xs"
+                          onClick={() => setInfoSchedule(schedule)}
+                        >
+                          <Info className="h-3.5 w-3.5" />
+                          Summary
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))

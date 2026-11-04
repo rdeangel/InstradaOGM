@@ -18,6 +18,7 @@ export interface Column<T> {
   sortable?: boolean;
   render?: (item: T) => React.ReactNode;
   headerClassName?: string;
+  className?: string; // For table cell styling (width, padding, etc.)
   sortValue?: (item: T) => string | number | Date; // For extracting a value to sort by
   compareFn?: (a: T, b: T) => number; // For custom comparison logic
 }
@@ -94,7 +95,7 @@ export function SortableTable<T>({
             sortedData.map((item, index) => (
               <TableRow key={index}>
                 {columns.map((column) => (
-                  <TableCell key={column.key}>
+                  <TableCell key={column.key} className={column.className}>
                     {column.render ? column.render(item) : String(getNestedValue(item, column.key))}
                   </TableCell>
                 ))}

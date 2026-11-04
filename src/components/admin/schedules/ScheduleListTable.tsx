@@ -379,7 +379,7 @@ export function ScheduleListTable({ schedules, onRefresh, onEnabledFilterChange 
                     <th className="text-left p-3 font-medium">Executions</th>
                     <th className="text-left p-3 font-medium">Last Executed</th>
                     <th className="text-left p-3 font-medium">Enabled</th>
-                    <th className="text-right p-3 font-medium">Actions</th>
+                    <th className="text-right p-3 font-medium whitespace-nowrap min-w-[140px]">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
@@ -434,13 +434,13 @@ export function ScheduleListTable({ schedules, onRefresh, onEnabledFilterChange 
                           onCheckedChange={checked => handleToggle(schedule, checked)}
                         />
                       </td>
-                      <td className="p-3">
-                        <div className="flex items-center justify-end gap-1">
+                      <td className="p-3 whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-1 whitespace-nowrap">
                           {schedule.scheduleType === 'ONCE' && (
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-8 w-8"
+                              className="h-8 w-8 shrink-0"
                               onClick={() => setRunInTarget(schedule)}
                               title="Run in…"
                             >
@@ -450,7 +450,7 @@ export function ScheduleListTable({ schedules, onRefresh, onEnabledFilterChange 
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-8 w-8"
+                            className="h-8 w-8 shrink-0"
                             disabled={duplicatingId === schedule.id}
                             onClick={() => handleDuplicate(schedule)}
                             title="Duplicate"
@@ -460,7 +460,7 @@ export function ScheduleListTable({ schedules, onRefresh, onEnabledFilterChange 
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-8 w-8"
+                            className="h-8 w-8 shrink-0"
                             onClick={() => router.push(`/admin/schedules/${schedule.id}/edit`)}
                             title="Edit"
                           >
@@ -469,7 +469,7 @@ export function ScheduleListTable({ schedules, onRefresh, onEnabledFilterChange 
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-8 w-8 text-destructive hover:text-destructive"
+                            className="h-8 w-8 shrink-0 text-destructive hover:text-destructive"
                             disabled={deletingId === schedule.id}
                             onClick={() => setDeleteTarget(schedule)}
                             title="Delete"

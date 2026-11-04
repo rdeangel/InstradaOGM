@@ -901,12 +901,14 @@ export function HostAliasesTab({
     {
       key: 'actions',
       label: 'Actions',
+      headerClassName: 'text-left min-w-[170px]',
+      className: 'min-w-[170px] whitespace-nowrap',
       render: (alias: EnrichedHostAlias) => (
-        <div className="flex space-x-2">
-          <Button variant="outline" size="sm" onClick={() => handleEdit(alias)} disabled={isProcessingAction}>
+        <div className="flex items-center space-x-2 whitespace-nowrap">
+          <Button variant="outline" size="sm" onClick={() => handleEdit(alias)} disabled={isProcessingAction} className="shrink-0">
             <Edit className="h-3 w-3 mr-1" /> Edit
           </Button>
-          <Button variant="destructive" size="sm" onClick={() => handleDelete(alias)} disabled={isProcessingAction}>
+          <Button variant="destructive" size="sm" onClick={() => handleDelete(alias)} disabled={isProcessingAction} className="shrink-0">
             <Trash2 className="h-3 w-3 mr-1" /> Delete
           </Button>
         </div>

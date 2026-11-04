@@ -954,10 +954,11 @@ export default function UserManagementTab({
                   {
                     key: 'actions',
                     label: 'Actions',
-                    headerClassName: 'text-left', // Justify Actions header to the left
+                    headerClassName: 'text-left w-[110px] min-w-[110px]',
+                    className: 'w-[110px] min-w-[110px] whitespace-nowrap',
                     render: (user) => (
-                      <div className="text-left space-x-2">
-                        <Button variant="outline" size="icon" onClick={() => handleOpenDialog('edit', user)}
+                      <div className="flex items-center gap-2 whitespace-nowrap">
+                        <Button variant="outline" size="icon" className="shrink-0" onClick={() => handleOpenDialog('edit', user)}
                           disabled={
                             (session?.user?.id === user.id && session?.user?.role === Role.SUPER_ADMIN) ||
                             (session?.user?.role === Role.ADMIN && user.role === Role.SUPER_ADMIN)
@@ -965,7 +966,7 @@ export default function UserManagementTab({
                         >
                           <ClientOnly><Edit className="h-3 w-3" /></ClientOnly>
                         </Button>
-                        <Button variant="destructive" size="icon" onClick={() => handleOpenDeleteDialog(user.id)}
+                        <Button variant="destructive" size="icon" className="shrink-0" onClick={() => handleOpenDeleteDialog(user.id)}
                           disabled={
                             (session?.user?.id === user.id) ||
                             (session?.user?.role === Role.ADMIN && user.role === Role.SUPER_ADMIN)
