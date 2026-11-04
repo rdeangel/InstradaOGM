@@ -35,6 +35,7 @@ export interface GlobalSettingsResponse {
   subtitleText?: string;
   enableLoginPageSubtitle: boolean;
   manageNetworkAliasesEnabled: boolean;
+  cardSchedulesEnabled: boolean;
   isSelfServiceAllowed: boolean;
 }
 
@@ -129,6 +130,7 @@ export async function getGlobalSettings(clientIp?: string | null): Promise<Globa
     subtitleText: transformedGlobalSettings.subtitleText,
     enableLoginPageSubtitle: transformedGlobalSettings.enableLoginPageSubtitle || false,
     manageNetworkAliasesEnabled: transformedGlobalSettings.manageNetworkAliasesEnabled || false,
+    cardSchedulesEnabled: transformedGlobalSettings.cardSchedulesEnabled || false,
     isSelfServiceAllowed,
   };
 }

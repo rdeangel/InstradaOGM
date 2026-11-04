@@ -21,6 +21,7 @@ import { useOpnsenseData } from '@/hooks/useOpnsenseData';
 
 import NetworkGroupsCard from '@/components/NetworkGroupsCard';
 import NetworkAliasManagementCard, { type NetworkAliasManagementCardHandles } from '@/components/NetworkAliasManagementCard';
+import CardSchedulesButton from '@/components/card-schedules/CardSchedulesButton';
 
 export default function NetworkManagementPage() {
   const { data: session, status: authStatus } = useAuth();
@@ -236,6 +237,11 @@ export default function NetworkManagementPage() {
     if (!selectedAlias?.memberOfGroups) return [];
     return groups.filter(g => selectedAlias.memberOfGroups!.some(m => m.uuid === g.uuid));
   }, [selectedAlias, groups]);
+
+  const networkAliasGroupUuids = useMemo(
+    () => selectedAlias?.memberOfGroups?.map(m => m.uuid) ?? [],
+    [selectedAlias]
+  );
 
   const handleSmartAssign = useCallback(async (targetGroupId: string) => {
     if (!selectedAlias) return;
@@ -481,6 +487,13 @@ export default function NetworkManagementPage() {
                   allFlagValues={allFlagValues}
                   vpnConnectionStatuses={vpnConnectionStatuses}
                   groupVpnMap={groupVpnMap}
+                  headerAction={
+                    <CardSchedulesButton
+                      kind="NETWORK_ALIAS"
+                      aliasUuid={selectedAlias?.uuid ?? null}
+                      currentGroupUuids={networkAliasGroupUuids}
+                    />
+                  }
                 />
               </div>
 

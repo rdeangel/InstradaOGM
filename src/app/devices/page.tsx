@@ -25,6 +25,7 @@ import { useAbortController } from '@/hooks/useAbortController';
 
 import NetworkGroupsCard from '@/components/NetworkGroupsCard';
 import DeviceManagementCard, { HostAlias, DeviceManagementCardHandles } from '@/components/DeviceManagementCard'; // Import the new card and HostAlias
+import CardSchedulesButton from '@/components/card-schedules/CardSchedulesButton';
 
 // Removed unused imports for modal components
 
@@ -321,6 +322,11 @@ export default function UserDeviceAccessPage() {
     isLoadingVpnStatuses, // Get VPN loading status
     groupVpnMap, // Get group VPN map
   } = useOpnsenseData(authStatus === 'authenticated', 'user'); // Only fetch data when authenticated
+
+  const groupTypesRecord = useMemo(
+    () => Object.fromEntries((groups ?? []).filter(g => g.groupType).map(g => [g.id, g.groupType!])),
+    [groups]
+  );
 
   // Create a wrapper function for refreshing groups that supports in-place refresh
   const refreshGroups = useCallback(async (inPlace?: boolean) => {
@@ -1587,6 +1593,14 @@ export default function UserDeviceAccessPage() {
                   refreshSelectedDeviceDetails={refreshCurrentSelectedDeviceDetails} // Refresh selected device membership on manual refresh
                   layoutMode={layoutMode}
                   onFetchExtendedDetailsReady={(fetchFn) => { fetchExtendedDetailsRef.current = fetchFn; }}
+                  headerAction={
+                    <CardSchedulesButton
+                      kind="HOST_ALIAS"
+                      aliasUuid={selectedDevice?.uuid ?? null}
+                      currentGroupUuids={selectedDeviceGroupIds}
+                      groupTypes={groupTypesRecord}
+                    />
+                  }
                 />
               </div>
 

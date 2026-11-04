@@ -231,6 +231,7 @@ model GlobalSettings {
   macExclusionRetentionDays Int    @default(365)    // Retention period for IP history (1-365 days)
   // Network Alias Management Settings
   manageNetworkAliasesEnabled Boolean @default(false) // Enable/disable network alias management feature
+  cardSchedulesEnabled Boolean @default(false) // Show alias schedules on Device/Network Management cards
 }
 
 model GloballyDisabledGroup {

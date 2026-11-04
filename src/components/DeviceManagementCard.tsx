@@ -103,6 +103,7 @@ interface DeviceManagementCardProps {
   onClearDeviceCache?: (deviceUuid: string) => void; // New prop for clearing device cache after rename
   layoutMode?: 'stacked' | 'side-by-side'; // New prop for layout mode
   onFetchExtendedDetailsReady?: (fetchFn: (forceRefresh?: boolean) => Promise<void>) => void; // New prop to pass fetchExtendedDetails to parent
+  headerAction?: React.ReactNode;
 }
 
 export interface DeviceManagementCardHandles {
@@ -130,6 +131,7 @@ const DeviceManagementCard = forwardRef<DeviceManagementCardHandles, DeviceManag
   onClearDeviceCache,
   layoutMode,
   onFetchExtendedDetailsReady,
+  headerAction,
 }, ref) {
   const { toast } = useToast();
   const isMobile = useIsMobile();
@@ -1183,6 +1185,7 @@ const DeviceManagementCard = forwardRef<DeviceManagementCardHandles, DeviceManag
               Select a device to manage its access.
             </CardDescription>
           </div>
+          {headerAction}
           <ClientOnly fallback={<Skeleton className={`h-6 w-6 rounded-full ${isMobile ? 'h-5 w-5' : ''}`} />}>
             <TooltipProvider>
               <Tooltip>

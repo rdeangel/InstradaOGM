@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { ClientOnly } from '@/components/util/ClientOnly';
-import { Globe, AlertTriangle, RefreshCw, Info, Loader2, Trash2, Layers, Type, UserPlus, Ban, Edit3, BarChart3, Laptop, Waypoints } from 'lucide-react';
+import { Globe, AlertTriangle, RefreshCw, Info, Loader2, Trash2, Layers, Type, UserPlus, Ban, Edit3, BarChart3, Laptop, Waypoints, CalendarClock } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { LucideIconPicker } from '@/components/ui/lucide-icon-picker';
 import { logger } from '@/lib/logger';
@@ -68,6 +68,8 @@ interface GlobalSettingsTabProps {
   customLucideIcons?: { name: string; icon: React.ComponentType<{ size?: number }> }[]; // Custom Lucide icons from global settings
   manageNetworkAliasesEnabled: boolean;
   setManageNetworkAliasesEnabled: (checked: boolean) => void;
+  cardSchedulesEnabled: boolean;
+  setCardSchedulesEnabled: (checked: boolean) => void;
 }
 
 export function GlobalSettingsTab({
@@ -115,6 +117,8 @@ export function GlobalSettingsTab({
   customLucideIcons = [],
   manageNetworkAliasesEnabled,
   setManageNetworkAliasesEnabled,
+  cardSchedulesEnabled,
+  setCardSchedulesEnabled,
 }: GlobalSettingsTabProps) {
   const { toast } = useToast();
   const isMobile = useIsMobile();
@@ -595,6 +599,44 @@ export function GlobalSettingsTab({
                           });
                         } catch {
                           setManageNetworkAliasesEnabled(false);
+                        }
+                      }}
+                    />
+                  </ClientOnly>
+                </div>
+              </div>
+
+              {/* Card Schedules Section */}
+              <div className="border rounded-lg p-4 space-y-4">
+                <div>
+                  <h3 className="text-lg font-semibold flex items-center">
+                    <ClientOnly><CalendarClock size={20} className="mr-2 text-primary" /></ClientOnly> Card Schedules
+                  </h3>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="card-schedules-enabled">Show schedules on Device / Network cards</Label>
+                    <div className="text-sm text-muted-foreground">
+                      Admins can view, enable/disable and re-run schedules that target a single alias directly from its card.
+                    </div>
+                  </div>
+                  <ClientOnly>
+                    <Switch
+                      id="card-schedules-enabled"
+                      checked={cardSchedulesEnabled}
+                      onCheckedChange={async (checked) => {
+                        setCardSchedulesEnabled(checked);
+                        try {
+                          await handleSaveSetting(
+                            'cardSchedulesEnabled',
+                            checked,
+                            setCardSchedulesEnabled,
+                            'Card schedules setting saved.',
+                            'Failed to save card schedules setting.'
+                          );
+                          globalSettingsEvents.emit();
+                        } catch {
+                          setCardSchedulesEnabled(!checked);
                         }
                       }}
                     />

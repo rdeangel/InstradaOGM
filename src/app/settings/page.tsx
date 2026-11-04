@@ -101,6 +101,7 @@ export default function SettingsPage() {
   const [macDataRetentionDays, setMacDataRetentionDays] = useState<number>(90);
   // Network Aliases Management
   const [manageNetworkAliasesEnabled, setManageNetworkAliasesEnabled] = useState<boolean>(false);
+  const [cardSchedulesEnabled, setCardSchedulesEnabled] = useState<boolean>(false);
   // Application Subtitle Settings
   const [enableApplicationSubtitle, setEnableApplicationSubtitle] = useState<boolean>(false);
   const [subtitleText, setSubtitleText] = useState<string>('');
@@ -317,6 +318,9 @@ export default function SettingsPage() {
       // Network Aliases Management
       if (fetchedSettings.manageNetworkAliasesEnabled !== undefined) {
         setManageNetworkAliasesEnabled(fetchedSettings.manageNetworkAliasesEnabled);
+      }
+      if (fetchedSettings.cardSchedulesEnabled !== undefined) {
+        setCardSchedulesEnabled(fetchedSettings.cardSchedulesEnabled);
       }
       // Application Subtitle Settings
       if (fetchedSettings.enableApplicationSubtitle !== undefined) {
@@ -892,6 +896,8 @@ export default function SettingsPage() {
                 customLucideIcons={customLucideIcons as { name: string; icon: React.ComponentType<{ size?: number }> }[]}
                 manageNetworkAliasesEnabled={manageNetworkAliasesEnabled}
                 setManageNetworkAliasesEnabled={setManageNetworkAliasesEnabled}
+                cardSchedulesEnabled={cardSchedulesEnabled}
+                setCardSchedulesEnabled={setCardSchedulesEnabled}
               />
             )}
 

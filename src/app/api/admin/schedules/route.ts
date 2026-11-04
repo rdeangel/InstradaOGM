@@ -12,18 +12,25 @@ export const GET = withAdminApiTracking(async (request: NextRequest) => {
     const { searchParams } = new URL(request.url);
     const enabled = searchParams.get('enabled');
     const scheduleType = searchParams.get('scheduleType');
+    const withActions = searchParams.get('withActions') === '1';
 
     const where: Record<string, unknown> = {};
     if (enabled !== null) where.enabled = enabled === 'true';
     if (scheduleType) where.scheduleType = scheduleType;
 
+    const include: Record<string, unknown> = {
+      _count: {
+        select: { executions: true },
+      },
+    };
+    if (withActions) {
+      include.onceActions = { orderBy: { sortOrder: 'asc' } };
+      include.recurringActions = { orderBy: { sortOrder: 'asc' } };
+    }
+
     const schedules = await prisma.scheduledAssignment.findMany({
       where,
-      include: {
-        _count: {
-          select: { executions: true },
-        },
-      },
+      include,
       orderBy: [
         { priority: 'desc' },
         { name: 'asc' },

@@ -80,4 +80,5 @@ export interface GlobalSettings {
   enableLoginPageSubtitle?: boolean; // Enable/disable subtitle display on login page
   // Network Aliases Management
   manageNetworkAliasesEnabled?: boolean; // Enable/disable network alias management feature
+  cardSchedulesEnabled?: boolean;
 }

@@ -51,6 +51,7 @@ interface NetworkAliasManagementCardProps {
   allFlagValues?: string[];
   vpnConnectionStatuses?: Map<string, { status: 'connected' | 'disconnected' | 'disabled'; type: string; enabled?: string }>;
   groupVpnMap?: Map<string, string>;
+  headerAction?: React.ReactNode;
 }
 
 interface AliasSelectOption {
@@ -72,6 +73,7 @@ const NetworkAliasManagementCard = forwardRef<NetworkAliasManagementCardHandles,
   allFlagValues = [],
   vpnConnectionStatuses = new Map(),
   groupVpnMap = new Map(),
+  headerAction,
 }, ref) {
   const { toast } = useToast();
   const isMobile = useIsMobile();
@@ -792,6 +794,7 @@ const NetworkAliasManagementCard = forwardRef<NetworkAliasManagementCardHandles,
               Select a network alias to manage its group assignments.
             </CardDescription>
           </div>
+          {headerAction}
           <ClientOnly fallback={<Skeleton className={`h-6 w-6 rounded-full ${isMobile ? 'h-5 w-5' : ''}`} />}>
             <TooltipProvider>
               <Tooltip>

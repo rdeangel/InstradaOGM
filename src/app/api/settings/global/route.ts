@@ -45,6 +45,7 @@ interface GlobalSettingsUpdateData {
   enableLoginPageSubtitle?: boolean;
   // Network Aliases Settings
   manageNetworkAliasesEnabled?: boolean;
+  cardSchedulesEnabled?: boolean;
   // Cache Invalidation Support
   lastModified?: Date; // Explicitly include lastModified for cache invalidation
 }
@@ -115,6 +116,7 @@ export async function POST(request: Request) {
         enableLoginPageSubtitle,
         // Network Aliases Settings
         manageNetworkAliasesEnabled,
+        cardSchedulesEnabled,
       }: Partial<GlobalSettings> = body;
 
       // Convert CustomLucideIcon objects to serializable format for database storage
@@ -536,6 +538,19 @@ export async function POST(request: Request) {
           userId,
           action: manageNetworkAliasesEnabled ? 'enableNetworkAliasesManagement' : 'disableNetworkAliasesManagement',
           details: { old_value: transformedCurrentSettings.manageNetworkAliasesEnabled, new_value: manageNetworkAliasesEnabled },
+          ipAddress,
+          userAgent,
+        });
+      }
+
+      // Handle cardSchedulesEnabled
+      if (cardSchedulesEnabled !== undefined && cardSchedulesEnabled !== transformedCurrentSettings.cardSchedulesEnabled) {
+        updateData.cardSchedulesEnabled = cardSchedulesEnabled;
+        auditDetails.cardSchedulesEnabled = { old_value: transformedCurrentSettings.cardSchedulesEnabled, new_value: cardSchedulesEnabled };
+        await logAuditEvent({
+          userId,
+          action: cardSchedulesEnabled ? 'enableCardSchedules' : 'disableCardSchedules',
+          details: { old_value: transformedCurrentSettings.cardSchedulesEnabled, new_value: cardSchedulesEnabled },
           ipAddress,
           userAgent,
         });
