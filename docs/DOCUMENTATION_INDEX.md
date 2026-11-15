@@ -145,6 +145,7 @@ Welcome! Follow this step-by-step path to get up and running quickly:
 - [🔑 Authentication](api/api_docs/02_authentication_endpoints.md) - API authentication
 - [📊 Analytics API](api/api_docs/11_analytics_endpoints.md) - Usage analytics
 - [🧪 Testing Guide](api/api_docs/09_utility_endpoints.md) - API testing utilities
+- [🛠️ Contributing](../CONTRIBUTING.md) - Local development, Docker builds, and volume layout
 
 ---
 

@@ -31,6 +31,8 @@ If you're new to InstradaOGM, we recommend exploring these core features first:
 ### Network & Device Management
 - [🖥️ MAC Address Tracking](MAC_ADDRESS_TRACKING.md) - Track and manage MAC addresses on your network
 - [🔄 MAC Randomization Guide](MAC_RANDOMIZATION_GUIDE.md) - Handle MAC randomization in modern devices
+- [🏷️ Smart Device Renaming & DHCP](../CONFIGURATION/DHCP_RESERVATIONS.md) - Rename host aliases with automatic DHCP reservation offers
+- [🌐 Network Alias Management](NETWORK_ALIAS_MANAGEMENT.md) - Manage OPNsense network aliases (CIDR ranges) and assign them to groups
 - [🌐 Network Group Validation](NETWORK_GROUP_VALIDATION.md) - Validate and manage network groups
 
 ### Group Management
@@ -77,6 +79,8 @@ If you're new to InstradaOGM, we recommend exploring these core features first:
 | 2FA Security | [Two-Factor Authentication Guide](TWO_FACTOR_AUTHENTICATION_GUIDE.md) | Enhance account security |
 | Activity Monitoring | [Account Activity Dashboard](ACCOUNT_ACTIVITY_DASHBOARD.md) | Track user actions |
 | Device Tracking | [MAC Address Tracking](MAC_ADDRESS_TRACKING.md) | Monitor network devices |
+| Device Renaming | [DHCP Reservations](../CONFIGURATION/DHCP_RESERVATIONS.md) | Rename aliases with DHCP reservation offers |
+| Network Aliases | [Network Alias Management](NETWORK_ALIAS_MANAGEMENT.md) | Manage CIDR aliases and group assignment |
 | Assignment History | Integrated Feature | Visualize device group membership changes over time |
 | Modern Devices | [MAC Randomization Guide](MAC_RANDOMIZATION_GUIDE.md) | Handle randomized MACs |
 | Password Policies | [Password Management](PASSWORD_MANAGEMENT.md) | Implement security policies |

@@ -58,9 +58,34 @@ Administrators can configure Group Types in Global Settings:
 - **Allow Multi Select for Self-Service**: Controls whether self-service users can see and use Multi Select groups
 - **Single Select Only**: Self-service users only see Single Select groups
 
+#### **Three Deployment Modes**
+
+Group type functionality is available to **all authenticated users** (USER, ADMIN, SUPER_ADMIN) with device permissions. Only **SUPER_ADMIN** can configure global group type settings.
+
+| Mode | Settings | Behaviour |
+|------|----------|-----------|
+| **Move-Only** | `enableGroupTypes: false` | All groups act as SingleSelect — assigning always evicts from all other groups. Simple and predictable. |
+| **Device Management** | `enableGroupTypes: true`, `enableSelfServiceMultiSelect: false` | Full SingleSelect/MultiSelect logic in Device Management; self-service users see only SingleSelect groups. |
+| **Full** | `enableGroupTypes: true`, `enableSelfServiceMultiSelect: true` | Both group types available everywhere. Best for power users and advanced deployments. |
+
 #### **Custom Names & Icons**
 - **Custom Display Names**: Change "Single Select" and "Multi Select" to organization-specific terms
 - **Custom Icons**: Choose different icons for each group type
+
+### Custom Symbols
+
+Network groups and related UI can use a custom symbol catalog:
+
+- **Lucide icons**: 1000+ vector icons from the Lucide library
+- **Custom emojis**: Standard Unicode emojis
+- **Flag emojis**: Regional indicator symbols for geographic or organizational identification
+
+**Key capabilities:**
+- Searchable icon picker with live filtering
+- Add, edit, and delete custom symbols in the admin interface
+- Live preview on network group displays
+- Consistent rendering on desktop and mobile
+- Integrated with network group management and icon pickers
 
 ### **Individual Group Configuration**
 Each network group can be configured as:

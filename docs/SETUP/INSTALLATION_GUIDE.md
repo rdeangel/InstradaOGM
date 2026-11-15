@@ -171,6 +171,45 @@ openssl rand -hex 32
 > 3. Edit your user and go to **API Keys** tab
 > 4. Click **+** to generate a new key/secret pair
 
+#### Required OPNsense API Permissions
+
+The API user in OPNsense must have the following page permissions (System > Access > Users > edit the API user > **Effective Privileges**):
+
+**Diagnostics:**
+- `page-diagnostics-arptable` - ARP table access for device discovery
+
+**Firewall & Aliases:**
+- `page-firewall-alias-edit` - Edit host aliases and network groups
+- `page-firewall-aliases` - View and manage firewall aliases
+
+**DHCP:**
+- `page-dhcp-kea-v4` - Kea DHCP server management
+
+**Network Status:**
+- `page-status-interfaces` - Interface status monitoring
+
+**IPsec VPN:**
+- `page-status-ipsec` - IPsec connection status
+- `page-status-ipsec-leases` - IPsec lease information
+- `page-status-ipsec-sad` - IPsec Security Association Database
+- `page-status-ipsec-spd` - IPsec Security Policy Database
+- `page-status-systemlogs-ipsecvpn` - IPsec VPN logs
+- `page-vpn-ipsec-connections` - IPsec connection management
+- `page-vpn-ipsec-editkeys` - IPsec key editing
+- `page-vpn-ipsec-keypairs` - IPsec key pair management
+
+**OpenVPN:**
+- `page-status-openvpn` - OpenVPN connection status
+- `page-status-systemlogs-openvpn` - OpenVPN logs
+- `page-openvpn-client-export` - OpenVPN client configuration
+- `page-openvpn-csc` - OpenVPN client-specific overrides
+- `page-openvpn-instances` - OpenVPN instance management
+
+**WireGuard:**
+- `page-wireguard-config` - WireGuard configuration
+- `page-wireguard-logs` - WireGuard logs
+- `page-wireguard-diagnostics` - WireGuard diagnostics
+
 ---
 
 ### Step 3: Install Dependencies

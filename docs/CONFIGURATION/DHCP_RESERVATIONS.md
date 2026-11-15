@@ -106,6 +106,30 @@ Auto DHCP reservation is triggered during host alias renaming when:
 3. **No Existing Reservation**: Device doesn't already have a DHCP reservation
 4. **User Permissions**: User has appropriate permissions for the IP address
 
+### Smart Device Renaming
+
+Renaming a host alias is more than a label change: InstradaOGM can create a DHCP reservation in the same operation and warn when a privacy/randomized MAC would make that reservation unreliable.
+
+#### Automatic DHCP reservation offer
+
+- **Online device detection**: When the device has an active ARP entry, the rename UI offers to create a DHCP reservation
+- **Smart defaults**: Pre-selects reservation creation for online devices that do not already have one
+- **One-click setup**: Apply the new name and the reservation together
+- **Permission-aware**: Offers reservations only for IPs the user is allowed to manage
+
+#### MAC randomization warnings
+
+- Automatically identifies randomized/privacy MAC addresses
+- Explains why a DHCP reservation may fail if the MAC changes
+- Links to step-by-step disable instructions (see [MAC Randomization Guide](../FEATURES/MAC_RANDOMIZATION_GUIDE.md))
+- Shows detection confidence (`high` / `medium` / `low`)
+
+#### Offline device protection
+
+- Warns when renaming an offline device that may receive a different IP later
+- Allows the rename to continue when the user confirms a static IP
+- Explains the risk of a name/IP mismatch if the address changes
+
 ### Permission Model
 
 #### USER Role Permissions
@@ -417,6 +441,7 @@ The system integrates with OPNsense's Kea DHCP server:
 - [📚 Documentation Home](../DOCUMENTATION_INDEX.md) - Main documentation index
 - [🚀 Getting Started](../SETUP/INSTALLATION_GUIDE.md) - Installation and setup
 - [🔧 API Reference](../api/api_docs/API_Index.md) - API documentation
+- [🔓 MAC Randomization Guide](../FEATURES/MAC_RANDOMIZATION_GUIDE.md) - Privacy MAC detection and how to disable it on devices
 
 ---
 
