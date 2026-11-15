@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+## [2.0.0] - 2026-11-15
 
 ### Security
 - **Upgrade — reverse proxies and client IP.** The app only trusts `X-Forwarded-For` / `X-Real-IP` / `X-Forwarded-Host` from addresses in `TRUSTED_PROXY_CIDRS`. Unset uses an automatic list (loopback outside Docker; inside Docker, the container's own networks **except** the gateway). If nginx, Caddy, Nginx Proxy Manager, or another reverse proxy runs on the Docker host or on a **different machine** and forwards to the published app port, set `TRUSTED_PROXY_CIDRS` to the proxy address **the app sees** before or right after upgrading. The container log prints the exact value when headers are ignored (`Proxy headers from untrusted peer … set TRUSTED_PROXY_CIDRS=<ip>/32`). Without that setting, every visitor looks like the proxy: self-service shows the wrong IP, own-device access fails, and login lockouts share one IP ceiling. Direct LAN access to `:3000` is unchanged. Details: `docs/CONFIGURATION/CONFIGURATION_INDEX.md`, `docs/CONFIGURATION/NGINX-PROXY-SETTINGS.md`, `docs/CONFIGURATION/CADDY-PROXY-SETTINGS.md`.
@@ -46,6 +47,143 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Postgres in Docker Compose is no longer reachable on the host port; connect with `docker compose exec`. The Traefik stack no longer publishes the app on port 3000 or a dashboard on port 8080. Traefik is pinned to v3.7.13. The plain stack still publishes the app on port 3000.
 - New local and SSO accounts are never made super-admin automatically. Use the seeded `admin` account (`INITIAL_ADMIN_PASSWORD`, or the generated password printed once in the logs). If the user table is empty, re-run `npm run prisma:seed` or restart the container.
 - `scripts/backup_manager.sh` destination paths expand a leading `~` and `$HOME` only. Other `$VAR` in the destination is no longer expanded. Verbose and dry-run logs no longer print SMTP passwords or API bearer tokens.
+
+### ⚠️ Breaking Changes
+- feat(api)!: enforce per-device/per-group permission checks ([652c778](https://github.com/rdeangel/InstradaOGM/commit/652c778))
+
+### 🔒 Security
+- fix(security): gate password reset and login links on local login flag ([22cd23c](https://github.com/rdeangel/InstradaOGM/commit/22cd23c))
+- feat(security): restrict profile updates to name, split dev image tags ([c605955](https://github.com/rdeangel/InstradaOGM/commit/c605955))
+- feat(security): harden 2FA enrolment, DHCP ownership and add branch CI builds for GHCR ([97e6dab](https://github.com/rdeangel/InstradaOGM/commit/97e6dab))
+- feat(security): tighten CSRF scope, preserve 2FA lockout, throttle forced password change ([bed9da7](https://github.com/rdeangel/InstradaOGM/commit/bed9da7))
+- feat(security): restrict self-service target groups, fail closed on unmanaged checks ([647b814](https://github.com/rdeangel/InstradaOGM/commit/647b814))
+- feat(security): require re-auth for sensitive profile changes, restrict OIDC auto-link ([09c2bae](https://github.com/rdeangel/InstradaOGM/commit/09c2bae))
+- feat(security): Origin/Sec-Fetch-Site CSRF check for cookie-session API writes ([68721ab](https://github.com/rdeangel/InstradaOGM/commit/68721ab))
+- feat(security): warn on placeholder secrets ([4dd8497](https://github.com/rdeangel/InstradaOGM/commit/4dd8497))
+- fix(security): load xff-guard in prebuilt package and systemd ([b8aa065](https://github.com/rdeangel/InstradaOGM/commit/b8aa065))
+- fix(security): xff-guard CJS lint and getClientIp NODE_ENV stubs ([df847d7](https://github.com/rdeangel/InstradaOGM/commit/df847d7))
+- fix(security): self-service gate before fail-open block in VPN safe-restart ([efe31de](https://github.com/rdeangel/InstradaOGM/commit/efe31de))
+- fix(security): Traefik trusts no LAN forwarded headers by default ([22d4635](https://github.com/rdeangel/InstradaOGM/commit/22d4635))
+- fix(security): HTTPS redirect uses Host, never X-Forwarded-For ([5b178cc](https://github.com/rdeangel/InstradaOGM/commit/5b178cc))
+- feat(security): trusted-proxy guard and single client-IP source ([4165f74](https://github.com/rdeangel/InstradaOGM/commit/4165f74))
+- fix(security): look up password reset by indexed SHA-256 token hash ([9e33e8f](https://github.com/rdeangel/InstradaOGM/commit/9e33e8f))
+- feat(security): bind re-auth and JWT revoke to sign-in authTime ([b361e4e](https://github.com/rdeangel/InstradaOGM/commit/b361e4e))
+- feat(security): harden account-takeover paths and seed admin ([b56298b](https://github.com/rdeangel/InstradaOGM/commit/b56298b))
+- feat(security): gate anonymous self-service APIs and fail closed on unmanaged checks ([b6cafe4](https://github.com/rdeangel/InstradaOGM/commit/b6cafe4))
+- fix(security): reject non-string IPs and tighten host/path guards ([8174795](https://github.com/rdeangel/InstradaOGM/commit/8174795))
+- fix(security): validate IPs and OPNsense ids; drop ip neigh shell ([9828ef3](https://github.com/rdeangel/InstradaOGM/commit/9828ef3))
+- fix(security): treat ADMIN/SUPER_ADMIN as alias-permission wildcard (D2) ([b66ab5d](https://github.com/rdeangel/InstradaOGM/commit/b66ab5d))
+
+### ✨ Features
+- feat(schedules): per-alias schedule buttons on Device/Network cards ([2708c84](https://github.com/rdeangel/InstradaOGM/commit/2708c84))
+- feat(opnsense): description sanitizer + reconfigure failure guards ([37fb045](https://github.com/rdeangel/InstradaOGM/commit/37fb045))
+- feat(dhcp): add confirmation dialog before deleting reservations ([c7ce5d8](https://github.com/rdeangel/InstradaOGM/commit/c7ce5d8))
+- feat(install): add --package option to install from local archive ([e6b5d7a](https://github.com/rdeangel/InstradaOGM/commit/e6b5d7a))
+- feat(api-keys): issue prefixed keys and flag legacy ones ([8afb7fb](https://github.com/rdeangel/InstradaOGM/commit/8afb7fb))
+- feat(api-keys): add a unique key prefix column ([1b85fd4](https://github.com/rdeangel/InstradaOGM/commit/1b85fd4))
+- feat(auth): rate-limit password reset requests ([4bcd8d6](https://github.com/rdeangel/InstradaOGM/commit/4bcd8d6))
+- feat(auth): share login lockout with the password-change check ([57959fa](https://github.com/rdeangel/InstradaOGM/commit/57959fa))
+- feat(auth): throttle credential failures in authorize ([342b1c1](https://github.com/rdeangel/InstradaOGM/commit/342b1c1))
+- feat(auth): add in-memory login and reset counters ([742292d](https://github.com/rdeangel/InstradaOGM/commit/742292d))
+- feat(backup): add name/path guard and argv process helper ([107a9b7](https://github.com/rdeangel/InstradaOGM/commit/107a9b7))
+- feat(schedules): add run-in delay for ONCE schedules ([5ca1160](https://github.com/rdeangel/InstradaOGM/commit/5ca1160))
+- feat(schedules): add duplicate schedule endpoint and list action ([5dfe442](https://github.com/rdeangel/InstradaOGM/commit/5dfe442))
+- feat(ui): add TimeInput component with shared HH:MM parsing ([7adec7d](https://github.com/rdeangel/InstradaOGM/commit/7adec7d))
+- feat(ui): implement robust device detail refreshing ([207279c](https://github.com/rdeangel/InstradaOGM/commit/207279c))
+- feat: implement server-side hidden network alias filtering and local UI state synchronization ([b5c2de5](https://github.com/rdeangel/InstradaOGM/commit/b5c2de5))
+
+### 🐛 Bug Fixes
+- fix(ui): keep admin table action buttons on a single row ([94e3f46](https://github.com/rdeangel/InstradaOGM/commit/94e3f46))
+- fix(opnsense): final-review hardening - first-toggle guard, id assert, alias reconfigure messages, POST uuid ([9a6b5a3](https://github.com/rdeangel/InstradaOGM/commit/9a6b5a3))
+- fix(opnsense): apply Kea reservations via reconfigure; sanitize reservation descriptions ([2e522c0](https://github.com/rdeangel/InstradaOGM/commit/2e522c0))
+- fix(opnsense): unify IPsec session ids on ikeid with name fallback; fix summary counter match ([7ccf5ea](https://github.com/rdeangel/InstradaOGM/commit/7ccf5ea))
+- fix(opnsense): rewrite safe-restart success checks; harden WG restart helper ([20fc745](https://github.com/rdeangel/InstradaOGM/commit/20fc745))
+- fix(opnsense): host alias reconfigure failures return 500, not 207 ([16f032f](https://github.com/rdeangel/InstradaOGM/commit/16f032f))
+- fix(schedules): remount edit form with saved values after save ([4806e83](https://github.com/rdeangel/InstradaOGM/commit/4806e83))
+- fix(opnsense): reject non-JSON 2xx responses in fetchFromOpnsense ([be71aad](https://github.com/rdeangel/InstradaOGM/commit/be71aad))
+- fix(ci): build arm64 prebuilts natively instead of via QEMU ([7f1229c](https://github.com/rdeangel/InstradaOGM/commit/7f1229c))
+- fix(ci): native multi-arch builds with branch tags ([4bcab06](https://github.com/rdeangel/InstradaOGM/commit/4bcab06))
+- fix(install): load .env in systemd service and display initial admin credentials ([9e6e064](https://github.com/rdeangel/InstradaOGM/commit/9e6e064))
+- fix(ci): remove secrets reference from step if conditional in docker-publish ([70ebf66](https://github.com/rdeangel/InstradaOGM/commit/70ebf66))
+- fix(proxy): drop X-Forwarded-Host from untrusted peers ([832eb44](https://github.com/rdeangel/InstradaOGM/commit/832eb44))
+- fix(types): accept a partial env in placeholder warnings ([a820043](https://github.com/rdeangel/InstradaOGM/commit/a820043))
+- fix(auth): never auto-grant SUPER_ADMIN on registration or SSO ([9a90d13](https://github.com/rdeangel/InstradaOGM/commit/9a90d13))
+- fix(scripts): remove eval from backup_manager.sh ([3f168fd](https://github.com/rdeangel/InstradaOGM/commit/3f168fd))
+- fix(api): require admin for provider display names; trim health ([941e7d7](https://github.com/rdeangel/InstradaOGM/commit/941e7d7))
+- fix(auth): origin-checked redirect callback ([bdd620d](https://github.com/rdeangel/InstradaOGM/commit/bdd620d))
+- fix(docker): fail closed when database seeding fails ([1114dc2](https://github.com/rdeangel/InstradaOGM/commit/1114dc2))
+- fix(seed): move initial-admin helper beside seed for standalone images ([ac728ea](https://github.com/rdeangel/InstradaOGM/commit/ac728ea))
+- fix(docker): align runner prisma pin with lockfile (6.19.3) ([987c720](https://github.com/rdeangel/InstradaOGM/commit/987c720))
+- fix(deps): patch prisma config transitive (deepmerge-ts override) ([2649d3a](https://github.com/rdeangel/InstradaOGM/commit/2649d3a))
+- fix(deps): nodemailer 10.0.13 ([5b93c17](https://github.com/rdeangel/InstradaOGM/commit/5b93c17))
+- fix(deps): next-auth 4.24.15 ([4e994f5](https://github.com/rdeangel/InstradaOGM/commit/4e994f5))
+- fix(deps): next 15.5.27 and eslint-config-next 15.5.27 ([f9a15de](https://github.com/rdeangel/InstradaOGM/commit/f9a15de))
+- fix(opnsense): time out hung requests; tighten TLS isolation test ([7ffdf42](https://github.com/rdeangel/InstradaOGM/commit/7ffdf42))
+- fix(api-keys): look keys up by prefix and compare once ([3b7c696](https://github.com/rdeangel/InstradaOGM/commit/3b7c696))
+- fix(opnsense): stop clearing NODE_TLS_REJECT_UNAUTHORIZED ([b3b6129](https://github.com/rdeangel/InstradaOGM/commit/b3b6129))
+- fix(opnsense): pin the firewall CA on the OPNsense agent ([9e25812](https://github.com/rdeangel/InstradaOGM/commit/9e25812))
+- fix(compose): pin Traefik and stop publishing the app and dashboard ([a52a10c](https://github.com/rdeangel/InstradaOGM/commit/a52a10c))
+- fix(compose): stop publishing Postgres on the host ([15e5879](https://github.com/rdeangel/InstradaOGM/commit/15e5879))
+- fix(auth): consume login pair slot so rapid alternation still locks ([aed21c7](https://github.com/rdeangel/InstradaOGM/commit/aed21c7))
+- fix(auth): look up NextAuth headers without object-injection lint ([16288a5](https://github.com/rdeangel/InstradaOGM/commit/16288a5))
+- fix(backup): exact-match by-name file ops in versions/[filename] ([bdf8ba0](https://github.com/rdeangel/InstradaOGM/commit/bdf8ba0))
+- fix(backup): drop shell exec, validate names, match restore by listing ([79343a4](https://github.com/rdeangel/InstradaOGM/commit/79343a4))
+- fix(auth): treat revoked JWT as signed out; test jwt callback wiring ([6d836a4](https://github.com/rdeangel/InstradaOGM/commit/6d836a4))
+
+### ♻️ Refactor
+- refactor(opnsense): snake_case endpoints + per-client WireGuard restart ([f691724](https://github.com/rdeangel/InstradaOGM/commit/f691724))
+- refactor(ui): replace ad-hoc HH:MM inputs with TimeInput ([206942a](https://github.com/rdeangel/InstradaOGM/commit/206942a))
+
+### ⚡ Performance
+- perf(backup): stream encrypt/decrypt to avoid heap exhaustion on large backups ([c6f415f](https://github.com/rdeangel/InstradaOGM/commit/c6f415f))
+- perf(api): optimize batch host group operations using in-memory snapshots ([3095a2b](https://github.com/rdeangel/InstradaOGM/commit/3095a2b))
+
+### 📚 Documentation
+- docs(changelog): reword non-JSON fix note, drop two entries ([34e475f](https://github.com/rdeangel/InstradaOGM/commit/34e475f))
+- docs: slim README into docs/ pages, add CONTRIBUTING guide ([5be81f0](https://github.com/rdeangel/InstradaOGM/commit/5be81f0))
+- docs: align public docs with OPNsense 26.7.8_2 remediation behavior ([ff9c6d5](https://github.com/rdeangel/InstradaOGM/commit/ff9c6d5))
+- docs(changelog): call out TRUSTED_PROXY_CIDRS for reverse-proxy upgrades ([c1c917f](https://github.com/rdeangel/InstradaOGM/commit/c1c917f))
+- docs: CSRF and proxy notes ([b95a475](https://github.com/rdeangel/InstradaOGM/commit/b95a475))
+- docs: changelog for Phase 13a ([5528f4a](https://github.com/rdeangel/InstradaOGM/commit/5528f4a))
+- docs: changelog for Phase 12b seed hotfix ([6af8f06](https://github.com/rdeangel/InstradaOGM/commit/6af8f06))
+- docs: changelog entry ([bc0526d](https://github.com/rdeangel/InstradaOGM/commit/bc0526d))
+- docs: explain the new API key format and rotation ([c810246](https://github.com/rdeangel/InstradaOGM/commit/c810246))
+- docs: pin the OPNsense CA and correct two host-setup lines ([f6460cb](https://github.com/rdeangel/InstradaOGM/commit/f6460cb))
+- docs: describe unpublished Postgres and the closed Traefik dashboard ([33381aa](https://github.com/rdeangel/InstradaOGM/commit/33381aa))
+- docs(auth): document login and reset rate limits ([dc1f251](https://github.com/rdeangel/InstradaOGM/commit/dc1f251))
+- docs: trusted proxies, NGINX snippet, upgrade note ([bf66d0b](https://github.com/rdeangel/InstradaOGM/commit/bf66d0b))
+- docs(api): backup name rules ([dd894d9](https://github.com/rdeangel/InstradaOGM/commit/dd894d9))
+- docs(api): describe signed password-change tokens and re-auth ([c9cbac7](https://github.com/rdeangel/InstradaOGM/commit/c9cbac7))
+- docs(api): describe self-service 403/503 and host-alias auth ([e858431](https://github.com/rdeangel/InstradaOGM/commit/e858431))
+- docs(api): describe admin alias wildcard by role without internal codes ([a41c9a5](https://github.com/rdeangel/InstradaOGM/commit/a41c9a5))
+- docs(schedules): document run-in and duplicate actions ([b1a1641](https://github.com/rdeangel/InstradaOGM/commit/b1a1641))
+
+### 🎨 Style
+- style(ui): remove unused ScrollArea import in DuplicateAliasesModal ([0e989a0](https://github.com/rdeangel/InstradaOGM/commit/0e989a0))
+
+### 🧪 Tests
+- test(opnsense): follow search_sessions rename in safe-restart n2 mock ([881d68b](https://github.com/rdeangel/InstradaOGM/commit/881d68b))
+- test(seed): tighten seed import guard ([9681ad3](https://github.com/rdeangel/InstradaOGM/commit/9681ad3))
+- test(backup): drop unused runTool mock params for S1 lint ([f40796c](https://github.com/rdeangel/InstradaOGM/commit/f40796c))
+- test(backup): sqlite and postgres scratch dump/restore round-trips ([434181c](https://github.com/rdeangel/InstradaOGM/commit/434181c))
+- test(middleware): cover revoked-JWT filter ([fa9faaa](https://github.com/rdeangel/InstradaOGM/commit/fa9faaa))
+
+### 🏗️ Build
+- build(docker): npm ci for runtime deps; drop dead deps stage ([b949442](https://github.com/rdeangel/InstradaOGM/commit/b949442))
+- ci: pin actions to SHAs and scope contents:write ([2574c9a](https://github.com/rdeangel/InstradaOGM/commit/2574c9a))
+
+### 📝 Chore
+- chore: prepare release v2.0.0 ([53fc323](https://github.com/rdeangel/InstradaOGM/commit/53fc323))
+- chore(deps): upgrade Next 16 + Zod 4, align ESLint config ([a23f40f](https://github.com/rdeangel/InstradaOGM/commit/a23f40f))
+- chore(lint): allow non-literal fs paths in encryption and tests ([65ee4cd](https://github.com/rdeangel/InstradaOGM/commit/65ee4cd))
+- chore: ignore .worktrees directory in gitignore ([0394361](https://github.com/rdeangel/InstradaOGM/commit/0394361))
+- chore(deps): tighten prisma ranges to ^6.19.3 ([2685742](https://github.com/rdeangel/InstradaOGM/commit/2685742))
+- chore(deps): postcss, vitest patch + npm audit fix (non-force) ([061c272](https://github.com/rdeangel/InstradaOGM/commit/061c272))
+- chore(deps): remove unused firebase, ip-cidr, patch-package ([a671dc0](https://github.com/rdeangel/InstradaOGM/commit/a671dc0))
+- chore(backup): lint hoisted test requires and type the runTool mock ([339f057](https://github.com/rdeangel/InstradaOGM/commit/339f057))
+- chore: ignore agent scratch and spec artifacts ([54722bc](https://github.com/rdeangel/InstradaOGM/commit/54722bc))
+- chore: ignore firecrawl cache ([b363cf0](https://github.com/rdeangel/InstradaOGM/commit/b363cf0))
+- chore(deps): bump node to v24 and update core dependencies ([dd87292](https://github.com/rdeangel/InstradaOGM/commit/dd87292))
 
 ## [1.2.3] - 2026-05-19
 
