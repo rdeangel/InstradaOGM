@@ -3,11 +3,11 @@ import path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { runTool, tmpRoot } = vi.hoisted(() => {
-  /* eslint-disable @typescript-eslint/no-require-imports -- vi.hoisted runs before ESM imports */
+   
   const fsSync = require('fs') as typeof import('fs');
   const osMod = require('os') as typeof import('os');
   const pathMod = require('path') as typeof import('path');
-  /* eslint-enable @typescript-eslint/no-require-imports */
+   
   const tmpRoot = fsSync.mkdtempSync(pathMod.join(osMod.tmpdir(), 'p6-route-'));
   fsSync.mkdirSync(pathMod.join(tmpRoot, 'backups'), { recursive: true });
   process.env.DATA_FOLDER_PATH = tmpRoot;

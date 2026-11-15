@@ -36,7 +36,7 @@ export const GET = withAdminApiTracking(
 
       if (!queryValidation.success) {
         return NextResponse.json(
-          { message: 'Invalid query parameters', errors: queryValidation.error.errors },
+          { message: 'Invalid query parameters', errors: queryValidation.error.issues },
           { status: 400 }
         );
       }

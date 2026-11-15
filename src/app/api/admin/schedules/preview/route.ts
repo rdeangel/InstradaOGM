@@ -33,7 +33,7 @@ export const POST = withAdminApiTracking(async (request: NextRequest) => {
     const validation = createScheduleSchema.safeParse(body);
     if (!validation.success) {
       return NextResponse.json(
-        { message: 'Invalid schedule data', errors: validation.error.errors },
+        { message: 'Invalid schedule data', errors: validation.error.issues },
         { status: 400 }
       );
     }

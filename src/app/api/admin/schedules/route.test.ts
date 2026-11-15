@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 // Typed arg so `findMany.mock.calls[0][0]` compiles under `tsc --noEmit` (tsconfig includes test files).
 const { findMany } = vi.hoisted(() => ({
-  findMany: vi.fn(async (_args: { include: Record<string, unknown> }) => [] as unknown[]),
+  findMany: vi.fn<(args: { include: Record<string, unknown> }) => Promise<unknown[]>>(async () => []),
 }));
 vi.mock('@/lib/prisma', () => ({ prisma: { scheduledAssignment: { findMany } } }));
 vi.mock('@/lib/logger', () => ({ logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));

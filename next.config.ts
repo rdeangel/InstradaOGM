@@ -9,14 +9,11 @@ const nextConfig: NextConfig = {
   output: 'standalone',
   /* config options here */
   env: {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
+     
     NEXT_PUBLIC_APP_VERSION: require('./package.json').version,
   },
   typescript: {
     ignoreBuildErrors: true,
-  },
-  eslint: {
-    ignoreDuringBuilds: true,
   },
   images: {
     remotePatterns: [

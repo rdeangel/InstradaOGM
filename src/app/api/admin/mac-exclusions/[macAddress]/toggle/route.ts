@@ -51,14 +51,14 @@ export async function POST(
       logger.debug('Schema validation result:', {
         success: validationResult.success,
         data: validationResult.success ? validationResult.data : null,
-        errors: validationResult.success ? null : validationResult.error.errors
+        errors: validationResult.success ? null : validationResult.error.issues
       });
 
       if (!validationResult.success) {
         return NextResponse.json({
           success: false,
           message: 'Invalid request body',
-          errors: validationResult.error.errors
+          errors: validationResult.error.issues
         }, { status: 400 });
       }
 

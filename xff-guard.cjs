@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-require-imports, security/detect-object-injection, security/detect-non-literal-fs-filename -- CommonJS preload; stdlib only */
+/* eslint-disable security/detect-object-injection, security/detect-non-literal-fs-filename -- CommonJS preload; stdlib only */
 'use strict';
 
 // ponytail: http only. Next prod/standalone uses http.createServer; next dev --experimental-https is not covered, add https.Server if anyone needs it.

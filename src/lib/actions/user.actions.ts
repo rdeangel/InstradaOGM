@@ -163,7 +163,7 @@ export async function createUser(data: UserFormData): Promise<{ success: boolean
   const validation = UserSchema.safeParse(data);
   if (!validation.success) {
     // Map Zod errors to the expected API error format
-    const apiErrors = validation.error.errors.map(err => ({
+    const apiErrors = validation.error.issues.map(err => ({
       path: err.path.map(p => p.toString()), // Convert path elements to string
       message: err.message,
     }));
@@ -213,7 +213,7 @@ export async function updateUser(id: string, data: UserFormData): Promise<{ succ
   const validation = UserSchema.safeParse(data);
   if (!validation.success) {
     // Map Zod errors to the expected API error format
-    const apiErrors = validation.error.errors.map(err => ({
+    const apiErrors = validation.error.issues.map(err => ({
       path: err.path.map(p => p.toString()), // Convert path elements to string
       message: err.message,
     }));

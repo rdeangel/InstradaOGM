@@ -38,10 +38,10 @@ export const scheduleDaySchema = z.object({
 });
 
 // Target selector schemas — discriminated by targetType
-const ipListSelector = z.object({ ips: z.array(z.string().ip()).min(1) });
+const ipListSelector = z.object({ ips: z.array(z.union([z.ipv4(), z.ipv6()])).min(1) });
 const hostAliasSelector = z.object({ hostAliasUuids: z.array(z.string()).min(1) });
 const networkGroupSelector = z.object({ networkGroupUuid: z.string() });
-const networkAliasSelector = z.object({ networkAliasUuids: z.array(z.string().uuid()).min(1) });
+const networkAliasSelector = z.object({ networkAliasUuids: z.array(z.guid()).min(1) });
 
 export const createScheduleSchema = z.object({
   name: z.string().min(1).max(100),

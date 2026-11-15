@@ -35,7 +35,8 @@ export function simulateActions(
 ): Set<string> {
   const set = new Set(current);
   const sorted = [...actions].sort((a, b) => a.sortOrder - b.sortOrder);
-  const typeOf = (u: string): GroupType => opts.groupTypes?.[u] ?? 'SingleSelect';
+  const groupTypesMap = new Map(Object.entries(opts.groupTypes ?? {}));
+  const typeOf = (u: string): GroupType => groupTypesMap.get(u) ?? 'SingleSelect';
   const isSingle = (u: string) => !opts.enableGroupTypes || typeOf(u) === 'SingleSelect';
 
   for (const action of sorted) {
@@ -88,8 +89,8 @@ export function isEligibleForAlias(s: CardSchedule, kind: AliasKind, aliasUuid: 
   if (s.targetType !== kind) return false;
   const sel = s.targetSelector;
   if (sel === null || typeof sel !== 'object') return false;
-  const key = kind === 'HOST_ALIAS' ? 'hostAliasUuids' : 'networkAliasUuids';
-  const arr = (sel as Record<string, unknown>)[key];
+  const sObj = sel as { hostAliasUuids?: unknown; networkAliasUuids?: unknown };
+  const arr = kind === 'HOST_ALIAS' ? sObj.hostAliasUuids : sObj.networkAliasUuids;
   return Array.isArray(arr) && arr.length === 1 && arr[0] === aliasUuid;
 }
 

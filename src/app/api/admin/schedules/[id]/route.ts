@@ -91,7 +91,7 @@ export const PUT = withAdminApiTracking(
 
       if (!validation.success) {
         return NextResponse.json(
-          { message: 'Validation error', errors: validation.error.errors },
+          { message: 'Validation error', errors: validation.error.issues },
           { status: 400 }
         );
       }

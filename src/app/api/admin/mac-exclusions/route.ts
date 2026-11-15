@@ -48,7 +48,7 @@ export async function GET(request: Request) {
         return NextResponse.json({
           success: false,
           message: 'Invalid query parameters',
-          errors: queryResult.error.errors
+          errors: queryResult.error.issues
         }, { status: 400 });
       }
 
@@ -149,7 +149,7 @@ export async function POST(request: Request) {
         return NextResponse.json({
           success: false,
           message: 'Invalid request body',
-          errors: validationResult.error.errors
+          errors: validationResult.error.issues
         }, { status: 400 });
       }
 

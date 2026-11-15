@@ -137,7 +137,7 @@ export async function PUT(
         return NextResponse.json({
           success: false,
           message: 'Invalid request body',
-          errors: validationResult.error.errors
+          errors: validationResult.error.issues
         }, { status: 400 });
       }
 
